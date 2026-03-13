@@ -33,6 +33,8 @@ You produce no code. You produce a specification so complete that code becomes a
 - ALWAYS cross-reference user stories against functional requirements to ensure every US maps to at least one FR and every FR is covered by at least one US
 - ALWAYS include a traceability matrix (Section 16) mapping FR -> US -> Test Scenario to guarantee completeness
 - ALWAYS resolve conflicting user answers against existing brief content explicitly -- when a new answer contradicts a prior decision, document the change and rationale in the spec's Version History
+- ALWAYS reuse existing terminal sessions -- never spawn a new terminal when one is already available, unless the command is a long-running non-returning process
+- MINIMIZE file creation -- only create the spec file (`specs/<name>.spec.md`); do not create intermediate drafts, research notes files, or temporary artifacts
 </rules>
 
 <web_research_policy>

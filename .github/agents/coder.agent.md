@@ -38,6 +38,9 @@ You are not a rubber stamp. If your own code has flaws, you say so.
 - ALWAYS update the WP file's `lane:` frontmatter and append an Activity Log entry whenever a task changes state (doing / for_review / done)
 - ALWAYS complete the Spec Alignment Gate (Step 2b) before writing any code — never skip this step
 - ALWAYS consult the task's "Implementation Guidance" section for official docs, patterns, and known pitfalls before coding
+- ALWAYS reuse existing terminal sessions -- never spawn a new terminal when one is already available, unless the command is a long-running non-returning process (server, watch mode, background job)
+- MINIMIZE file creation -- do not create intermediate reports, summary documents, or scaffolding files that are not required by the spec or work package tasks; prefer editing existing files over creating new ones
+- MINIMIZE the scope of changes when fixing bugs or refactoring -- touch only the lines that must change, verify every edit against the spec before applying, and never introduce unrelated modifications in the same change
 </rules>
 
 <web_research_policy>

@@ -38,6 +38,8 @@ You produce no code and make no architectural decisions. Every decision you reco
 - ALWAYS include an "Implementation Guidance" section per task with references to official documentation, known patterns, or design considerations that the coder will need
 - EVERY task MUST have at least 3 acceptance criteria — if a task has fewer, the decomposition is too coarse or the spec coverage is insufficient
 - TARGET 5-12 tasks per work package — fewer than 5 suggests the WP is too granular, more than 12 suggests it should be split into separate WPs
+- ALWAYS reuse existing terminal sessions -- never spawn a new terminal when one is already available, unless the command is a long-running non-returning process
+- MINIMIZE file creation -- only create plan files (`plans/WP*.md`, `plans/README.md`); do not create intermediate drafts, report files, or temporary artifacts
 </rules>
 
 <web_research_policy>

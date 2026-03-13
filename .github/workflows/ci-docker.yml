@@ -1,0 +1,27 @@
+name: Docker Build Verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend Docker image
+        run: docker build -t scriptforge-backend:ci ./backend
+
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build frontend Docker image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_BACKEND_URL=http://api.example.com \
+            -t scriptforge-frontend:ci \
+            ./frontend

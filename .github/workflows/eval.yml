@@ -1,0 +1,48 @@
+name: Agent Evaluation
+
+on:
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 3 * * *'   # nightly at 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Benchmark suite to run'
+        default: 'ci-fast'
+        required: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JUDGE_MODEL_API_KEY: ${{ secrets.JUDGE_MODEL_API_KEY }}
+      EVAL_AGENT_API_KEY: ${{ secrets.EVAL_AGENT_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install evaluation deps
+        run: pip install -r evaluation/requirements.txt
+
+      - name: Run evaluation unit tests
+        run: |
+          cd evaluation
+          python -m pytest tests/ -m "not integration and not eval" -v --tb=short
+
+      - name: Run CI evaluation suite
+        run: python -m evaluation.pipeline --suite ${{ github.event.inputs.suite || 'ci-fast' }} --run-id ${{ github.run_id }}
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ github.run_id }}
+          path: evaluation/results/ci/${{ github.run_id }}/

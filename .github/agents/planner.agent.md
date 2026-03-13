@@ -1,13 +1,17 @@
 ---
 description: "Use when decomposing a specification into actionable work packages and tasks for implementation. Triggers on: plan this, break down the spec, create work packages, generate tasks, decompose spec, ready to plan. Reads a spec from specs/ and produces structured work package files in plans/."
 name: "3. Planner"
+model: Claude Opus 4.6 (copilot)
 tools: [vscode/askQuestions, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runTests, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web, web/fetch, web/githubRepo, vscode.mermaid-chat-features/renderMermaidDiagram, todo]
-model: [Claude Opus 4.6, Claude Sonnet 4.6]
 handoffs:
   - label: Start Implementation
     agent: 4. Coder
     prompt: "Implement the work packages from the plan"
     send: true
+  - label: Clarify Specification
+    agent: 2. Spec Architect
+    prompt: "Spec gaps discovered during decomposition need resolution"
+    send: false
 argument-hint: "Name or path of the spec to plan (or leave blank to be prompted)"
 ---
 
@@ -32,6 +36,8 @@ You produce no code and make no architectural decisions. Every decision you reco
 - ALWAYS set a `lane:` frontmatter field on every WP file (`planned` | `doing` | `for_review` | `done` | `to_do`) and maintain it as work progresses; the Coder sets `for_review` on completion, the Reviewer sets `done` on PASS or `to_do` on FAIL
 - ALWAYS verify spec completeness before decomposing -- every FR referenced by a task must have defined error behavior, validation rules, and acceptance scenarios in the spec; flag gaps back to Spec Architect
 - ALWAYS include an "Implementation Guidance" section per task with references to official documentation, known patterns, or design considerations that the coder will need
+- EVERY task MUST have at least 3 acceptance criteria — if a task has fewer, the decomposition is too coarse or the spec coverage is insufficient
+- TARGET 5-12 tasks per work package — fewer than 5 suggests the WP is too granular, more than 12 suggests it should be split into separate WPs
 </rules>
 
 <web_research_policy>

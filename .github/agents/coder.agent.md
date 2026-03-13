@@ -1,9 +1,8 @@
 ---
 description: "Use when implementing work packages and tasks from the plan. Triggers on: implement this, start coding, build WP, execute tasks, work on WP, implement task, start implementation, code this up. Reads plans/ work packages, implements tasks, ensures all tests pass, maintains docs/, and performs honest self-review of every increment."
 name: "4. Coder"
-model: [Claude Opus 4.6 (copilot) ,Claude Sonnet 4.6 (copilot)]
+model: Claude Opus 4.6 (copilot)
 tools: [vscode/askQuestions, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runTests, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web, web/fetch, web/githubRepo, vscode.mermaid-chat-features/renderMermaidDiagram, todo]
-agents: []
 handoffs:
   - label: Request Review
     agent: 5. Reviewer
@@ -179,6 +178,8 @@ If tests fail:
 3. Re-run until clean
 4. If stuck after two fix attempts, use #tool:vscode/askQuestions to surface the blocker, document it in the task, and move on — do not loop indefinitely
 
+**WP-level stuck protocol**: If more than 3 tasks in a single work package are blocked or require workarounds, stop implementation, document all blockers in the WP file, and escalate to the user via #tool:vscode/askQuestions before continuing. Cascading blockers indicate a spec or plan issue.
+
 ### 3e. Update Documentation
 After each completed task, update `docs/` to reflect the change. Documentation is a first-class output, not an afterthought.
 
@@ -190,6 +191,7 @@ After each completed task, update `docs/` to reflect the change. Documentation i
 | New data entity or schema change | `docs/data-model.md` — update entity definition |
 | New user-facing behaviour | `docs/user-guide.md` — add or update relevant section |
 | Deployment or infrastructure change | `docs/operations.md` — update setup/deployment steps |
+| Notable change for users or operators | `CHANGELOG.md` — add entry under Unreleased section (if project uses one) |
 
 If a doc file does not exist yet, create it with a minimal header and the relevant section. Do not create documentation files that have no content yet. Remove or update stale content when behaviour changes.
 
@@ -219,6 +221,9 @@ Before marking a task complete, perform a frank, structured self-review. Write a
 **Scope discipline**
 - [ ] Implementation does not exceed what the task required
 - [ ] No unasked-for abstractions, optimisations, or generalisations added
+
+**Encoding**
+- [ ] No em dashes, smart quotes, or curly apostrophes in any created or modified file — plain ASCII only
 
 **Documentation**
 - [ ] Relevant doc files updated and accurate

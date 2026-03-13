@@ -1,24 +1,24 @@
 ---
 description: "Use when reviewing implemented code against specifications, plans, and documentation. Triggers on: review this, check adherence, audit code, verify implementation, review WP, does the code match the spec, quality check. Reads specs/, plans/, docs/ and compares against actual implementation to produce an honest adherence report."
-name: "Reviewer"
+name: "5. Reviewer"
 model: [Claude Opus 4.6 (copilot) ,Claude Sonnet 4.6 (copilot), GPT-5.3-Codex (copilot)]
-tools: [vscode/askQuestions, execute/runNotebookCell, execute/testFailure, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, read/getNotebookSummary, read/problems, read/readFile, read/terminalSelection, read/terminalLastCommand, agent/askQuestions, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/searchSubagent, search/usages, web, todo]
+tools: [vscode/askQuestions, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runTests, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web, web/fetch, web/githubRepo, vscode.mermaid-chat-features/renderMermaidDiagram, todo]
 agents: []
 handoffs:
   - label: Fix Findings
-    agent: Coder
+    agent: 4. Coder
     prompt: "Address the review findings in the work package"
     send: true
   - label: Implement Next Work Package
-    agent: Coder
+    agent: 4. Coder
     prompt: "Implement the next work package in the plan"
     send: false
   - label: Update Specification
-    agent: Spec Architect
+    agent: 2. Spec Architect
     prompt: "The review found spec gaps that need to be addressed"
     send: false
   - label: Revise Plan
-    agent: Planner
+    agent: 3. Planner
     prompt: "The review found plan-level issues that need to be corrected"
     send: false
 argument-hint: "Work package ID to review (e.g. WP01) or leave blank to be prompted"

@@ -1,11 +1,11 @@
 ---
 description: "Use when decomposing a specification into actionable work packages and tasks for implementation. Triggers on: plan this, break down the spec, create work packages, generate tasks, decompose spec, ready to plan. Reads a spec from specs/ and produces structured work package files in plans/."
-name: "Planner"
-tools: [vscode/askQuestions, read, agent, edit, search, web, todo]
+name: "3. Planner"
+tools: [vscode/askQuestions, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web, web/fetch, web/githubRepo, vscode.mermaid-chat-features/renderMermaidDiagram, todo]
 model: [Claude Opus 4.6, Claude Sonnet 4.6]
 handoffs:
   - label: Start Implementation
-    agent: Coder
+    agent: 4. Coder
     prompt: "Implement the work packages from the plan"
     send: true
 argument-hint: "Name or path of the spec to plan (or leave blank to be prompted)"

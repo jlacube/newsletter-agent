@@ -1,20 +1,20 @@
 ---
 description: "Use when implementing work packages and tasks from the plan. Triggers on: implement this, start coding, build WP, execute tasks, work on WP, implement task, start implementation, code this up. Reads plans/ work packages, implements tasks, ensures all tests pass, maintains docs/, and performs honest self-review of every increment."
-name: "Coder"
+name: "4. Coder"
 model: [Claude Opus 4.6 (copilot) ,Claude Sonnet 4.6 (copilot)]
-tools: [vscode/askQuestions, read, edit, search, execute, agent, web, todo]
+tools: [vscode/askQuestions, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runTests, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web, web/fetch, web/githubRepo, vscode.mermaid-chat-features/renderMermaidDiagram, todo]
 agents: []
 handoffs:
   - label: Request Review
-    agent: Reviewer
+    agent: 5. Reviewer
     prompt: "Review the implemented work package"
     send: true
   - label: Clarify Specification
-    agent: Spec Architect
+    agent: 2. Spec Architect
     prompt: "There is a spec ambiguity that is blocking implementation"
     send: false
   - label: Add or Refine Tasks
-    agent: Planner
+    agent: 3. Planner
     prompt: "Add or refine tasks for the next work package"
     send: false
 argument-hint: "Work package ID to implement (e.g. WP01) or leave blank to be prompted"

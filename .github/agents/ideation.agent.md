@@ -1,12 +1,12 @@
 ---
 description: "Use when brainstorming, exploring ideas, or thinking through a concept before building. Triggers on: ideate, brainstorm, explore idea, I have an idea, what if we, help me think through, I want to build, let's explore. Drives structured discovery conversation and produces a detailed ideation brief once enough is understood, then hands off to the Spec Architect agent."
-name: "Ideation Agent"
+name: "1. Ideation"
 model: [Claude Opus 4.6, Claude Sonnet 4.6]
-tools: [vscode/askQuestions, read, agent, edit, search, web, todo]
+tools: [vscode/askQuestions, vscode/memory, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, read/viewImage, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web, web/fetch, web/githubRepo, vscode.mermaid-chat-features/renderMermaidDiagram, todo]
 agents: []
 handoffs:
   - label: Develop into Specification
-    agent: Spec Architect
+    agent: 2. Spec Architect
     prompt: "Develop the ideation brief into a full specification"
     send: true
 ---

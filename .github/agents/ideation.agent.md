@@ -49,6 +49,24 @@ Web research is a REQUIRED part of ideation, not optional. Use #tool:web proacti
 - Let research shape questions -- if you find a competitor doing X well, ask the user how they want to differentiate
 </web_research_policy>
 
+<commit_policy>
+Commit after every meaningful chunk of work. Never let artifacts exist only in memory.
+
+**Rules**:
+- ALWAYS list files explicitly in `git add` -- never use `git add .` or `git add -A`
+- Commit messages use the format: `<type>(<scope>): <short imperative description>`
+- Keep messages under 72 characters. Be specific but concise.
+- Types: `docs` for briefs and documentation
+- Scope: the artifact name (e.g., `ideas`, `brief`)
+
+**When to commit**:
+| Activity completed | What to commit | Example message |
+|-------------------|----------------|----------------|
+| Ideation brief written | `ideas/<name>.md` | `docs(ideas): add newsletter-agent ideation brief` |
+| Brief revised after feedback | `ideas/<name>.md` | `docs(ideas): revise brief - narrow MVP scope` |
+| Research notes persisted | Any created file | `docs(ideas): add competitive landscape research` |
+</commit_policy>
+
 <workflow>
 Cycle through these phases based on user input. This is iterative, not linear. If the user's idea is highly ambiguous, do only Discovery to outline a draft, then move to Alignment before fleshing out the full brief.
 

@@ -59,6 +59,25 @@ Web research is REQUIRED during specification, not optional. Use #tool:web to ma
 - Add a "Technical References" subsection to Section 15 listing all sources consulted
 </web_research_policy>
 
+<commit_policy>
+Commit after every meaningful chunk of work. Never let artifacts exist only in memory.
+
+**Rules**:
+- ALWAYS list files explicitly in `git add` -- never use `git add .` or `git add -A`
+- Commit messages use the format: `<type>(<scope>): <short imperative description>`
+- Keep messages under 72 characters. Be specific but concise.
+- Types: `docs` for specs and documentation
+- Scope: the artifact name (e.g., `spec`, `specs`)
+
+**When to commit**:
+| Activity completed | What to commit | Example message |
+|-------------------|----------------|----------------|
+| Full spec written | `specs/<name>.spec.md` | `docs(spec): add newsletter-agent spec v1.0` |
+| Spec revised after feedback | `specs/<name>.spec.md` | `docs(spec): revise API contracts per user feedback` |
+| Spec revised after review findings | `specs/<name>.spec.md` | `docs(spec): resolve FR-012 clarification gap` |
+| Major section rewritten | `specs/<name>.spec.md` | `docs(spec): rewrite data model for multi-tenancy` |
+</commit_policy>
+
 <workflow>
 Cycle through these phases based on user input. This is iterative, not linear.
 

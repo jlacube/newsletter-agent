@@ -67,6 +67,27 @@ Web research is ENCOURAGED during implementation to produce correct, idiomatic c
 - "Better" ways to structure code that contradict project conventions
 </web_research_policy>
 
+<commit_policy>
+Commit after every completed task. Never batch multiple tasks into one commit.
+
+**Rules**:
+- ALWAYS list files explicitly in `git add` -- never use `git add .` or `git add -A`
+- Commit messages use the format: `<type>(<scope>): <short imperative description> (WP<NN> T<NN>-XX)`
+- Keep messages under 72 characters. Be specific but concise.
+- Types: `feat` for new features, `fix` for bug fixes, `refactor` for restructuring, `test` for test-only changes, `docs` for documentation, `chore` for tooling/config
+- Scope: the module or feature area touched
+- ALWAYS include the task ID at the end in parentheses
+
+**When to commit**:
+| Activity completed | What to commit | Example message |
+|-------------------|----------------|----------------|
+| Task implementation + tests | Source files, test files, updated docs | `feat(auth): add JWT refresh endpoint (WP03 T03-02)` |
+| Documentation update (same task) | Include doc files in the same commit | `feat(api): add user CRUD with OpenAPI docs (WP02 T02-01)` |
+| WP marked complete | `plans/WP<NN>.md`, `plans/README.md` | `docs(plan): mark WP02 complete, submit for review` |
+| Reviewer feedback fix | Only files changed for that FB item | `fix(auth): address FB-03 missing token expiry (WP03)` |
+| Spec compliance checklist added | `plans/WP<NN>.md` | `docs(plan): add spec compliance checklist (WP02)` |
+</commit_policy>
+
 <workflow>
 This is iterative within each work package. The inner loop (per task) must complete fully before moving to the next task.
 

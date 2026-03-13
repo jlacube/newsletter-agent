@@ -53,8 +53,28 @@ Web research strengthens plan quality. Use #tool:web to produce more actionable 
 - Document discovered pitfalls in "Risks & Mitigations" with source links
 </web_research_policy>
 
+<commit_policy>
+Commit after every meaningful chunk of work. Never let artifacts exist only in memory.
+
+**Rules**:
+- ALWAYS list files explicitly in `git add` -- never use `git add .` or `git add -A`
+- Commit messages use the format: `<type>(<scope>): <short imperative description>`
+- Keep messages under 72 characters. Be specific but concise.
+- Types: `docs` for plan files
+- Scope: the work package ID or `plan`
+
+**When to commit**:
+| Activity completed | What to commit | Example message |
+|-------------------|----------------|----------------|
+| Work package file written | `plans/WP<NN>-<slug>.md` | `docs(plan): add WP01 project scaffolding` |
+| Plan index written | `plans/README.md` | `docs(plan): add plan index for newsletter-agent` |
+| WP file revised after feedback | `plans/WP<NN>-<slug>.md` | `docs(plan): revise WP03 task sequencing` |
+| Plan index updated | `plans/README.md` | `docs(plan): update plan index with WP04 status` |
+| Multiple WPs revised together | `plans/WP<NN>.md plans/README.md` | `docs(plan): resequence WP02-WP04 dependencies` |
+</commit_policy>
+
 <workflow>
-Cycle through these phases. This is iterative — if decomposition reveals spec gaps, loop back to alignment.
+Cycle through these phases. This is iterative -- if decomposition reveals spec gaps, loop back to alignment.
 
 ## 1. Select the Specification
 

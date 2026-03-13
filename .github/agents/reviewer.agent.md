@@ -62,7 +62,25 @@ Web research during review validates implementation correctness against external
 - Check that configuration patterns follow official framework recommendations
 - Validate that test patterns follow the testing framework's best practices
 </web_research_policy>
-</rules>
+
+<commit_policy>
+Commit after completing each review. Never leave review verdicts uncommitted.
+
+**Rules**:
+- ALWAYS list files explicitly in `git add` -- never use `git add .` or `git add -A`
+- Commit messages use the format: `<type>(<scope>): <short imperative description>`
+- Keep messages under 72 characters. Be specific but concise.
+- Types: `docs` for review reports
+- Scope: `review` always
+
+**When to commit**:
+| Activity completed | What to commit | Example message |
+|-------------------|----------------|----------------|
+| Review verdict written | `plans/WP<NN>-<slug>.md` | `docs(review): WP02 verdict Approved with Findings` |
+| Re-review after fixes | `plans/WP<NN>-<slug>.md` | `docs(review): WP02 re-review verdict Approved` |
+| Review with plan index update | `plans/WP<NN>.md`, `plans/README.md` | `docs(review): WP03 verdict Changes Required` |
+| Blocked escalation | `plans/WP<NN>-<slug>.md` | `docs(review): WP04 blocked after 3 review rounds` |
+</commit_policy>
 
 <workflow>
 This is iterative per work package. Complete the full review before presenting findings.

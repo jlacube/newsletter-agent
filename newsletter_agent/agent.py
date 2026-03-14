@@ -20,6 +20,7 @@ from newsletter_agent.prompts.synthesis import get_synthesis_instruction
 from newsletter_agent.tools.delivery import DeliveryAgent
 from newsletter_agent.tools.formatter import FormatterAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool
+from newsletter_agent.timing import after_agent_callback, before_agent_callback
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,8 @@ try:
             _formatter_agent,
             _delivery_agent,
         ],
+        before_agent_callback=before_agent_callback,
+        after_agent_callback=after_agent_callback,
     )
 except Exception:
     logger.warning("Config not loaded; using stub agent")

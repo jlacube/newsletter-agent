@@ -1,7 +1,7 @@
 """
 Newsletter Agent - root agent, research phase, synthesis, and formatting.
 
-Spec refs: Section 9.1, FR-008 through FR-026.
+Spec refs: Section 9.1, FR-008 through FR-035.
 """
 
 import logging
@@ -13,6 +13,7 @@ from newsletter_agent.config.schema import NewsletterConfig, load_config
 from newsletter_agent.prompts.research_google import get_google_search_instruction
 from newsletter_agent.prompts.research_perplexity import get_perplexity_search_instruction
 from newsletter_agent.prompts.synthesis import get_synthesis_instruction
+from newsletter_agent.tools.delivery import DeliveryAgent
 from newsletter_agent.tools.formatter import FormatterAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool
 
@@ -96,6 +97,11 @@ def build_formatter_agent() -> FormatterAgent:
     return FormatterAgent(name="FormatterAgent")
 
 
+def build_delivery_agent() -> DeliveryAgent:
+    """Build the DeliveryAgent that sends email or saves to disk."""
+    return DeliveryAgent(name="DeliveryAgent")
+
+
 # ---------------------------------------------------------------------------
 # Build root agent at module level (Option 3 from WP02 plan)
 # ---------------------------------------------------------------------------
@@ -105,9 +111,15 @@ try:
     _research_phase = build_research_phase(_config)
     _synthesis_agent = build_synthesis_agent(_config)
     _formatter_agent = build_formatter_agent()
+    _delivery_agent = build_delivery_agent()
     root_agent = SequentialAgent(
         name="newsletter_agent",
-        sub_agents=[_research_phase, _synthesis_agent, _formatter_agent],
+        sub_agents=[
+            _research_phase,
+            _synthesis_agent,
+            _formatter_agent,
+            _delivery_agent,
+        ],
     )
 except Exception:
     logger.warning("Config not loaded; using stub agent")

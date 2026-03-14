@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP04 - Email Delivery and Local Output
 
 > **Spec**: `specs/newsletter-agent.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: The completed newsletter is delivered via Gmail API or saved to disk in dry-run mode, with OAuth2 authentication, token refresh, and graceful failure fallback
 > **Independent Test**: Generate a newsletter HTML, configure Gmail OAuth2 credentials, run delivery - verify email arrives in inbox with correct subject and HTML body; verify dry-run saves HTML to output directory

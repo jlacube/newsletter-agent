@@ -1,6 +1,5 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
 ---
 
 # WP05 - Orchestration, Deployment, and Observability
@@ -1947,6 +1946,7 @@ These features should each be planned as separate work packages when prioritized
 - 2025-07-26T01:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (8 FAILs) -- awaiting remediation
 - 2026-03-14T00:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05, FB-06, FB-07, FB-08)
 - 2025-07-27T00:00:00Z - coder - lane=for_review - All FB items resolved, Spec Compliance Checklist added, 235 tests pass, submitted for re-review
+- 2025-07-27T01:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 
 ## Review
 
@@ -2120,3 +2120,102 @@ Changes Required. Eight FAIL findings across process compliance, spec adherence,
 6. **(FB-06)** Add unit tests for agent tools, root agent structure, and model assignments.
 7. **(FB-07)** Rename synthesis agent to `"Synthesizer"`.
 8. **(FB-08)** Remove brackets from log format `%(name)s`.
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-27
+> **Verdict**: Approved with Findings
+> **review_status**: (cleared)
+
+### Summary
+
+Approved with Findings. All 8 FAILs from Round 1 have been resolved. The coder addressed every FB item: `build_pipeline()` factory function created, root agent renamed to `"NewsletterPipeline"`, OutputPhase wrapper added, config failure now raises RuntimeError, missing unit tests added (tools, models, root structure, output phase), synthesis agent renamed to `"Synthesizer"`, log format brackets removed, and Spec Compliance Checklist added for all 12 tasks. Two pre-existing WARNs from Round 1 survive (bundled commits, test file path deviation) — neither is actionable or blocking.
+
+### Findings
+
+#### PASS - FB-01: Spec Compliance Checklist
+- **Requirement**: Step 2b process requirement
+- **Status**: Resolved
+- **Detail**: Comprehensive checklist added under "Spec Compliance Checklist (Step 2b)" with per-task tables for T05-01 through T05-12. Each table maps acceptance criteria to spec refs with PASS status and notes where applicable.
+- **Evidence**: [plans/WP05-orchestration-deployment.md](plans/WP05-orchestration-deployment.md) lines 569-680
+
+#### PASS - FB-02: build_pipeline() factory function
+- **Requirement**: T05-01 AC: `build_pipeline(config) -> Agent`
+- **Status**: Resolved
+- **Detail**: `build_pipeline(config: NewsletterConfig) -> SequentialAgent` exists. Assembles research_phase, synthesis_agent, and output_phase into root SequentialAgent. Module-level code calls `root_agent = build_pipeline(_config)`.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) line 111
+
+#### PASS - FB-03: Root agent name
+- **Requirement**: Spec Section 9.1: `"NewsletterPipeline"`
+- **Status**: Resolved
+- **Detail**: `_ROOT_AGENT_NAME = "NewsletterPipeline"` constant defined in agent.py and timing.py. Tests updated to use `"NewsletterPipeline"`.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) line 27; [newsletter_agent/timing.py](newsletter_agent/timing.py) line 16; [tests/unit/test_timing.py](tests/unit/test_timing.py) line 37
+
+#### PASS - FB-04: Agent tree structure
+- **Requirement**: Root sub-agents order with OutputPhase wrapper
+- **Status**: Resolved
+- **Detail**: Root sub_agents = `[research_phase, synthesis_agent, output_phase]`. OutputPhase is a SequentialAgent wrapping FormatterAgent and DeliveryAgent. ConfigLoaderAgent absence documented in compliance checklist (config loaded at module level via `load_config()`).
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) lines 118-130
+
+#### PASS - FB-05: Config failure handling
+- **Requirement**: T05-06 AC: module SHALL raise a clear error
+- **Status**: Resolved
+- **Detail**: Exception handler now does `raise RuntimeError(f"Newsletter Agent failed to start: {e}. Check config/topics.yaml and environment variables.") from e`. Clear message with original exception chained.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) lines 153-156
+
+#### PASS - FB-06: Missing unit tests
+- **Requirement**: T05-07 ACs: tool verification, model verification, root structure, output phase
+- **Status**: Resolved
+- **Detail**: Four new test classes/methods added: `TestAgentTools` (2 tests verifying google_search and perplexity_search_tool identity), `TestModelAssignments` (3 tests verifying Flash for research, Pro for synthesis), `TestBuildPipeline` (4 tests verifying root is SequentialAgent, has 3 sub-agents in correct order, OutputPhase wraps formatter+delivery). Total: 19 unit tests in file.
+- **Evidence**: [tests/unit/test_agent_factory.py](tests/unit/test_agent_factory.py) — TestAgentTools, TestModelAssignments, TestBuildPipeline classes
+
+#### PASS - FB-07: Synthesis agent naming
+- **Requirement**: Spec Section 9.1: `"Synthesizer"`
+- **Status**: Resolved
+- **Detail**: Agent name changed from `"SynthesisAgent"` to `"Synthesizer"`. Tests verify `pipeline.sub_agents[1].name == "Synthesizer"`.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) line 94
+
+#### PASS - FB-08: Log format brackets
+- **Requirement**: FR-044: `{timestamp} {level} {agent_name} {message}` without brackets
+- **Status**: Resolved
+- **Detail**: Format string changed from `"%(asctime)s %(levelname)s [%(name)s] %(message)s"` to `"%(asctime)s %(levelname)s %(name)s %(message)s"`.
+- **Evidence**: [newsletter_agent/logging_config.py](newsletter_agent/logging_config.py) line 14
+
+#### PASS - Regression Check: Previously passing dimensions
+- **Requirement**: API/Interface, Data Model, Security, Performance, Documentation, Scope
+- **Status**: No regressions
+- **Detail**: Modified files (`agent.py`, `timing.py`, `logging_config.py`, test files) do not alter HTTP handler, data model state keys, security boundaries, or documentation. All 235 tests pass.
+
+#### WARN - Process: Bundled commits (surviving from Round 1)
+- **Requirement**: One commit per task
+- **Status**: Pre-existing deviation, not actionable
+- **Detail**: Historical commit `441f06c` bundles T05-02 and T05-08. Cannot be retroactively fixed.
+
+#### WARN - Test Coverage: Test file path (surviving from Round 1)
+- **Requirement**: T05-07 AC: `tests/test_agent_factory.py`
+- **Status**: Pre-existing deviation, not blocking
+- **Detail**: Actual path is `tests/unit/test_agent_factory.py`. Better organization but deviates from plan's stated path.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No encoding violations in modified files
+- **Status**: Compliant
+- **Detail**: All 5 modified Python files scanned for em dashes, smart quotes, and curly apostrophes — none found.
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance (FB-01) | 1 | 0 | 0 |
+| Spec Adherence (FB-02,03,04,05,07) | 5 | 0 | 0 |
+| Test Coverage (FB-06) | 1 | 0 | 0 |
+| Log Format (FB-08) | 1 | 0 | 0 |
+| Regression Check | 1 | 0 | 0 |
+| Process (surviving) | 0 | 1 | 0 |
+| Test Path (surviving) | 0 | 1 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+| **Total** | **10** | **2** | **0** |
+
+### Recommended Actions
+
+None required. The two surviving WARNs are historical/organizational deviations that do not affect correctness or spec compliance.

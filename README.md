@@ -188,7 +188,10 @@ newsletter_agent/
 ### Agent Pipeline
 
 ```
-Root SequentialAgent ("newsletter_agent")
+Root SequentialAgent ("NewsletterPipeline")
+  |
+  +-- ConfigLoader (BaseAgent)
+  |     Loads config values into session state
   |
   +-- ResearchPhase (ParallelAgent)
   |     +-- Topic0Research (SequentialAgent)
@@ -199,11 +202,19 @@ Root SequentialAgent ("newsletter_agent")
   |     |     +-- PerplexitySearcher_1
   |     +-- ... (one per topic, all run in parallel)
   |
-  +-- SynthesisAgent (LlmAgent, gemini-2.5-pro)
+  +-- ResearchValidator (BaseAgent)
+  |     Checks if all research failed
   |
-  +-- FormatterAgent (BaseAgent, Jinja2 HTML)
+  +-- PipelineAbortCheck (BaseAgent)
+  |     Aborts if all research providers failed (FR-013)
   |
-  +-- DeliveryAgent (BaseAgent, Gmail/file)
+  +-- Synthesizer (LlmAgent, gemini-2.5-pro)
+  |
+  +-- SynthesisPostProcessor (BaseAgent)
+  |
+  +-- OutputPhase (SequentialAgent)
+        +-- FormatterAgent (BaseAgent, Jinja2 HTML)
+        +-- DeliveryAgent (BaseAgent, Gmail/file)
 ```
 
 Topics are configured in `config/topics.yaml`. The agent tree is built

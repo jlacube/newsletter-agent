@@ -15,6 +15,8 @@ newsletter:
 settings:
   dry_run: true                          # true = save HTML only, no email
   output_dir: "output/"                  # Where to save HTML output
+  timeframe: "last_week"
+  verify_links: true
 
 # Research topics (1-20 items)
 topics:
@@ -27,18 +29,5 @@ topics:
     search_depth: "deep"
     sources:
       - google_search
-      - perplexity
+      #- perplexity
 
-  # Topic with minimal config (uses defaults: standard depth, both sources)
-  - name: "Cloud Native"
-    query: >-
-      Recent developments in cloud-native technologies, Kubernetes,
-      serverless platforms, and major cloud provider announcements.
-
-  # Topic with single source
-  - name: "Open Source Highlights"
-    query: >-
-      Notable new open source projects, major releases, and community
-      trends in software development.
-    sources:
-      - google_search

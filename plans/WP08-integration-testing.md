@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP08 - Integration Testing, E2E Verification & Documentation
@@ -1838,3 +1839,191 @@ pytest -m slow -v
 - 2025-07-15T00:05:00Z - coder - lane=doing - T08-10 documentation updated (README, config guide, architecture)
 - 2025-07-15T00:10:00Z - coder - lane=doing - T08-11 infrastructure verified, security marker added
 - 2025-07-15T00:15:00Z - coder - lane=for_review - All tasks complete, 400 tests passing, submitted for review
+- 2025-07-15T01:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-15
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+> **Scope**: Combined review of WP06 + WP07 + WP08
+
+### Summary
+
+Changes Required. Three FAILs found across the combined WP06/WP07/WP08 scope: (1) WP06 and WP07 are missing Spec Compliance Checklists entirely -- process violation; (2) the BDD test file `tests/bdd/test_timeframe_config.py` required by spec Section 11.2 and WP06 task T06-11 does not exist -- all 6 timeframe BDD scenarios are unimplemented; (3) WP06 and WP07 have stale Activity Logs with no coder entries and incorrect lane frontmatter (`doing`/`planned` instead of `for_review`). Five WARNs cover: unused imports in agent.py, documentation inaccuracy in configuration-guide.md (`last_2_weeks` Perplexity filter incorrectly listed as `week` instead of `month`), FR-026 deviation (LinkVerifierAgent always included rather than conditionally), `Full Schema` YAML block in configuration-guide.md omits new fields, and architecture.md security section is stale.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Create `tests/bdd/test_timeframe_config.py` implementing all 6 BDD scenarios from spec Section 11.2 (Global timeframe, Per-topic override, Custom days, Absolute date range, Invalid rejected, No timeframe configured). This is WP06 task T06-11.
+- [ ] **FB-02**: Add Spec Compliance Checklists (Step 2b) to `plans/WP06-search-timeframe.md` for tasks T06-01 through T06-11. Each task must have a checklist mapping acceptance criteria to verified status.
+- [ ] **FB-03**: Add Spec Compliance Checklists (Step 2b) to `plans/WP07-link-verification.md` for tasks T07-01 through T07-10.
+- [ ] **FB-04**: Update Activity Logs in WP06 and WP07 with lane transitions (doing, for_review) and coder entries. Update frontmatter lane to `for_review` (or leave as `to_do` since this review returns them).
+- [ ] **FB-05**: Remove unused imports `functools` and `ResolvedTimeframe` from `newsletter_agent/agent.py`.
+- [ ] **FB-06**: Fix `docs/configuration-guide.md` Timeframe Values table: `last_2_weeks` Perplexity Filter should be `month`, not `week` (per FR-007 and actual implementation).
+- [ ] **FB-07**: Update `docs/configuration-guide.md` Full Schema YAML block to include `timeframe` and `verify_links` fields in both `settings` and `topics` sections.
+- [ ] **FB-08**: Update `docs/architecture.md` Security Design section to mention link verifier SSRF protections (currently says "no user-controlled URLs are used for outbound requests" which is inaccurate post-WP07).
+
+### Findings
+
+#### FAIL - Process Compliance (WP06 Spec Compliance Checklist)
+- **Requirement**: Coder Step 2b -- Spec Compliance Checklist for each task
+- **Status**: Missing
+- **Detail**: WP06 has an "Acceptance Verification Checklist" (line 711) but it is a run-the-tests checklist, not a per-task spec compliance checklist mapping each acceptance criterion to verified status. No T06-01 through T06-11 checklists exist.
+- **Evidence**: [plans/WP06-search-timeframe.md](plans/WP06-search-timeframe.md#L711)
+
+#### FAIL - Process Compliance (WP07 Spec Compliance Checklist)
+- **Requirement**: Coder Step 2b -- Spec Compliance Checklist for each task
+- **Status**: Missing
+- **Detail**: WP07 has an "Acceptance Verification Checklist" (line 1427) but it is a run-the-tests checklist, not a per-task spec compliance checklist. No T07-01 through T07-10 checklists exist.
+- **Evidence**: [plans/WP07-link-verification.md](plans/WP07-link-verification.md#L1427)
+
+#### FAIL - Test Coverage (Missing BDD test file)
+- **Requirement**: Spec Section 11.2 -- Search Timeframe Configuration BDD scenarios; WP06 T06-11
+- **Status**: Missing
+- **Detail**: `tests/bdd/test_timeframe_config.py` does not exist. All 6 spec-required BDD scenarios for Search Timeframe Configuration are unimplemented: Global timeframe filters all topics, Per-topic override, Custom days, Absolute date range, Invalid rejected, No timeframe configured.
+- **Evidence**: File not found at `tests/bdd/test_timeframe_config.py`
+
+#### WARN - Process Compliance (Activity Logs stale)
+- **Requirement**: Activity Log entries consistent with lane transitions
+- **Status**: Deviating
+- **Detail**: WP06 Activity Log contains only planner entries; no coder entries for lane=doing or lane=for_review. WP06 frontmatter shows `lane: doing` (not updated to `for_review`). WP07 Activity Log also has only planner entries; frontmatter shows `lane: planned` (never updated). WP08 Activity Log is complete and correct.
+- **Evidence**: [plans/WP06-search-timeframe.md](plans/WP06-search-timeframe.md#L1828), [plans/WP07-link-verification.md](plans/WP07-link-verification.md#L1740)
+
+#### WARN - Scope Discipline (Commit granularity)
+- **Requirement**: One commit per task, not batched
+- **Status**: Deviating
+- **Detail**: WP06 (11 tasks) was delivered in a single commit `58323a4`. WP07 (10 tasks) was delivered in a single commit `d1f556b`. WP08 (11 tasks) was delivered in a single commit `9d4d42f`. The spec expects per-task commits for traceability. Not blocking correctness.
+- **Evidence**: `git log --oneline`
+
+#### PASS - Spec Adherence (FR-001 through FR-005: Timeframe Config)
+- **Requirement**: FR-001 through FR-005
+- **Status**: Compliant
+- **Detail**: `TimeframeValue` Pydantic validator correctly validates all formats. `AppSettings.timeframe` and `TopicConfig.timeframe` are optional with None default. Validation rejects invalid values with descriptive errors. No timeframe = no filtering.
+- **Evidence**: [newsletter_agent/config/timeframe.py](newsletter_agent/config/timeframe.py), [newsletter_agent/config/schema.py](newsletter_agent/config/schema.py)
+
+#### PASS - Spec Adherence (FR-006 through FR-012: Timeframe Application)
+- **Requirement**: FR-006 through FR-012
+- **Status**: Compliant
+- **Detail**: Google Search instruction includes date clause when timeframe set. Perplexity receives `search_recency_filter` via `extra_body`. Mapping from timeframe values to Perplexity filters matches FR-007 exactly. Absolute ranges produce prompt-only instructions. Retry-without-filter on API rejection implemented.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L55), [newsletter_agent/tools/perplexity_search.py](newsletter_agent/tools/perplexity_search.py)
+
+#### PASS - Spec Adherence (FR-013 through FR-024: Link Verification)
+- **Requirement**: FR-013 through FR-024
+- **Status**: Compliant
+- **Detail**: `verify_links` boolean field with `false` default. `LinkVerifierAgent` is a `BaseAgent` subclass. HTTP HEAD with GET fallback on 405. 10-second timeout. `asyncio.Semaphore(10)` concurrency. User-Agent `"NewsletterAgent/1.0 (link-check)"`. Broken links removed from sources and inline citations. All-broken notice text matches spec. Redirect following with 5-hop limit. Graceful degradation on total failure. No-op when disabled.
+- **Evidence**: [newsletter_agent/tools/link_verifier.py](newsletter_agent/tools/link_verifier.py), [newsletter_agent/tools/link_verifier_agent.py](newsletter_agent/tools/link_verifier_agent.py)
+
+#### WARN - Spec Adherence (FR-026: Conditional inclusion)
+- **Requirement**: FR-026 -- agent factory SHALL conditionally include LinkVerifierAgent based on verify_links config
+- **Status**: Deviating
+- **Detail**: `LinkVerifierAgent` is always included in the pipeline regardless of `verify_links` setting. It self-skips at runtime when `verify_links=false`. Functionally equivalent but does not match the spec's "conditionally include" language. The backward compatibility tests confirm the agent is always present as a no-op.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L371)
+
+#### PASS - Data Model Adherence
+- **Requirement**: Section 7.1 -- TimeframeValue, AppSettings, TopicConfig, ResolvedTimeframe, LinkCheckResult
+- **Status**: Compliant
+- **Detail**: All entities present with correct field definitions. `ResolvedTimeframe` is a frozen dataclass with correct fields. `LinkCheckResult` is a frozen dataclass with correct fields. Config fields use correct types and defaults.
+- **Evidence**: [newsletter_agent/config/timeframe.py](newsletter_agent/config/timeframe.py#L105), [newsletter_agent/tools/link_verifier.py](newsletter_agent/tools/link_verifier.py#L28)
+
+#### PASS - API/Interface Adherence
+- **Requirement**: Section 8.1 through 8.6
+- **Status**: Compliant
+- **Detail**: `search_perplexity()` signature matches (query, search_depth, search_recency_filter). `get_google_search_instruction()` accepts timeframe_instruction parameter. `get_perplexity_search_instruction()` accepts timeframe_instruction parameter. `resolve_timeframe()` signature matches. `verify_urls()` signature matches (urls, timeout=10.0, max_concurrent=10). `LinkVerifierAgent` is a BaseAgent subclass with correct _run_async_impl.
+- **Evidence**: All source files inspected
+
+#### PASS - Architecture Adherence
+- **Requirement**: Section 9.1 through 9.4
+- **Status**: Compliant
+- **Detail**: Pipeline order correct (ConfigLoader -> Research -> Validator -> Abort -> Synthesizer -> PostProcessor -> LinkVerifier -> Output). Technology stack uses httpx (existing dep), asyncio.Semaphore, datetime.date.fromisoformat, re module -- no new dependencies. Directory structure matches spec Section 9.3 (minor deviation: agent in `tools/` not `agents/` but consistent throughout codebase). Key design decisions honored: prompt-based Google timeframe, HEAD+GET fallback, status-code-only, BaseAgent not LlmAgent.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L380)
+
+#### PASS - Test Coverage (Unit Tests)
+- **Requirement**: Section 11.1
+- **Status**: Compliant
+- **Detail**: 25 timeframe unit tests (35 expanded with parametrize), 52 link verifier unit tests, 10 link verifier agent tests, 5 BDD link verification tests. All 112 WP-related tests pass. Coverage includes all spec-required scenarios for unit tests. No vacuous tests found.
+- **Evidence**: All test files inspected; `pytest` run confirmed 112/112 passing
+
+#### PASS - Test Coverage (Integration, E2E, Perf, Security)
+- **Requirement**: Sections 11.3, 11.4, 11.5, 11.6
+- **Status**: Compliant
+- **Detail**: 21 integration tests, 11 E2E tests, 2 performance tests, 13 security tests. All pass. Performance test verifies 40-URL concurrency within 30s budget. Security tests cover SSRF private IP blocking, scheme validation, redirect protection, header leakage, and agent-level verification.
+- **Evidence**: [tests/integration/](tests/integration/), [tests/e2e/](tests/e2e/), [tests/performance/](tests/performance/), [tests/security/](tests/security/)
+
+#### PASS - Non-Functional (Security)
+- **Requirement**: Section 10.2
+- **Status**: Compliant
+- **Detail**: SSRF protection implemented with two-phase checking (pre-flight hostname resolution + post-redirect URL validation). Private IP blocking covers all RFC 1918 ranges and IPv6. Scheme restriction to http/https only. User-Agent identification set. No credential leakage. Input validation via strict Pydantic validators with regex pre-checks.
+- **Evidence**: [newsletter_agent/tools/link_verifier.py](newsletter_agent/tools/link_verifier.py#L36)
+
+#### PASS - Non-Functional (Performance)
+- **Requirement**: Section 10.1
+- **Status**: Compliant
+- **Detail**: Concurrency limit enforced via `asyncio.Semaphore(10)`. Performance test with 40 URLs and 0.5s mock delay completes well under 30s. Timeframe resolution is pure string parsing with negligible overhead.
+- **Evidence**: [tests/performance/test_link_verification_perf.py](tests/performance/test_link_verification_perf.py)
+
+#### PASS - Non-Functional (Observability)
+- **Requirement**: Section 10.5
+- **Status**: Compliant
+- **Detail**: `LinkVerifierAgent` logs at INFO level (verification summary counts) and uses event yields for status. Link verifier logs broken URLs. Timeframe resolution logging in `build_research_phase()`.
+- **Evidence**: [newsletter_agent/tools/link_verifier_agent.py](newsletter_agent/tools/link_verifier_agent.py)
+
+#### WARN - Documentation Accuracy (configuration-guide.md)
+- **Requirement**: docs/configuration-guide.md must match implementation
+- **Status**: Deviating
+- **Detail**: Three issues: (1) The Timeframe Values table shows `last_2_weeks` with Perplexity Filter `week`, but the implementation and spec FR-007 map it to `month` (closest supported). (2) The "Full Schema" YAML block at the top of the file omits `timeframe` and `verify_links` from both `settings` and `topics` sections -- readers see an incomplete schema first. (3) The example configs at the bottom (Minimal, Full, Development) do not demonstrate the new fields.
+- **Evidence**: [docs/configuration-guide.md](docs/configuration-guide.md#L83)
+
+#### WARN - Documentation Accuracy (architecture.md)
+- **Requirement**: docs/architecture.md must match implementation
+- **Status**: Deviating
+- **Detail**: The Security Design section states "no user-controlled URLs are used for outbound requests" in the SSRF context. This is inaccurate after WP07 -- the link verifier makes outbound requests to user-sourced URLs (with SSRF protections). The pipeline diagram and session state tables are correctly updated.
+- **Evidence**: [docs/architecture.md](docs/architecture.md)
+
+#### PASS - Scope Discipline
+- **Requirement**: No code outside declared scope
+- **Status**: Compliant
+- **Detail**: WP06 modified the declared set of files (schema.py, timeframe.py, prompts, perplexity_search.py, agent.py). WP07 created and modified the declared files (link_verifier.py, link_verifier_agent.py, agent.py). WP08 created test files, documentation, and infrastructure only. No unspecified features or abstractions added. Minor deviation: `link_verifier_agent.py` placed in `tools/` instead of spec's `agents/` directory, but this is consistent and not scope creep.
+- **Evidence**: All source files inspected
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, curly apostrophes in modified files
+- **Status**: Compliant
+- **Detail**: All 12 checked source/doc files are clean of UTF-8 encoding violations.
+- **Evidence**: Automated scan of all WP06/07/08 files
+
+#### WARN - Code Quality (Unused imports)
+- **Requirement**: No dead code
+- **Status**: Deviating
+- **Detail**: `newsletter_agent/agent.py` has two unused imports: `functools` (line 8, likely leftover from a partial-based approach) and `ResolvedTimeframe` (line 23, the type is accessed by attribute but never used as a type annotation or in isinstance checks).
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L8), [newsletter_agent/agent.py](newsletter_agent/agent.py#L23)
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 2 | 2 |
+| Spec Adherence | 3 | 1 | 0 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 1 | 0 | 0 |
+| Architecture | 1 | 0 | 0 |
+| Test Coverage | 2 | 0 | 1 |
+| Non-Functional | 3 | 0 | 0 |
+| Performance | 0 | 0 | 0 |
+| Documentation | 0 | 2 | 0 |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+| **Total** | **13** | **5** | **3** |
+
+### Recommended Actions
+
+1. **FB-01** (FAIL): Create `tests/bdd/test_timeframe_config.py` with all 6 BDD scenarios from spec Section 11.2. This is the most critical missing deliverable.
+2. **FB-02** (FAIL): Add per-task Spec Compliance Checklists to WP06 plan file for T06-01 through T06-11.
+3. **FB-03** (FAIL): Add per-task Spec Compliance Checklists to WP07 plan file for T07-01 through T07-10.
+4. **FB-04** (WARN): Update WP06 and WP07 Activity Logs with coder lane transitions.
+5. **FB-05** (WARN): Remove unused `functools` and `ResolvedTimeframe` imports from agent.py.
+6. **FB-06** (WARN): Fix `last_2_weeks` Perplexity Filter in configuration-guide.md from `week` to `month`.
+7. **FB-07** (WARN): Add `timeframe` and `verify_links` to the Full Schema YAML block in configuration-guide.md.
+8. **FB-08** (WARN): Update architecture.md security section to reflect link verifier SSRF protections.

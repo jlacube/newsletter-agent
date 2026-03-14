@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP02 - Research Pipeline
@@ -1518,3 +1519,177 @@ class TestBuildResearchPhase:
 - 2025-01-01T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-14T02:30:00Z - coder - lane=doing - Implementation started
 - 2026-03-14T03:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2026-03-14T04:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (5 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-14
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Changes Required. Five failures block approval: (1) Spec Compliance Checklist missing entirely, (2) all 11 tasks committed in a single commit violating one-commit-per-task discipline, (3) BDD test file `tests/bdd/test_research_pipeline.py` does not exist despite being explicitly required by T02-11, (4) total-failure detection from T02-06 is not implemented, and (5) `test_perplexity_search.py` has 9 tests but the AC requires a minimum of 10.
+
+The core implementation quality is solid: the Perplexity tool, agent factory, research result parser, and prompt templates all match their spec requirements. All 39 existing tests pass. No encoding violations. No security issues. No scope creep.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Add the Spec Compliance Checklist (Step 2b) for each task (T02-01 through T02-11) in this WP file, mapping each spec requirement to its implementation location. This is a mandatory process artifact.
+- [ ] **FB-02**: Create `tests/bdd/test_research_pipeline.py` with at least 4 BDD scenario tests as specified by T02-11: (a) Successful dual-source research, (b) Single provider failure, (c) Parallel execution of multiple topics, (d) All providers fail. Tests must use mocked LLM/API responses and follow Given/When/Then structure.
+- [ ] **FB-03**: Implement total-failure detection per T02-06 ACs. After the research phase ParallelAgent completes, inspect all `research_{N}_{provider}` session state keys. If every key is missing or has `error: true`, store `research_all_failed: true` in state and log a critical error. This can be implemented as a post-processing callback or a lightweight agent step after the ResearchPhase.
+- [ ] **FB-04**: Add at least 1 more test to `tests/unit/test_perplexity_search.py` to reach the minimum of 10. Missing scenarios from the AC include: API authentication error (401), empty query string behavior, and response timeout.
+- [ ] **FB-05**: Commit discipline: future tasks should use one commit per task. For this remediation round, a single remediation commit addressing all FB items is acceptable.
+
+### Findings
+
+#### FAIL - Process Compliance: Spec Compliance Checklist Missing
+- **Requirement**: Step 2b of the Coder workflow
+- **Status**: Missing
+- **Detail**: The WP file contains no Spec Compliance Checklist for any of the 11 tasks. The coder process requires a checklist mapping each spec requirement to its implementation file and line for every task.
+- **Evidence**: Full text of [plans/WP02-research-pipeline.md](plans/WP02-research-pipeline.md) reviewed -- no `## Spec Compliance Checklist` section found.
+
+#### FAIL - Process Compliance: Commit Discipline
+- **Requirement**: One commit per task
+- **Status**: Deviating
+- **Detail**: All 11 tasks (T02-01 through T02-11) were shipped in a single commit `1929a86 feat(research): add research pipeline with Perplexity tool and agent factory (WP02)`. The process requires one commit per task to enable granular traceability.
+- **Evidence**: `git log --oneline` shows one WP02 commit.
+
+#### FAIL - Test Coverage: BDD Test File Missing (T02-11)
+- **Requirement**: T02-11 AC, Section 11.2 BDD scenarios for Research Pipeline
+- **Status**: Missing
+- **Detail**: `tests/bdd/test_research_pipeline.py` does not exist. T02-11 requires at least 4 BDD scenario tests covering: successful dual-source research, single provider failure, parallel execution of multiple topics, and all-providers-fail detection. The `tests/bdd/` directory contains only `test_email_delivery.py` and `test_synthesis_formatting.py`.
+- **Evidence**: File search for `test_research_pipeline` returns no results. Directory listing of `tests/bdd/` confirms absence.
+
+#### FAIL - Spec Adherence: Total-Failure Detection Not Implemented (T02-06)
+- **Requirement**: T02-06 ACs, FR-013, Section 4.2 implementation contract
+- **Status**: Partial
+- **Detail**: Basic error handling is implemented: `search_perplexity` catches exceptions and returns error dicts, the ParallelAgent continues when individual agents fail. However, the T02-06 ACs explicitly require: (a) total-failure detection by checking all research state keys after the ParallelAgent completes, (b) storing `research_all_failed: true` flag in state, (c) a clear signal for downstream synthesis to check. None of these are implemented. The WP plan even provides a reference implementation (`check_research_complete`) that was not used.
+- **Evidence**: `grep_search` for `research_all_failed`, `total.*fail`, `check_research` returns zero hits in implementation code (only in the WP plan file).
+
+#### FAIL - Test Coverage: Perplexity Tool Tests Below Minimum (T02-08)
+- **Requirement**: T02-08 AC -- "at least 10 test cases"
+- **Status**: Partial
+- **Detail**: `tests/unit/test_perplexity_search.py` contains 9 tests. The AC requires at least 10. The AC enumerates specific scenarios that are missing: API authentication error (401), empty query string behavior, and response timeout handling.
+- **Evidence**: `grep_search` for `def test_` in the file returns 9 matches.
+
+#### PASS - Spec Adherence: FR-008 Google Search Grounding
+- **Requirement**: FR-008
+- **Status**: Compliant
+- **Detail**: Each topic gets a dedicated `LlmAgent` named `GoogleSearcher_{idx}` with `tools=[google_search]` and `output_key=research_{idx}_google`. The single-tool-per-agent constraint (Section 9.4 Decision 2) is respected.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L45-L55) -- `build_research_phase` creates Google Search LlmAgents correctly.
+
+#### PASS - Spec Adherence: FR-009 Perplexity Sonar API Tool
+- **Requirement**: FR-009, FR-015, Section 8.2
+- **Status**: Compliant
+- **Detail**: `search_perplexity` function accepts `query` (str) and `search_depth` (str), calls the Perplexity API via OpenAI SDK, and returns a dict with `text`, `sources` (list of `{url, title}`), and `provider` keys. On failure returns `{error: True, message, provider}`. Function signature matches Section 8.2 exactly.
+- **Evidence**: [newsletter_agent/tools/perplexity_search.py](newsletter_agent/tools/perplexity_search.py)
+
+#### PASS - Spec Adherence: FR-010 Parallel Research Execution
+- **Requirement**: FR-010
+- **Status**: Compliant
+- **Detail**: `build_research_phase` returns a `ParallelAgent` named "ResearchPhase" containing one `SequentialAgent` per topic. All topics execute concurrently.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L35-L78) -- `build_research_phase` function.
+
+#### PASS - Spec Adherence: FR-011 Namespaced State Keys
+- **Requirement**: FR-011
+- **Status**: Compliant
+- **Detail**: Each LlmAgent uses `output_key=f"research_{idx}_{provider}"` where provider is `google` or `perplexity`. Format matches `research_{topic_index}_{provider}`.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L52) and [line 63](newsletter_agent/agent.py#L63).
+
+#### PASS - Spec Adherence: FR-012 Research Result Structure
+- **Requirement**: FR-012, Section 7.3, Section 7.4
+- **Status**: Compliant
+- **Detail**: Perplexity tool returns `{text, sources, provider}` on success and `{error, message, provider}` on failure. `parse_research_result` normalizes various formats to Section 7.3 schema. Sources are deduplicated by URL and contain `{url, title}` per Section 7.4.
+- **Evidence**: [newsletter_agent/tools/perplexity_search.py](newsletter_agent/tools/perplexity_search.py), [newsletter_agent/tools/research_utils.py](newsletter_agent/tools/research_utils.py)
+
+#### PASS - Spec Adherence: FR-014 Deep Search Depth Behavior
+- **Requirement**: FR-014
+- **Status**: Compliant
+- **Detail**: Perplexity tool selects `sonar-pro` for deep depth and `sonar` for standard via `_MODEL_MAP`. Google Search deep prompts request comprehensive, multi-faceted analysis. Perplexity deep prompts pass `search_depth="deep"` to the tool.
+- **Evidence**: [newsletter_agent/tools/perplexity_search.py](newsletter_agent/tools/perplexity_search.py#L22-L25), [newsletter_agent/prompts/research_google.py](newsletter_agent/prompts/research_google.py) `_DEEP_INSTRUCTION`, [newsletter_agent/prompts/research_perplexity.py](newsletter_agent/prompts/research_perplexity.py) `_DEEP_INSTRUCTION`.
+
+#### PASS - Data Model Adherence
+- **Requirement**: Section 7.3 ResearchResult, Section 7.4 SourceRef
+- **Status**: Compliant
+- **Detail**: ResearchResult fields `text`, `sources`, `provider`, `error`, `message` all implemented. SourceRef fields `url` and `title` both present. Source deduplication by URL implemented. URL validation (http/https prefix) applied.
+- **Evidence**: [newsletter_agent/tools/research_utils.py](newsletter_agent/tools/research_utils.py)
+
+#### PASS - API/Interface Adherence
+- **Requirement**: Section 8.2 Perplexity Sonar Tool Function Signature
+- **Status**: Compliant
+- **Detail**: `search_perplexity(query: str, search_depth: str = "standard") -> dict` matches the spec signature exactly. Return keys match. Error handling convention matches.
+- **Evidence**: [newsletter_agent/tools/perplexity_search.py](newsletter_agent/tools/perplexity_search.py#L28)
+
+#### PASS - Architecture Adherence
+- **Requirement**: Section 9.1, 9.2, 9.3, 9.4
+- **Status**: Compliant
+- **Detail**: Module structure matches Section 9.3 (`tools/perplexity_search.py`, `prompts/research_google.py`, `prompts/research_perplexity.py`, `tools/research_utils.py`, `agent.py`). Technology stack matches Section 9.2 (google-adk, OpenAI SDK for Perplexity, gemini-2.5-flash for research). Design decisions 1 (dynamic construction) and 2 (separate agents) are honored.
+- **Evidence**: File tree and implementation code.
+
+#### WARN - Architecture: Config Loader Agent Absent (T02-07)
+- **Requirement**: T02-07 AC -- "research phase ParallelAgent as its second child (after config loader)"
+- **Status**: Deviating
+- **Detail**: The root pipeline has research_phase as its first child, not second. There is no config_loader_agent sub-agent; config is loaded at module level (Option 3 from T02-07 Implementation Guidance). This contradicts the literal AC text but follows the suggested implementation path. The pipeline functions correctly.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L115-L130) -- `build_pipeline` assembles 3 sub-agents: ResearchPhase, Synthesizer, OutputPhase.
+
+#### PASS - Non-Functional: Security
+- **Requirement**: Section 10.2
+- **Status**: Compliant
+- **Detail**: SSRF mitigation implemented: `_PERPLEXITY_BASE_URL = "https://api.perplexity.ai"` is hardcoded, no user-controlled URLs. API key read from environment variable, not hardcoded. No secrets in source code. Prompts explicitly instruct agents not to fabricate information.
+- **Evidence**: [newsletter_agent/tools/perplexity_search.py](newsletter_agent/tools/perplexity_search.py#L18)
+
+#### PASS - Non-Functional: Observability
+- **Requirement**: FR-042, FR-043, FR-044
+- **Status**: Compliant
+- **Detail**: Logging at INFO for search start/completion, ERROR for failures. Uses Python `logging` module. Logger named per module convention.
+- **Evidence**: [newsletter_agent/tools/perplexity_search.py](newsletter_agent/tools/perplexity_search.py) -- `logger.info` and `logger.error` calls throughout.
+
+#### PASS - Non-Functional: Performance
+- **Requirement**: Section 10.1, 4g-ii patterns
+- **Status**: Compliant
+- **Detail**: No N+1 patterns. No unbounded data fetching. ParallelAgent provides concurrent execution for all topics as required. OpenAI client created per-call (stateless), which is fine for the expected invocation frequency.
+
+#### PASS - Scope Discipline
+- **Requirement**: No scope creep
+- **Status**: Compliant
+- **Detail**: All files created/modified are within WP02's declared scope. No unspecified features, abstractions, or utilities added beyond what the tasks require.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, curly apostrophes
+- **Status**: Compliant
+- **Detail**: All implementation and test files scanned for characters U+2014, U+2013, U+2018, U+2019, U+201C, U+201D. None found.
+- **Evidence**: Automated scan of all files under `newsletter_agent/` and `tests/`.
+
+#### WARN - Test Coverage: Specific Scenarios Missing (T02-08, T02-10)
+- **Requirement**: T02-08 AC enumerated scenarios, T02-10 AC enumerated scenarios
+- **Status**: Partial
+- **Detail**: T02-08 AC lists these specific scenarios not covered: API authentication error (401), empty query string, response timeout. T02-10 AC lists these scenarios not covered: output with invalid URLs, output with very long text, output with special characters in source titles. While T02-10 meets its minimum count (12), these specific edge cases from the AC are absent.
+- **Evidence**: Test file contents reviewed against AC enumeration.
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 0 | 2 |
+| Spec Adherence | 6 | 0 | 1 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 1 | 0 | 0 |
+| Architecture | 1 | 1 | 0 |
+| Test Coverage | 1 | 1 | 2 |
+| Non-Functional | 3 | 0 | 0 |
+| Performance | 1 | 0 | 0 |
+| Documentation | 0 | 0 | 0 |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. **(FB-01)** Add Spec Compliance Checklist for all 11 tasks in the WP file. Each task needs a table mapping its spec refs to the implementing file/line.
+2. **(FB-02)** Create `tests/bdd/test_research_pipeline.py` with 4+ BDD scenarios using mocked agents/APIs. Reference the Gherkin in spec Section 11.2.
+3. **(FB-03)** Implement total-failure detection. Add a post-research-phase check (callback or lightweight agent) that inspects all `research_{N}_{provider}` state keys and sets `research_all_failed: true` if all are errors/missing. Log at CRITICAL level.
+4. **(FB-04)** Add at least 1 test to `test_perplexity_search.py` to meet the 10-test minimum. Suggested: test for `APIStatusError` with 401 status code.
+5. **(FB-05)** Maintain one-commit-per-task discipline going forward. This remediation may use a single commit.

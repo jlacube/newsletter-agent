@@ -8,10 +8,14 @@ Spec refs: FR-001 through FR-007, Section 7.1, 7.2, 8.4.
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from newsletter_agent.config.timeframe import validate_timeframe
+
+TimeframeValue = Annotated[str | None, BeforeValidator(validate_timeframe)]
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +77,7 @@ class TopicConfig(BaseModel):
     sources: list[Literal["google_search", "perplexity"]] = Field(
         default=["google_search", "perplexity"]
     )
+    timeframe: TimeframeValue = None
 
     @field_validator("sources", mode="before")
     @classmethod
@@ -102,6 +107,8 @@ class AppSettings(BaseModel):
 
     dry_run: bool = False
     output_dir: str = "output/"
+    timeframe: TimeframeValue = None
+    verify_links: bool = False
 
 
 class NewsletterConfig(BaseModel):

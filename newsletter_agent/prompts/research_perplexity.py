@@ -6,7 +6,8 @@ Spec refs: FR-009, FR-014, FR-015, Section 9.1.
 
 
 def get_perplexity_search_instruction(
-    topic_name: str, query: str, search_depth: str
+    topic_name: str, query: str, search_depth: str,
+    timeframe_instruction: str | None = None,
 ) -> str:
     """Generate instruction prompt for a Perplexity search agent.
 
@@ -14,17 +15,22 @@ def get_perplexity_search_instruction(
         topic_name: Human-readable name of the topic being researched.
         query: The natural language search query.
         search_depth: "standard" or "deep" - passed through to the tool.
+        timeframe_instruction: Optional date-range clause to insert.
 
     Returns:
         Complete instruction string for the LlmAgent.
     """
     if search_depth == "deep":
-        return _DEEP_INSTRUCTION.format(
+        base = _DEEP_INSTRUCTION.format(
             topic_name=topic_name, query=query, search_depth=search_depth
         )
-    return _STANDARD_INSTRUCTION.format(
-        topic_name=topic_name, query=query, search_depth=search_depth
-    )
+    else:
+        base = _STANDARD_INSTRUCTION.format(
+            topic_name=topic_name, query=query, search_depth=search_depth
+        )
+    if timeframe_instruction:
+        base = f"Time constraint: {timeframe_instruction}\n\n" + base
+    return base
 
 
 _STANDARD_INSTRUCTION = """You are a research agent that uses the Perplexity search tool to find information about "{topic_name}".

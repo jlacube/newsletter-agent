@@ -25,12 +25,13 @@ _MODEL_MAP = {
 }
 
 
-def search_perplexity(query: str, search_depth: str = "standard") -> dict[str, Any]:
+def search_perplexity(query: str, search_depth: str = "standard", search_recency_filter: str | None = None) -> dict[str, Any]:
     """Search Perplexity Sonar API for information on a topic.
 
     Args:
         query: Natural language search query describing what to research.
         search_depth: "standard" uses sonar model, "deep" uses sonar-pro model.
+        search_recency_filter: Optional Perplexity recency filter ("day", "week", "month").
 
     Returns:
         dict with keys:
@@ -57,9 +58,9 @@ def search_perplexity(query: str, search_depth: str = "standard") -> dict[str, A
 
         client = OpenAI(api_key=api_key, base_url=_PERPLEXITY_BASE_URL)
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": [
                 {
                     "role": "system",
                     "content": (
@@ -70,7 +71,24 @@ def search_perplexity(query: str, search_depth: str = "standard") -> dict[str, A
                 },
                 {"role": "user", "content": query},
             ],
-        )
+        }
+        if search_recency_filter is not None:
+            kwargs["extra_body"] = {"search_recency_filter": search_recency_filter}
+            logger.info("Perplexity search_recency_filter: %s", search_recency_filter)
+
+        try:
+            response = client.chat.completions.create(**kwargs)
+        except Exception as filter_err:
+            if search_recency_filter is not None:
+                logger.warning(
+                    "Perplexity rejected search_recency_filter='%s': %s. Retrying without filter.",
+                    search_recency_filter,
+                    filter_err,
+                )
+                kwargs.pop("extra_body", None)
+                response = client.chat.completions.create(**kwargs)
+            else:
+                raise
 
         # Extract text content
         text = ""

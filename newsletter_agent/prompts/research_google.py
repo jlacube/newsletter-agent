@@ -6,7 +6,8 @@ Spec refs: FR-008, FR-014, Section 9.1, Section 9.4 Decision 2.
 
 
 def get_google_search_instruction(
-    topic_name: str, query: str, search_depth: str
+    topic_name: str, query: str, search_depth: str,
+    timeframe_instruction: str | None = None,
 ) -> str:
     """Generate instruction prompt for a Google Search grounding agent.
 
@@ -14,13 +15,18 @@ def get_google_search_instruction(
         topic_name: Human-readable name of the topic being researched.
         query: The natural language search query.
         search_depth: "standard" or "deep" - affects prompt detail level.
+        timeframe_instruction: Optional date-range clause to append.
 
     Returns:
         Complete instruction string for the LlmAgent.
     """
     if search_depth == "deep":
-        return _DEEP_INSTRUCTION.format(topic_name=topic_name, query=query)
-    return _STANDARD_INSTRUCTION.format(topic_name=topic_name, query=query)
+        base = _DEEP_INSTRUCTION.format(topic_name=topic_name, query=query)
+    else:
+        base = _STANDARD_INSTRUCTION.format(topic_name=topic_name, query=query)
+    if timeframe_instruction:
+        base = base + f"\n\nTime constraint: {timeframe_instruction}"
+    return base
 
 
 _STANDARD_INSTRUCTION = """You are a research agent tasked with finding current information about the topic "{topic_name}".

@@ -4,6 +4,8 @@ Newsletter Agent - root agent, research phase, synthesis, and formatting.
 Spec refs: Section 9.1, FR-008 through FR-035.
 """
 
+import dataclasses
+import functools
 import logging
 from collections.abc import AsyncGenerator
 
@@ -14,16 +16,17 @@ setup_logging()
 from google.adk.agents import BaseAgent, LlmAgent, ParallelAgent, SequentialAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
-from google.adk.tools import google_search
+from google.adk.tools import FunctionTool, google_search
 from google.genai import types
 
 from newsletter_agent.config.schema import NewsletterConfig, load_config
+from newsletter_agent.config.timeframe import ResolvedTimeframe, resolve_timeframe
 from newsletter_agent.prompts.research_google import get_google_search_instruction
 from newsletter_agent.prompts.research_perplexity import get_perplexity_search_instruction
 from newsletter_agent.prompts.synthesis import get_synthesis_instruction
 from newsletter_agent.tools.delivery import DeliveryAgent
 from newsletter_agent.tools.formatter import FormatterAgent
-from newsletter_agent.tools.perplexity_search import perplexity_search_tool
+from newsletter_agent.tools.perplexity_search import perplexity_search_tool, search_perplexity
 from newsletter_agent.tools.synthesis_utils import parse_synthesis_output
 from newsletter_agent.timing import after_agent_callback, before_agent_callback
 
@@ -32,6 +35,19 @@ logger = logging.getLogger(__name__)
 _ROOT_AGENT_NAME = "NewsletterPipeline"
 _RESEARCH_MODEL = "gemini-2.5-flash"
 _SYNTHESIS_MODEL = "gemini-2.5-pro"
+
+
+def _make_perplexity_tool(recency_filter: str | None) -> FunctionTool:
+    """Create a FunctionTool wrapping search_perplexity with a bound recency filter."""
+    if recency_filter is None:
+        return perplexity_search_tool
+
+    def _search_with_filter(query: str, search_depth: str = "standard") -> dict:
+        return search_perplexity(query, search_depth, search_recency_filter=recency_filter)
+
+    _search_with_filter.__name__ = "search_perplexity"
+    _search_with_filter.__doc__ = search_perplexity.__doc__
+    return FunctionTool(func=_search_with_filter)
 
 
 def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
@@ -45,12 +61,26 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
     for idx, topic in enumerate(config.topics):
         sub_agents = []
 
+        effective_tf = topic.timeframe or config.settings.timeframe
+        resolved = resolve_timeframe(effective_tf)
+        tf_instruction = resolved.prompt_date_instruction
+        pf = resolved.perplexity_recency_filter
+
+        if effective_tf:
+            logger.info(
+                "Timeframe for topic '%s': %s -> perplexity_filter=%s",
+                topic.name,
+                effective_tf,
+                pf,
+            )
+
         if "google_search" in topic.sources:
             google_agent = LlmAgent(
                 name=f"GoogleSearcher_{idx}",
                 model=_RESEARCH_MODEL,
                 instruction=get_google_search_instruction(
-                    topic.name, topic.query, topic.search_depth
+                    topic.name, topic.query, topic.search_depth,
+                    timeframe_instruction=tf_instruction,
                 ),
                 tools=[google_search],
                 output_key=f"research_{idx}_google",
@@ -62,9 +92,10 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
                 name=f"PerplexitySearcher_{idx}",
                 model=_RESEARCH_MODEL,
                 instruction=get_perplexity_search_instruction(
-                    topic.name, topic.query, topic.search_depth
+                    topic.name, topic.query, topic.search_depth,
+                    timeframe_instruction=tf_instruction,
                 ),
-                tools=[perplexity_search_tool],
+                tools=[_make_perplexity_tool(pf)],
                 output_key=f"research_{idx}_perplexity",
             )
             sub_agents.append(perplexity_agent)
@@ -105,10 +136,28 @@ class ConfigLoaderAgent(BaseAgent):
             state["config_recipient_email"] = self.config.newsletter.recipient_email
             state["config_dry_run"] = self.config.settings.dry_run
             state["config_output_dir"] = self.config.settings.output_dir
+            state["config_verify_links"] = self.config.settings.verify_links
+
+            # Resolve timeframes per topic
+            has_any_tf = (
+                self.config.settings.timeframe is not None
+                or any(t.timeframe is not None for t in self.config.topics)
+            )
+            if has_any_tf:
+                tf_list = []
+                for topic in self.config.topics:
+                    effective = topic.timeframe or self.config.settings.timeframe
+                    resolved = resolve_timeframe(effective)
+                    tf_list.append(dataclasses.asdict(resolved))
+                state["config_timeframes"] = tf_list
+            else:
+                state["config_timeframes"] = None
+
             logger.info(
-                "Config loaded into state: title=%s, dry_run=%s",
+                "Config loaded into state: title=%s, dry_run=%s, verify_links=%s",
                 self.config.newsletter.title,
                 self.config.settings.dry_run,
+                self.config.settings.verify_links,
             )
         yield Event(
             author=self.name,

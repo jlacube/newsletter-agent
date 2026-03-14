@@ -11,6 +11,8 @@ from newsletter_agent.agent import (
     _RESEARCH_MODEL,
     _ROOT_AGENT_NAME,
     _SYNTHESIS_MODEL,
+    ConfigLoaderAgent,
+    PipelineAbortCheckAgent,
     ResearchValidatorAgent,
     SynthesisPostProcessorAgent,
     build_pipeline,
@@ -202,29 +204,122 @@ class TestBuildPipeline:
         assert isinstance(pipeline, SequentialAgent)
         assert pipeline.name == _ROOT_AGENT_NAME
 
-    def test_root_has_five_sub_agents(self):
+    def test_root_has_seven_sub_agents(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
-        assert len(pipeline.sub_agents) == 5
+        assert len(pipeline.sub_agents) == 7
 
     def test_sub_agent_order(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
-        assert isinstance(pipeline.sub_agents[0], ParallelAgent)
-        assert pipeline.sub_agents[0].name == "ResearchPhase"
-        assert isinstance(pipeline.sub_agents[1], ResearchValidatorAgent)
-        assert pipeline.sub_agents[1].name == "ResearchValidator"
-        assert isinstance(pipeline.sub_agents[2], LlmAgent)
-        assert pipeline.sub_agents[2].name == "Synthesizer"
-        assert isinstance(pipeline.sub_agents[3], SynthesisPostProcessorAgent)
-        assert pipeline.sub_agents[3].name == "SynthesisPostProcessor"
-        assert isinstance(pipeline.sub_agents[4], SequentialAgent)
-        assert pipeline.sub_agents[4].name == "OutputPhase"
+        assert isinstance(pipeline.sub_agents[0], ConfigLoaderAgent)
+        assert pipeline.sub_agents[0].name == "ConfigLoader"
+        assert isinstance(pipeline.sub_agents[1], ParallelAgent)
+        assert pipeline.sub_agents[1].name == "ResearchPhase"
+        assert isinstance(pipeline.sub_agents[2], ResearchValidatorAgent)
+        assert pipeline.sub_agents[2].name == "ResearchValidator"
+        assert isinstance(pipeline.sub_agents[3], PipelineAbortCheckAgent)
+        assert pipeline.sub_agents[3].name == "PipelineAbortCheck"
+        assert isinstance(pipeline.sub_agents[4], LlmAgent)
+        assert pipeline.sub_agents[4].name == "Synthesizer"
+        assert isinstance(pipeline.sub_agents[5], SynthesisPostProcessorAgent)
+        assert pipeline.sub_agents[5].name == "SynthesisPostProcessor"
+        assert isinstance(pipeline.sub_agents[6], SequentialAgent)
+        assert pipeline.sub_agents[6].name == "OutputPhase"
 
     def test_output_phase_wraps_formatter_and_delivery(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
-        output_phase = pipeline.sub_agents[4]
+        output_phase = pipeline.sub_agents[6]
         assert len(output_phase.sub_agents) == 2
         assert output_phase.sub_agents[0].name == "FormatterAgent"
         assert output_phase.sub_agents[1].name == "DeliveryAgent"
+
+
+class TestConfigLoaderAgent:
+    """Verify ConfigLoaderAgent populates session state (FR-026, Section 9.1)."""
+
+    @pytest.mark.asyncio
+    async def test_populates_config_state_keys(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        agent = ConfigLoaderAgent(name="ConfigLoader", config=config)
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.session.state = {}
+
+        events = []
+        async for event in agent._run_async_impl(ctx):
+            events.append(event)
+
+        state = ctx.session.state
+        assert state["config_newsletter_title"] == "Test Newsletter"
+        assert state["config_recipient_email"] == "test@example.com"
+        assert state["config_dry_run"] is False
+        assert state["config_output_dir"] == "output/"
+        assert len(events) == 1
+
+    @pytest.mark.asyncio
+    async def test_populates_dry_run_true(self):
+        topics = [TopicConfig(name="AI", query="AI news")]
+        config = NewsletterConfig(
+            newsletter=NewsletterSettings(
+                title="Test", schedule="0 0 * * 0", recipient_email="a@b.com"
+            ),
+            settings=AppSettings(dry_run=True, output_dir="/custom/out"),
+            topics=topics,
+        )
+        agent = ConfigLoaderAgent(name="ConfigLoader", config=config)
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.session.state = {}
+
+        async for _ in agent._run_async_impl(ctx):
+            pass
+
+        assert ctx.session.state["config_dry_run"] is True
+        assert ctx.session.state["config_output_dir"] == "/custom/out"
+
+
+class TestPipelineAbortCheckAgent:
+    """Verify PipelineAbortCheckAgent aborts on research_all_failed (FR-013)."""
+
+    @pytest.mark.asyncio
+    async def test_passes_when_not_failed(self):
+        agent = PipelineAbortCheckAgent(name="AbortCheck")
+
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.session.state = {"research_all_failed": False}
+
+        events = []
+        async for event in agent._run_async_impl(ctx):
+            events.append(event)
+
+        assert len(events) == 1
+
+    @pytest.mark.asyncio
+    async def test_raises_on_all_failed(self, tmp_path):
+        agent = PipelineAbortCheckAgent(name="AbortCheck")
+
+        from unittest.mock import MagicMock, patch
+
+        ctx = MagicMock()
+        ctx.session.state = {
+            "research_all_failed": True,
+            "config_output_dir": str(tmp_path),
+        }
+
+        with patch(
+            "newsletter_agent.tools.file_output.save_newsletter_html",
+            return_value=str(tmp_path / "error.html"),
+        ):
+            with pytest.raises(RuntimeError, match="all research providers failed"):
+                async for _ in agent._run_async_impl(ctx):
+                    pass
+
+        assert ctx.session.state["delivery_status"]["status"] == "aborted"

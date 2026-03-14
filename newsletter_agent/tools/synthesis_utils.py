@@ -109,12 +109,18 @@ def _build_state_from_json(
 
 
 def _normalize_sources(raw_sources: list) -> list[dict]:
-    """Normalize and deduplicate source references."""
+    """Normalize and deduplicate source references.
+
+    Only http:// and https:// URLs are permitted to prevent non-web
+    schemes (javascript:, data:, ftp:) from reaching the newsletter HTML.
+    """
     seen: set[str] = set()
     result = []
     for src in raw_sources:
         if isinstance(src, dict) and "url" in src:
             url = str(src["url"])
+            if not url.startswith(("http://", "https://")):
+                continue
             if url not in seen:
                 seen.add(url)
                 result.append({"url": url, "title": str(src.get("title", url))})

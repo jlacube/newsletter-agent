@@ -80,6 +80,29 @@ class TestValidJsonOutput:
         assert "https://a.com" in urls
         assert "https://b.com" in urls
 
+    def test_non_http_urls_filtered(self):
+        sections = [
+            {
+                "title": "T",
+                "body_markdown": "text",
+                "sources": [
+                    {"url": "https://good.com", "title": "Good"},
+                    {"url": "javascript:alert(1)", "title": "XSS"},
+                    {"url": "data:text/html,<h1>bad</h1>", "title": "Data"},
+                    {"url": "ftp://files.example.com", "title": "FTP"},
+                    {"url": "http://plain.com", "title": "HTTP"},
+                    {"url": "relative/path", "title": "Relative"},
+                ],
+            }
+        ]
+        raw = json.dumps({"executive_summary": [], "sections": sections})
+        result = parse_synthesis_output(raw, ["T"])
+        sources = result["synthesis_0"]["sources"]
+        urls = [s["url"] for s in sources]
+        assert "https://good.com" in urls
+        assert "http://plain.com" in urls
+        assert len(sources) == 2
+
 
 class TestMarkdownWrappedJson:
     def test_json_in_code_block(self):

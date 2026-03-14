@@ -85,6 +85,39 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
     return ParallelAgent(name="ResearchPhase", sub_agents=topic_agents)
 
 
+class ConfigLoaderAgent(BaseAgent):
+    """Loads validated config values into session state.
+
+    Reads the NewsletterConfig and populates config_* state keys
+    so downstream agents (Formatter, Delivery) can access them.
+    Spec refs: Section 9.1, FR-026.
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+    config: NewsletterConfig | None = None
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        state = ctx.session.state
+        if self.config is not None:
+            state["config_newsletter_title"] = self.config.newsletter.title
+            state["config_recipient_email"] = self.config.newsletter.recipient_email
+            state["config_dry_run"] = self.config.settings.dry_run
+            state["config_output_dir"] = self.config.settings.output_dir
+            logger.info(
+                "Config loaded into state: title=%s, dry_run=%s",
+                self.config.newsletter.title,
+                self.config.settings.dry_run,
+            )
+        yield Event(
+            author=self.name,
+            content=types.Content(
+                parts=[types.Part(text="Config loaded into session state")]
+            ),
+        )
+
+
 class ResearchValidatorAgent(BaseAgent):
     """Checks research state keys after ResearchPhase completes.
 
@@ -132,6 +165,47 @@ class ResearchValidatorAgent(BaseAgent):
                     parts=[types.Part(text="Research validation passed")]
                 ),
             )
+
+
+class PipelineAbortCheckAgent(BaseAgent):
+    """Aborts the pipeline if all research providers failed.
+
+    Checks research_all_failed state key. If True, saves a fallback HTML
+    file and raises RuntimeError to halt the pipeline before synthesis.
+    Spec refs: FR-013.
+    """
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        state = ctx.session.state
+        if state.get("research_all_failed"):
+            output_dir = state.get("config_output_dir", "output/")
+            from newsletter_agent.tools.file_output import save_newsletter_html
+
+            error_html = (
+                "<html><body><h1>Newsletter Generation Failed</h1>"
+                "<p>All research providers failed for all topics. "
+                "No newsletter was generated.</p></body></html>"
+            )
+            path = save_newsletter_html(error_html, output_dir, "error")
+            state["delivery_status"] = {
+                "status": "aborted",
+                "error": "All research providers failed for all topics",
+                "fallback_file": path,
+            }
+            logger.error(
+                "Pipeline aborted: all research failed. Error page saved to %s", path
+            )
+            raise RuntimeError(
+                "Pipeline aborted: all research providers failed for all topics"
+            )
+        yield Event(
+            author=self.name,
+            content=types.Content(
+                parts=[types.Part(text="Pipeline abort check passed")]
+            ),
+        )
 
 
 class SynthesisPostProcessorAgent(BaseAgent):
@@ -204,6 +278,11 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
     Assembles the root SequentialAgent with research, synthesis, and
     output phases per spec Section 9.1.
     """
+    config_loader = ConfigLoaderAgent(
+        name="ConfigLoader",
+        config=config,
+    )
+
     research_phase = build_research_phase(config)
 
     # Collect providers configured across all topics
@@ -220,6 +299,8 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
         topic_count=len(config.topics),
         providers=sorted(all_providers),
     )
+
+    abort_check = PipelineAbortCheckAgent(name="PipelineAbortCheck")
 
     synthesis_agent = build_synthesis_agent(config)
 
@@ -246,8 +327,10 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
     return SequentialAgent(
         name=_ROOT_AGENT_NAME,
         sub_agents=[
+            config_loader,
             research_phase,
             research_validator,
+            abort_check,
             synthesis_agent,
             synthesis_post_processor,
             output_phase,

@@ -53,7 +53,7 @@ Newsletter Agent is an autonomous multi-agent system built on Google's Agent Dev
 
 - **FR-008**: For each topic, the system SHALL execute a Google Search grounding query using ADK's built-in `google_search` tool via a dedicated `LlmAgent` (due to single-tool-per-agent constraint).
 - **FR-009**: For each topic, the system SHALL execute a Perplexity Sonar API query via a custom ADK `FunctionTool` wrapping the Perplexity Python SDK in a separate `LlmAgent`.
-- **FR-010**: Research for all topics SHALL execute in parallel using ADK's `ParallelAgent`, with each topic's Google Search and Perplexity calls running concurrently.
+- **FR-010**: Research for all topics SHALL execute in parallel using ADK's `ParallelAgent`. Within each topic, search providers execute sequentially via a `SequentialAgent` (Google Search followed by Perplexity) to avoid per-topic resource contention. Cross-topic parallelism is the primary throughput mechanism.
 - **FR-011**: Each research agent SHALL store its results in the shared session state using a namespaced key: `research_{topic_index}_{provider}` (e.g., `research_0_google`, `research_0_perplexity`).
 - **FR-012**: Each research result stored in state SHALL include: the raw text response, a list of source URLs with titles, and the provider name.
 - **FR-013**: If a search provider fails (network error, API error, rate limit), the system SHALL log the error and continue with results from the other provider(s). A topic with zero successful search results SHALL produce a section noting "Research unavailable for this topic" instead of failing the entire pipeline.

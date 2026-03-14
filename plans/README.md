@@ -12,6 +12,9 @@
 | [WP03](WP03-synthesis-formatting.md) | Content Synthesis and Formatting | P1 | Complete | WP01, WP02 | No |
 | [WP04](WP04-email-delivery.md) | Email Delivery and Local Output | P1 | Complete | WP01, WP03 | No |
 | [WP05](WP05-orchestration-deployment.md) | Orchestration, Deployment, and Observability | P1 | Complete | WP01, WP02, WP03, WP04 | No |
+| [WP06](WP06-search-timeframe.md) | Search Timeframe Configuration | P2 | Complete | WP01, WP02 | Yes |
+| [WP07](WP07-link-verification.md) | Link Verification | P2 | Complete | WP01, WP03 | Yes |
+| [WP08](WP08-integration-testing.md) | Integration Testing, E2E & Documentation | P2 | Complete | WP06, WP07 | No |
 
 ## MVP Scope
 

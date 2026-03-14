@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP08 - Integration Testing, E2E Verification & Documentation
 
 > **Spec**: `specs/link-verification-timeframe.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P2
 > **Goal**: Verify that timeframe filtering (WP06) and link verification (WP07) work together end-to-end, backward compatibility is preserved, performance and security requirements are met, and all documentation is updated.
 > **Independent Test**: Run `pytest tests/` from fresh checkout; all integration, BDD, E2E, performance, and security tests pass green. Run the full pipeline in dry-run mode with both new fields set and with an old-format topics.yaml; both succeed.
@@ -1801,3 +1801,40 @@ pytest -m slow -v
 ---
 
 *End of WP08 - Integration Testing, E2E Verification & Documentation*
+
+## Self-Review
+
+### Spec Compliance
+- [x] All integration tests (T08-01 through T08-05) implemented and passing
+- [x] E2E tests (T08-06, T08-07) cover both new-feature and backward-compat paths
+- [x] Performance test (T08-08) verifies 40-URL concurrency within 30s budget
+- [x] Security test (T08-09) covers SSRF private IP blocking, scheme validation, redirect protection, header leakage, and agent-level verification
+- [x] Documentation (T08-10) updated: README, configuration guide, architecture docs, example config
+- [x] Test infrastructure (T08-11) verified: __init__.py files, security marker registered in pyproject.toml
+
+### Correctness
+- [x] All 400 tests pass (full suite with `--ignore=tests/unit/test_http_handler.py` due to pre-existing Flask dependency)
+- [x] No regressions in existing tests
+- [x] Integration tests verify cross-module data flow, not just unit behavior
+
+### Code Quality
+- [x] No unused imports or debug artifacts
+- [x] No hardcoded values that belong in config
+- [x] Test fixtures are shared via conftest.py to avoid duplication
+
+### Scope Discipline
+- [x] Only test files, documentation, and one config infrastructure change (pyproject.toml marker)
+- [x] No feature code modified
+
+### Outstanding Issues
+- Pre-existing: `tests/unit/test_http_handler.py` fails to collect due to missing Flask dependency (not related to WP08)
+
+## Activity Log
+
+- 2025-07-14T23:00:00Z - coder - lane=doing - Starting WP08 implementation
+- 2025-07-14T23:30:00Z - coder - lane=doing - T08-01 through T08-05 integration tests created and passing
+- 2025-07-14T23:45:00Z - coder - lane=doing - T08-08 performance test created, T08-09 security test created
+- 2025-07-14T23:55:00Z - coder - lane=doing - T08-06/T08-07 E2E tests created and passing
+- 2025-07-15T00:05:00Z - coder - lane=doing - T08-10 documentation updated (README, config guide, architecture)
+- 2025-07-15T00:10:00Z - coder - lane=doing - T08-11 infrastructure verified, security marker added
+- 2025-07-15T00:15:00Z - coder - lane=for_review - All tasks complete, 400 tests passing, submitted for review

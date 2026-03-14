@@ -49,6 +49,8 @@ topics:
 |-------|------|----------|---------|-------------|
 | `dry_run` | boolean | No | `false` | When `true`, saves HTML to disk instead of sending email |
 | `output_dir` | string | No | `"output/"` | Directory for HTML output (created automatically) |
+| `timeframe` | string | No | `null` | Global search timeframe constraint (see Timeframe Values below) |
+| `verify_links` | boolean | No | `false` | When `true`, verifies source URLs and removes broken links |
 
 ### Section: `topics`
 
@@ -60,6 +62,7 @@ Each topic is a mapping with these fields:
 | `query` | string | Yes | -- | 1-500 chars | Natural language search query |
 | `search_depth` | string | No | `"standard"` | `"standard"` or `"deep"` | Controls model selection and prompt detail |
 | `sources` | list | No | Both providers | `"google_search"`, `"perplexity"` | Which search providers to use |
+| `timeframe` | string | No | Inherits from settings | See Timeframe Values | Per-topic timeframe override |
 
 ### Search Depth Behavior
 
@@ -67,6 +70,40 @@ Each topic is a mapping with these fields:
 |-------|--------------|-----------------|----------|
 | `standard` | Standard instruction prompt | `sonar` | Quick research, news summaries |
 | `deep` | Detailed multi-faceted prompt | `sonar-pro` | Comprehensive analysis, trend reports |
+
+### Timeframe Values
+
+The `timeframe` field accepts the following values:
+
+| Value | Description | Perplexity Filter |
+|-------|-------------|-------------------|
+| `last_day` | Past 24 hours | `day` |
+| `last_week` | Past 7 days | `week` |
+| `last_2_weeks` | Past 14 days | `week` |
+| `last_month` | Past 30 days | `month` |
+| `last_year` | Past 365 days | None |
+| `last_N_days` | Custom: past N days (1-365) | Mapped automatically |
+| `YYYY-MM-DD..YYYY-MM-DD` | Absolute date range | None |
+
+When a timeframe is set, research agents include date constraints in their
+prompts. For Perplexity, the `search_recency_filter` parameter is used when
+the timeframe maps to a supported filter value (`day`, `week`, or `month`).
+
+Per-topic `timeframe` overrides the global setting for that topic only.
+Omitting `timeframe` entirely preserves the default behavior (no filtering).
+
+### Link Verification Behavior
+
+When `verify_links: true`, the pipeline inserts a LinkVerifier stage after
+synthesis. It concurrently checks all source URLs via HTTP HEAD (with GET
+fallback) and removes broken links from the output:
+
+- URLs returning 4xx/5xx status codes are removed
+- URLs that time out (10s default) are removed
+- URLs with DNS failures or SSL errors are removed
+- Broken markdown links `[Title](url)` become plain text `Title`
+- SSRF protections block requests to private IPs and non-HTTP schemes
+- Maximum 10 concurrent verification requests
 
 ### Validation Rules
 

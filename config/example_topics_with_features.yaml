@@ -1,0 +1,49 @@
+# =============================================================================
+# Newsletter Agent - Example Configuration with New Features
+# =============================================================================
+# Demonstrates timeframe filtering and link verification.
+# Copy this file to config/topics.yaml and customize as needed.
+# =============================================================================
+
+newsletter:
+  title: "Weekly Tech Digest"
+  schedule: "0 8 * * 0"                  # Cron: Sunday 8am UTC
+  recipient_email: "your-email@example.com"
+
+settings:
+  dry_run: true
+  output_dir: "output/"
+
+  # --- NEW: Search Timeframe ---
+  # Constrains all topics to recent content (unless overridden per topic).
+  # Valid values: last_day, last_week, last_2_weeks, last_month, last_year,
+  #               last_N_days (e.g., last_14_days), YYYY-MM-DD..YYYY-MM-DD
+  timeframe: "last_week"
+
+  # --- NEW: Link Verification ---
+  # When true, verifies all source URLs after synthesis and removes broken
+  # links from the newsletter output. SSRF-safe with concurrency limits.
+  verify_links: true
+
+topics:
+  - name: "AI Frameworks"
+    query: >-
+      Latest developments in AI agent frameworks, including LangChain,
+      CrewAI, Google ADK, and AutoGen.
+    search_depth: "deep"
+    sources:
+      - google_search
+      - perplexity
+
+  - name: "Cloud Native"
+    query: >-
+      Recent developments in cloud-native technologies, Kubernetes,
+      and major cloud provider announcements.
+    # Per-topic override: use a longer timeframe for this topic only
+    timeframe: "last_month"
+
+  - name: "Open Source Highlights"
+    query: >-
+      Notable new open source projects and major releases.
+    sources:
+      - google_search

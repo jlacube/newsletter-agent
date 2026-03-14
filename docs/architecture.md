@@ -35,6 +35,9 @@ root_agent (SequentialAgent: "NewsletterPipeline")
 +-- SynthesisPostProcessor (Custom BaseAgent)
 |     Parses synthesis_raw JSON into synthesis_N and executive_summary state keys
 |
++-- LinkVerifier (Custom BaseAgent)
+|     Verifies source URLs; removes broken links when verify_links=true (no-ops otherwise)
+|
 +-- OutputPhase (SequentialAgent)
       +-- FormatterAgent (Custom BaseAgent)
       |     Reads synthesis state, renders Jinja2 HTML template
@@ -73,6 +76,8 @@ The pipeline communicates between agents exclusively through ADK session state. 
 | `config_recipient_email` | ConfigLoader | Delivery | str |
 | `config_dry_run` | ConfigLoader | Delivery | bool |
 | `config_output_dir` | ConfigLoader | Delivery | str |
+| `config_timeframes` | ConfigLoader | Research agents | dict or None |
+| `config_verify_links` | ConfigLoader | LinkVerifier | bool |
 | `config_topic_count` | SynthesisPostProcessor | Formatter | int |
 | `pipeline_start_time` | before_agent_callback | Formatter | str (ISO 8601) |
 | `research_N_google` | GoogleSearcher_N | Synthesizer | str (raw LLM output) |
@@ -99,9 +104,11 @@ The pipeline communicates between agents exclusively through ADK session state. 
 
 6. **Post-Processing**: Parses the raw synthesis JSON into individual `synthesis_N` state keys and the `executive_summary` list.
 
-7. **Formatting**: Renders the Jinja2 HTML template with synthesis data. Sanitizes LLM-generated content through nh3 to prevent XSS.
+7. **Link Verification**: When `verify_links=true`, verifies all source URLs concurrently via HTTP HEAD/GET. Removes broken links from sources and inline markdown citations. SSRF protections block private IPs and non-HTTP schemes. No-ops when `verify_links=false` or omitted.
 
-8. **Delivery**: Sends the newsletter via Gmail (if not dry-run and recipient is configured) or saves it as an HTML file.
+8. **Formatting**: Renders the Jinja2 HTML template with synthesis data. Sanitizes LLM-generated content through nh3 to prevent XSS.
+
+9. **Delivery**: Sends the newsletter via Gmail (if not dry-run and recipient is configured) or saves it as an HTML file.
 
 ## Dynamic Agent Construction
 

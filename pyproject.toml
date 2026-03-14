@@ -12,6 +12,7 @@ markers = [
     "integration: Integration tests (requires API keys)",
     "e2e: End-to-end tests (requires full environment)",
     "performance: Performance validation tests (may be slow)",
+    "security: Security-focused tests (SSRF, header leakage)",
 ]
 
 [tool.coverage.run]

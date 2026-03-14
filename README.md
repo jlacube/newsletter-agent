@@ -76,6 +76,8 @@ newsletter:
 settings:
   dry_run: true                             # true = save HTML, false = send email
   output_dir: "output/"
+  timeframe: "last_week"                    # Optional: constrain research to recent content
+  verify_links: true                        # Optional: verify source URLs before output
 
 topics:
   - name: "AI Frameworks"
@@ -87,6 +89,7 @@ topics:
 
   - name: "Cloud Native"
     query: "Recent cloud-native technology developments"
+    timeframe: "last_month"                 # Per-topic override
     # Uses defaults: standard depth, both sources
 ```
 
@@ -95,7 +98,44 @@ topics:
 - Topic names must be unique (max 100 chars)
 - Queries max 500 chars
 - `search_depth`: `"standard"` (default) or `"deep"`
-- `sources`: `["google_search", "perplexity"]` (default -- both)
+- `sources`: `["google_search", "perplexity"]` (default - both)
+- `timeframe`: constrains research to recent content (see below)
+- `verify_links`: when `true`, verifies all source URLs and removes broken ones
+
+### Timeframe Configuration
+
+The `timeframe` field constrains research to content published within a specified period.
+It can be set globally under `settings` and overridden per topic.
+
+**Supported values:**
+| Value | Description |
+|-------|-------------|
+| `last_day` | Past 24 hours |
+| `last_week` | Past 7 days |
+| `last_2_weeks` | Past 14 days |
+| `last_month` | Past 30 days |
+| `last_year` | Past 365 days |
+| `last_N_days` | Custom: past N days (1-365) |
+| `YYYY-MM-DD..YYYY-MM-DD` | Absolute date range |
+
+When set, research agents include date constraints in their prompts and
+Perplexity search uses the `search_recency_filter` parameter when applicable.
+
+Omitting `timeframe` preserves the default behavior (no date filtering).
+
+### Link Verification
+
+When `verify_links: true` is set, the pipeline verifies all source URLs after
+synthesis and before formatting. URLs that return HTTP errors (404, 500, etc.),
+time out, or fail DNS resolution are removed from the newsletter output.
+
+- Broken markdown links `[Title](url)` are replaced with plain text `Title`
+- Broken sources are removed from the source list
+- SSRF protections block requests to private IPs and non-HTTP schemes
+- Up to 10 concurrent verification requests with a 10-second timeout per URL
+
+Omitting `verify_links` (or setting it to `false`) preserves all source links
+without verification.
 
 ## Gmail OAuth2 Setup
 
@@ -148,6 +188,9 @@ pytest tests/ -v
 # Unit tests only
 pytest tests/unit/ -v
 
+# Integration tests
+pytest tests/integration/ -v
+
 # E2E tests
 pytest tests/e2e/ -v
 
@@ -168,6 +211,7 @@ newsletter_agent/
   http_handler.py    - Cloud Run HTTP trigger endpoint
   config/
     schema.py        - Pydantic config models and loader
+    timeframe.py     - Timeframe validation and resolution
   prompts/
     research_google.py     - Google Search agent instructions
     research_perplexity.py - Perplexity agent instructions
@@ -178,6 +222,8 @@ newsletter_agent/
     sanitizer.py           - HTML sanitization (nh3)
     formatter.py           - HTML rendering (Jinja2)
     delivery.py            - Email/file delivery agent
+    link_verifier.py       - URL verification and SSRF protection
+    link_verifier_agent.py - Post-synthesis link verification agent
     gmail_auth.py          - Gmail OAuth2 credentials
     gmail_send.py          - Gmail API send
     file_output.py         - Local file output
@@ -211,6 +257,9 @@ Root SequentialAgent ("NewsletterPipeline")
   +-- Synthesizer (LlmAgent, gemini-2.5-pro)
   |
   +-- SynthesisPostProcessor (BaseAgent)
+  |
+  +-- LinkVerifier (BaseAgent)
+  |     Verifies source URLs; removes broken links (when verify_links=true)
   |
   +-- OutputPhase (SequentialAgent)
         +-- FormatterAgent (BaseAgent, Jinja2 HTML)

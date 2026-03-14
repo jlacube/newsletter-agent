@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP02 - Research Pipeline
@@ -1620,6 +1620,7 @@ class TestBuildResearchPhase:
 - 2026-03-14T04:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (5 FAILs) -- awaiting remediation
 - 2026-03-14T05:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05)
 - 2026-03-14T06:00:00Z - coder - lane=for_review - All feedback items addressed, resubmitted for review
+- 2025-07-25T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (3 WARNs)
 
 ## Review
 
@@ -1793,3 +1794,57 @@ The core implementation quality is solid: the Perplexity tool, agent factory, re
 3. **(FB-03)** Implement total-failure detection. Add a post-research-phase check (callback or lightweight agent) that inspects all `research_{N}_{provider}` state keys and sets `research_all_failed: true` if all are errors/missing. Log at CRITICAL level.
 4. **(FB-04)** Add at least 1 test to `test_perplexity_search.py` to meet the 10-test minimum. Suggested: test for `APIStatusError` with 401 status code.
 5. **(FB-05)** Maintain one-commit-per-task discipline going forward. This remediation may use a single commit.
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-25
+> **Verdict**: Approved with Findings
+> **Scope**: Re-review of FB-01 through FB-05 from Round 1 + regression check
+
+### Summary
+
+All five original FAILs are resolved. The Spec Compliance Checklist is present for all 11 tasks. BDD tests exist with 4 scenarios. ResearchValidatorAgent implements total-failure detection with CRITICAL logging. test_perplexity_search.py has exactly 10 tests meeting the minimum. Two WARNs carry forward from Round 1 (config loader agent absent, test edge case gaps) plus the commit discipline WARN. None block correctness. All 243 tests pass.
+
+### Re-Review Findings
+
+#### PASS - FB-01 Remediation: Spec Compliance Checklist
+- **Original**: FAIL - Missing entirely
+- **Status**: Resolved
+- **Evidence**: Checklist present at WP02-research-pipeline.md lines 1517-1605, covers T02-01 through T02-11.
+
+#### PASS - FB-02 Remediation: BDD Tests
+- **Original**: FAIL - tests/bdd/test_research_pipeline.py missing
+- **Status**: Resolved
+- **Evidence**: File exists with 4 scenario classes: TestSuccessfulDualSourceResearch, TestSingleProviderFailure, TestParallelExecutionMultipleTopics, TestAllProvidersFail.
+
+#### PASS - FB-03 Remediation: Total-Failure Detection
+- **Original**: FAIL - Not implemented
+- **Status**: Resolved
+- **Evidence**: ResearchValidatorAgent at agent.py L96 checks all research keys, sets research_all_failed=True, logs at CRITICAL level.
+
+#### PASS - FB-04 Remediation: Test Count
+- **Original**: FAIL - 9 tests, minimum 10
+- **Status**: Resolved
+- **Evidence**: test_perplexity_search.py now has 10 test methods including test_api_auth_error_401_returns_error_dict.
+
+#### WARN - FB-05 Carried Forward: Commit Discipline
+- **Original**: FAIL downgraded to WARN
+- **Detail**: Original 11 tasks batched in single commit. Remediation used single remediation commit (acceptable). Future WPs should use one-commit-per-task.
+
+#### WARN - Carried Forward: Config Loader Agent Absent (T02-07)
+- **Detail**: Pipeline has research_phase as first child, no config_loader_agent sub-agent. Config loaded at module level. Functionally correct but deviates from literal AC text.
+
+#### WARN - Carried Forward: Test Edge Case Gaps (T02-08, T02-10)
+- **Detail**: Some AC-enumerated edge cases absent (empty query, response timeout for T02-08; invalid URLs, very long text for T02-10). Minimum counts met.
+
+#### PASS - Regression Check
+- **Detail**: All 243 tests pass. No encoding violations. No new files outside WP scope.
+
+### Statistics (Re-Review)
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| FB Remediation | 4 | 1 | 0 |
+| Regression | 1 | 0 | 0 |
+| Carried Forward | 0 | 2 | 0 |

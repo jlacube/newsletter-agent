@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP03 - Content Synthesis and Newsletter Formatting
@@ -1654,6 +1654,7 @@ class TestNewsletterFormatting:
 - 2026-03-14T00:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (4 FAILs) -- awaiting remediation
 - 2026-03-14T05:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04)
 - 2026-03-14T06:00:00Z - coder - lane=for_review - All feedback items addressed, resubmitted for review
+- 2025-07-25T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (1 WARN)
 
 ## Review
 
@@ -1789,3 +1790,50 @@ Changes Required. The WP has one critical functional failure: `parse_synthesis_o
 2. **(FB-02)** Update FormatterAgent to read expected topic count from state and insert "Research unavailable" placeholders for missing synthesis sections.
 3. **(FB-03)** Add Spec Compliance Checklists to the WP file.
 4. **(FB-04)** Add Activity Log entries for coder lane transitions.
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-25
+> **Verdict**: Approved with Findings
+> **Scope**: Re-review of FB-01 through FB-04 from Round 1 + regression check
+
+### Summary
+
+All four original FAILs are resolved. SynthesisPostProcessorAgent correctly wires parse_synthesis_output into the pipeline between the Synthesizer and OutputPhase. FormatterAgent reads config_topic_count from state and inserts placeholder sections for missing synthesis data. Spec Compliance Checklist is present for all 11 tasks. Activity Log has coder lane transition entries. One WARN carries forward for batched commits. All 243 tests pass with no regressions.
+
+### Re-Review Findings
+
+#### PASS - FB-01 Remediation: parse_synthesis_output Wiring
+- **Original**: FAIL - parse_synthesis_output implemented but never called in production
+- **Status**: Resolved
+- **Evidence**: SynthesisPostProcessorAgent at agent.py L131 imports and calls parse_synthesis_output (L27, L148). Placed in pipeline between Synthesizer and OutputPhase at L207.
+
+#### PASS - FB-02 Remediation: Missing Synthesis Section Handling
+- **Original**: FAIL - FormatterAgent silently omits missing topics
+- **Status**: Resolved
+- **Evidence**: formatter.py L60 reads config_topic_count from state, iterates expected count, inserts placeholder sections with "Research unavailable for this topic" for missing synthesis_{N} keys.
+
+#### PASS - FB-03 Remediation: Spec Compliance Checklist
+- **Original**: FAIL - Missing entirely
+- **Status**: Resolved
+- **Evidence**: Checklist present at WP03-synthesis-formatting.md lines 1549-1641, covers T03-01 through T03-11.
+
+#### PASS - FB-04 Remediation: Activity Log
+- **Original**: FAIL - Only planner entry present
+- **Status**: Resolved
+- **Evidence**: Coder entries at lines 1655-1656: lane=doing and lane=for_review transitions.
+
+#### WARN - Carried Forward: Commit Discipline
+- **Detail**: All 11 tasks batched in single commit. Remediation used single remediation commit (acceptable). Future WPs should use one-commit-per-task.
+
+#### PASS - Regression Check
+- **Detail**: All 243 tests pass including 78 WP03-specific tests. Formatter-specific tests (test_html_formatter.py, test_synthesis_formatting.py) all pass. No encoding violations. No new files outside WP scope.
+
+### Statistics (Re-Review)
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| FB Remediation | 4 | 0 | 0 |
+| Regression | 1 | 0 | 0 |
+| Carried Forward | 0 | 1 | 0 |

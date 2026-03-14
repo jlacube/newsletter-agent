@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP03 - Content Synthesis and Newsletter Formatting
 
 > **Spec**: `specs/newsletter-agent.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: Research results are synthesized into deep analysis sections with citations, and rendered into a professional HTML newsletter with executive summary, TOC, and inline CSS
 > **Independent Test**: Populate session state with mock research results for 3 topics, run synthesis and formatting, verify the output HTML contains all required sections with correct structure

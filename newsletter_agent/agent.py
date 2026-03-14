@@ -1,7 +1,7 @@
 """
-Newsletter Agent - root agent and research phase factory.
+Newsletter Agent - root agent, research phase, synthesis, and formatting.
 
-Spec refs: Section 9.1, FR-008 through FR-014.
+Spec refs: Section 9.1, FR-008 through FR-026.
 """
 
 import logging
@@ -12,11 +12,14 @@ from google.adk.tools import google_search
 from newsletter_agent.config.schema import NewsletterConfig, load_config
 from newsletter_agent.prompts.research_google import get_google_search_instruction
 from newsletter_agent.prompts.research_perplexity import get_perplexity_search_instruction
+from newsletter_agent.prompts.synthesis import get_synthesis_instruction
+from newsletter_agent.tools.formatter import FormatterAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool
 
 logger = logging.getLogger(__name__)
 
 _RESEARCH_MODEL = "gemini-2.5-flash"
+_SYNTHESIS_MODEL = "gemini-2.5-pro"
 
 
 def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
@@ -70,6 +73,29 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
     return ParallelAgent(name="ResearchPhase", sub_agents=topic_agents)
 
 
+def build_synthesis_agent(config: NewsletterConfig) -> LlmAgent:
+    """Build the synthesis LlmAgent from config.
+
+    The synthesis agent reads research state keys and produces a JSON
+    blob with executive summary and per-topic analysis. The raw output
+    is stored in session state via output_key for post-processing.
+    """
+    topic_names = [t.name for t in config.topics]
+    instruction = get_synthesis_instruction(topic_names, len(topic_names))
+
+    return LlmAgent(
+        name="SynthesisAgent",
+        model=_SYNTHESIS_MODEL,
+        instruction=instruction,
+        output_key="synthesis_raw",
+    )
+
+
+def build_formatter_agent() -> FormatterAgent:
+    """Build the FormatterAgent that renders HTML from synthesis state."""
+    return FormatterAgent(name="FormatterAgent")
+
+
 # ---------------------------------------------------------------------------
 # Build root agent at module level (Option 3 from WP02 plan)
 # ---------------------------------------------------------------------------
@@ -77,9 +103,11 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
 try:
     _config = load_config()
     _research_phase = build_research_phase(_config)
+    _synthesis_agent = build_synthesis_agent(_config)
+    _formatter_agent = build_formatter_agent()
     root_agent = SequentialAgent(
         name="newsletter_agent",
-        sub_agents=[_research_phase],
+        sub_agents=[_research_phase, _synthesis_agent, _formatter_agent],
     )
 except Exception:
     logger.warning("Config not loaded; using stub agent")

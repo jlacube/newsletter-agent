@@ -25,6 +25,9 @@ google-auth-oauthlib>=1.2
 # HTTP client (Perplexity API + E2E tests)
 httpx>=0.27
 
+# Perplexity API (OpenAI-compatible client)
+openai>=1.0
+
 # =============================================================================
 # Test Dependencies
 # =============================================================================

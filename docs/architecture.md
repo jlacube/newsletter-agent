@@ -120,7 +120,7 @@ The number of research agents is determined at startup by the topic count in `co
 - **URL Filtering**: Source URLs from both research and synthesis are filtered to allow only `http://` and `https://` schemes, preventing `javascript:`, `data:`, and other dangerous URI schemes.
 - **Jinja2 Autoescape**: The HTML template uses `autoescape=True` to prevent XSS from any unescaped variables.
 - **No Secrets in Code**: All credentials are loaded from environment variables. The `.env` file is gitignored.
-- **SSRF Prevention**: The Perplexity API URL is hardcoded; no user-controlled URLs are used for outbound requests.
+- **SSRF Prevention**: The Perplexity API URL is hardcoded. The link verifier makes outbound requests to user-sourced URLs but applies SSRF protections: private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1, fc00::/7) are blocked, only http/https schemes are allowed, and post-redirect destinations are re-checked.
 - **Gmail OAuth2**: Uses refresh tokens with minimal scope (`gmail.send` only).
 
 ## Error Handling Strategy

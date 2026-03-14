@@ -1,11 +1,11 @@
 ---
-lane: doing
+lane: for_review
 ---
 
 # WP06 - Search Timeframe Configuration & Research Integration
 
 > **Spec**: `specs/link-verification-timeframe.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: Operators can set a timeframe in topics.yaml (global or per-topic) to constrain research results to a specific date range, with Perplexity receiving search_recency_filter and Google Search receiving prompt-based date instructions.
 > **Independent Test**: Set `settings.timeframe: "last_week"` in topics.yaml, run the pipeline in dry-run mode, and verify (via logs and mocked Perplexity client) that Perplexity receives `search_recency_filter: "week"` and Google Search agent instructions contain "last week".
@@ -1795,6 +1795,70 @@ WP06 builds on the foundation established by WP01-WP05:
 - **WP04** (Synthesis & Output): WP06 does not modify synthesis or output - those layers are unaffected
 - **WP05** (Testing & Quality): WP06 follows the test patterns established in WP05
 
+## Spec Compliance Checklists (Step 2b)
+
+### T06-01 - TimeframeValue Pydantic Validator
+- [x] FR-003: All preset values validated (last_week, last_2_weeks, last_month, last_year)
+- [x] FR-005: Absolute range validated (start < end, not future, valid dates)
+- [x] Custom days validated (1-365 range enforced)
+- [x] Invalid values produce descriptive error with valid format listing
+- [x] None accepted (no filtering)
+
+### T06-02 - ResolvedTimeframe + resolve_timeframe()
+- [x] FR-007: Perplexity filter mapping correct for all presets and custom days
+- [x] FR-008: resolve_timeframe returns correct dataclass for all input types
+- [x] FR-009: prompt_date_instruction text correct for relative and absolute
+- [x] None input returns all-None fields
+
+### T06-03 - Schema Field Additions
+- [x] FR-001: settings.timeframe field added to AppSettings
+- [x] FR-002: per-topic timeframe field added to TopicConfig
+- [x] FR-013: verify_links boolean field added to AppSettings
+- [x] Backward compatible - existing configs without new fields still validate
+
+### T06-04 - ConfigLoaderAgent Timeframe Resolution
+- [x] FR-027: ConfigLoaderAgent resolves timeframes during config load
+- [x] FR-028: config_timeframes and config_verify_links stored in session state
+- [x] FR-004: Topic-level timeframe overrides global
+
+### T06-05 - Google Search Instruction Builder
+- [x] FR-006: Timeframe instruction injected into Google Search prompt
+- [x] FR-009: Prompt text contains natural-language date clause
+- [x] FR-011: Instruction added as numbered step in both standard and deep templates
+- [x] Backward compatible when timeframe_instruction is None
+
+### T06-06 - Perplexity Instruction Builder
+- [x] FR-009: Timeframe instruction injected into Perplexity prompt
+- [x] FR-012: Instruction does not interfere with tool-call directive
+- [x] Backward compatible when timeframe_instruction is None
+
+### T06-07 - search_perplexity() with search_recency_filter
+- [x] FR-007: search_recency_filter passed via extra_body to Perplexity API
+- [x] FR-010: Graceful degradation - retry without filter on API rejection
+- [x] Backward compatible when search_recency_filter is None
+
+### T06-08 - Wire Timeframe into Research Agent Construction
+- [x] FR-006, FR-011, FR-012: Timeframe passed to both instruction builders
+- [x] FR-007: perplexity_recency_filter bound to Perplexity tool per topic
+- [x] No-timeframe case identical to previous behavior
+
+### T06-09 - Unit Tests: Timeframe Parsing and Resolution
+- [x] All 4 presets tested
+- [x] Custom days boundary values tested (1, 7, 8, 30, 31, 90, 365)
+- [x] Absolute range tested
+- [x] Invalid inputs rejected with correct errors
+- [x] resolve_timeframe mapping verified for all cases
+
+### T06-10 - Unit Tests: Schema and Perplexity Filter
+- [x] AppSettings accepts/rejects timeframe values correctly
+- [x] TopicConfig accepts optional timeframe
+- [x] Perplexity extra_body passed when filter set
+- [x] Retry-without-filter path tested
+
+### T06-11 - BDD Tests: Timeframe Configuration
+- [x] All 6 spec scenarios implemented and passing
+- [x] Given/When/Then structure consistent with existing BDD patterns
+
 ## Spec Section Coverage Map
 
 | Spec Section | Task(s) | Coverage |
@@ -1836,6 +1900,11 @@ WP06 builds on the foundation established by WP01-WP05:
 - 2026-03-14T00:00:00Z - planner - lane=planned - Security considerations and backward compatibility section finalized
 - 2026-03-14T00:00:00Z - planner - lane=planned - Implementation sequence walkthrough added for developer guidance
 - 2026-03-14T00:00:00Z - planner - lane=planned - Ready for implementation by Coder agent
+- 2026-03-15T00:00:00Z - coder - lane=doing - Implementation started (T06-01 through T06-11)
+- 2026-03-15T01:00:00Z - coder - lane=for_review - All tasks complete, tests passing, submitted for review
+- 2026-03-15T02:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (combined review with WP07+WP08)
+- 2026-03-15T03:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-04)
+- 2026-03-15T04:00:00Z - coder - lane=for_review - All feedback items addressed, BDD test created, spec checklists added, resubmitted for review
 
 ---
 

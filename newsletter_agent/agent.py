@@ -5,7 +5,6 @@ Spec refs: Section 9.1, FR-008 through FR-035.
 """
 
 import dataclasses
-import functools
 import logging
 from collections.abc import AsyncGenerator
 
@@ -20,7 +19,7 @@ from google.adk.tools import FunctionTool, google_search
 from google.genai import types
 
 from newsletter_agent.config.schema import NewsletterConfig, load_config
-from newsletter_agent.config.timeframe import ResolvedTimeframe, resolve_timeframe
+from newsletter_agent.config.timeframe import resolve_timeframe
 from newsletter_agent.prompts.research_google import get_google_search_instruction
 from newsletter_agent.prompts.research_perplexity import get_perplexity_search_instruction
 from newsletter_agent.prompts.synthesis import get_synthesis_instruction

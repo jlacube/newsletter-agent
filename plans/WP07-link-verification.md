@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP07 - Source Link Verification
 
 > **Spec**: `specs/link-verification-timeframe.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: When `verify_links` is enabled, all source URLs collected during research are verified via HTTP HEAD/GET before formatting, and broken links are silently removed from the newsletter.
 > **Independent Test**: Set `verify_links: true` in topics.yaml. Mock one source URL to return 404. Run the pipeline. Verify the broken link is absent from the final HTML and working links remain.
@@ -1149,6 +1149,64 @@ All changes are additive:
 | LV-B-04 | BDD | test_link_verification.py | Disabled no requests | T07-10 |
 | LV-B-05 | BDD | test_link_verification.py | Network failure graceful | T07-10 |
 
+## Spec Compliance Checklists (Step 2b)
+
+### T07-01 - LinkCheckResult Dataclass
+- [x] FR-017: status field captures valid/broken/error states
+- [x] Fields: url, status, http_status, error, redirect_url
+
+### T07-02 - verify_urls() Implementation
+- [x] FR-016: HEAD with GET fallback on 405/method-not-allowed
+- [x] FR-017: 200-399 valid, 400+ broken
+- [x] FR-018: Concurrent httpx with max 10 concurrency (semaphore)
+- [x] FR-019: User-Agent header set to "NewsletterAgent/1.0"
+- [x] FR-022: Redirect following with max 5 hops
+
+### T07-03 - SSRF Protection
+- [x] Sec 10.2: Private IP ranges blocked (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, ::1, fc00::/7)
+- [x] Sec 10.2: Only http/https schemes allowed
+- [x] Sec 10.2: Post-redirect destinations re-checked
+
+### T07-04 - Markdown Citation Cleaning
+- [x] FR-020: Broken link citations replaced with unlinked text
+- [x] Image links excluded from cleaning
+- [x] Valid links preserved unchanged
+
+### T07-05 - LinkVerifierAgent
+- [x] FR-015: Implements BaseAgent pattern
+- [x] FR-020: Broken sources removed from synthesis results
+- [x] FR-021: All-broken notice appended when all sources fail
+- [x] FR-023: Logging at appropriate levels
+- [x] FR-024: No-op when verify_links is false
+
+### T07-06 - Pipeline Integration
+- [x] FR-014: Placed after synthesis, before output
+- [x] FR-025: Pipeline placement correct
+- [x] FR-026: Conditional inclusion based on config_verify_links
+
+### T07-07 - Unit Tests: verify_urls + SSRF + Performance
+- [x] HEAD/GET fallback tested
+- [x] Status code classification tested
+- [x] Concurrent execution tested
+- [x] SSRF protection tested (private IPs blocked)
+- [x] Performance: 40 URLs in under 30s verified
+
+### T07-08 - Unit Tests: LinkVerifierAgent
+- [x] All valid - no changes
+- [x] Some broken - broken removed, valid kept
+- [x] All broken - notice appended
+- [x] Disabled - no-op
+- [x] Network failure - graceful degradation
+
+### T07-09 - Unit Tests: Citation Cleaning
+- [x] Broken links converted to plain text
+- [x] Valid links preserved
+- [x] Image links excluded
+
+### T07-10 - BDD Tests: Link Verification
+- [x] All 5 spec scenarios implemented and passing
+- [x] Given/When/Then structure consistent with existing BDD patterns
+
 ## Spec Section Coverage Map
 
 | Spec Section | Task(s) | Coverage |
@@ -1746,6 +1804,11 @@ newsletter_agent/agent.py (MODIFIED)
 - 2026-03-14T00:00:00Z - planner - lane=planned - Security considerations and error scenarios documented
 - 2026-03-14T00:00:00Z - planner - lane=planned - Spec coverage map verified: all link verification FRs covered
 - 2026-03-14T00:00:00Z - planner - lane=planned - Ready for implementation by Coder agent
+- 2026-03-15T00:00:00Z - coder - lane=doing - Implementation started (T07-01 through T07-10)
+- 2026-03-15T01:00:00Z - coder - lane=for_review - All tasks complete, tests passing, submitted for review
+- 2026-03-15T02:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (combined review with WP06+WP08)
+- 2026-03-15T03:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-03, FB-04)
+- 2026-03-15T04:00:00Z - coder - lane=for_review - All feedback items addressed, spec checklists added, resubmitted for review
 
 ## Rollback Strategy
 

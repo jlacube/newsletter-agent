@@ -24,6 +24,8 @@ newsletter:
 settings:
   dry_run: true|false          # Default: false
   output_dir: "path/"          # Default: "output/"
+  timeframe: "last_week"       # Optional: search timeframe constraint
+  verify_links: true|false     # Default: false -- verify source URLs
 
 # Research topics (1-20 items)
 topics:
@@ -33,6 +35,7 @@ topics:
     sources:                   # Default: ["google_search", "perplexity"]
       - google_search
       - perplexity
+    timeframe: "last_month"    # Optional: per-topic timeframe override
 ```
 
 ### Section: `newsletter`
@@ -79,7 +82,7 @@ The `timeframe` field accepts the following values:
 |-------|-------------|-------------------|
 | `last_day` | Past 24 hours | `day` |
 | `last_week` | Past 7 days | `week` |
-| `last_2_weeks` | Past 14 days | `week` |
+| `last_2_weeks` | Past 14 days | `month` |
 | `last_month` | Past 30 days | `month` |
 | `last_year` | Past 365 days | None |
 | `last_N_days` | Custom: past N days (1-365) | Mapped automatically |

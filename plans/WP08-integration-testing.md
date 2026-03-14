@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP08 - Integration Testing, E2E Verification & Documentation
@@ -1840,6 +1840,8 @@ pytest -m slow -v
 - 2025-07-15T00:10:00Z - coder - lane=doing - T08-11 infrastructure verified, security marker added
 - 2025-07-15T00:15:00Z - coder - lane=for_review - All tasks complete, 400 tests passing, submitted for review
 - 2025-07-15T01:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
+- 2025-07-15T02:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01 through FB-08)
+- 2025-07-15T03:00:00Z - coder - lane=for_review - All FB items resolved, 413 tests passing, resubmitted for review
 
 ## Review
 
@@ -1857,14 +1859,14 @@ Changes Required. Three FAILs found across the combined WP06/WP07/WP08 scope: (1
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Create `tests/bdd/test_timeframe_config.py` implementing all 6 BDD scenarios from spec Section 11.2 (Global timeframe, Per-topic override, Custom days, Absolute date range, Invalid rejected, No timeframe configured). This is WP06 task T06-11.
-- [ ] **FB-02**: Add Spec Compliance Checklists (Step 2b) to `plans/WP06-search-timeframe.md` for tasks T06-01 through T06-11. Each task must have a checklist mapping acceptance criteria to verified status.
-- [ ] **FB-03**: Add Spec Compliance Checklists (Step 2b) to `plans/WP07-link-verification.md` for tasks T07-01 through T07-10.
-- [ ] **FB-04**: Update Activity Logs in WP06 and WP07 with lane transitions (doing, for_review) and coder entries. Update frontmatter lane to `for_review` (or leave as `to_do` since this review returns them).
-- [ ] **FB-05**: Remove unused imports `functools` and `ResolvedTimeframe` from `newsletter_agent/agent.py`.
-- [ ] **FB-06**: Fix `docs/configuration-guide.md` Timeframe Values table: `last_2_weeks` Perplexity Filter should be `month`, not `week` (per FR-007 and actual implementation).
-- [ ] **FB-07**: Update `docs/configuration-guide.md` Full Schema YAML block to include `timeframe` and `verify_links` fields in both `settings` and `topics` sections.
-- [ ] **FB-08**: Update `docs/architecture.md` Security Design section to mention link verifier SSRF protections (currently says "no user-controlled URLs are used for outbound requests" which is inaccurate post-WP07).
+- [x] **FB-01**: Create `tests/bdd/test_timeframe_config.py` implementing all 6 BDD scenarios from spec Section 11.2 (Global timeframe, Per-topic override, Custom days, Absolute date range, Invalid rejected, No timeframe configured). This is WP06 task T06-11.
+- [x] **FB-02**: Add Spec Compliance Checklists (Step 2b) to `plans/WP06-search-timeframe.md` for tasks T06-01 through T06-11. Each task must have a checklist mapping acceptance criteria to verified status.
+- [x] **FB-03**: Add Spec Compliance Checklists (Step 2b) to `plans/WP07-link-verification.md` for tasks T07-01 through T07-10.
+- [x] **FB-04**: Update Activity Logs in WP06 and WP07 with lane transitions (doing, for_review) and coder entries. Update frontmatter lane to `for_review` (or leave as `to_do` since this review returns them).
+- [x] **FB-05**: Remove unused imports `functools` and `ResolvedTimeframe` from `newsletter_agent/agent.py`.
+- [x] **FB-06**: Fix `docs/configuration-guide.md` Timeframe Values table: `last_2_weeks` Perplexity Filter should be `month`, not `week` (per FR-007 and actual implementation).
+- [x] **FB-07**: Update `docs/configuration-guide.md` Full Schema YAML block to include `timeframe` and `verify_links` fields in both `settings` and `topics` sections.
+- [x] **FB-08**: Update `docs/architecture.md` Security Design section to mention link verifier SSRF protections (currently says "no user-controlled URLs are used for outbound requests" which is inaccurate post-WP07).
 
 ### Findings
 

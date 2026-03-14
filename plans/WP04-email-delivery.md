@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP04 - Email Delivery and Local Output
@@ -1903,3 +1904,192 @@ These packages should be added to `pyproject.toml` or `requirements.txt` during 
 ## Activity Log
 
 - 2025-01-01T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-14T00:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (2 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-14
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Changes Required. Two FAILs found: the Spec Compliance Checklist is entirely missing (process violation), and T04-10 (delivery agent unit tests) has 7 tests against a required minimum of 8. Six WARNs cover: incomplete Activity Log, batched commits, FR-030 From header deviation, incomplete `_strip_html` tag handling, missing IOError wrapping in file_output.py, and dead `GmailSendError` class. Core implementation logic is solid -- all 38 tests pass, the delivery agent correctly handles all three paths (send, dry-run, fallback), Gmail OAuth2 is well-implemented, and the pipeline wiring is correct.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Add Spec Compliance Checklist (Step 2b) for every task T04-01 through T04-11 in the WP file. Each task must have a checklist mapping acceptance criteria to verified status.
+- [ ] **FB-02**: Add at least 1 more unit test to `tests/unit/test_delivery_agent.py` to meet the T04-10 requirement of 8+ tests. The missing scenario is "missing newsletter_html key in state" (key absent, not empty string). Verify the agent handles it gracefully.
+
+### Findings
+
+#### FAIL - Process Compliance: Spec Compliance Checklist
+- **Requirement**: WP process Step 2b -- Spec Compliance Checklist for each task
+- **Status**: Missing
+- **Detail**: No Spec Compliance Checklist section exists for any task (T04-01 through T04-11). The Coder must complete Step 2b before submitting for review.
+- **Evidence**: Searched WP04 file for "Spec Compliance Checklist" and "Checklist" -- no matches.
+
+#### FAIL - Test Coverage: T04-10 Delivery Agent Tests
+- **Requirement**: T04-10 acceptance criteria -- "at least 8 test cases"
+- **Status**: Partial (7 of 8)
+- **Detail**: `tests/unit/test_delivery_agent.py` contains 7 test functions. Required coverage list includes "missing newsletter_html in state" which is not tested (current tests use `has_html=False` which sets the key to empty string, not a missing key).
+- **Evidence**: [tests/unit/test_delivery_agent.py](tests/unit/test_delivery_agent.py) -- 7 test methods across 5 test classes.
+
+#### WARN - Process Compliance: Activity Log incomplete
+- **Requirement**: Activity Log entries for lane transitions
+- **Status**: Incomplete
+- **Detail**: Only the initial planner entry exists. No entries for coder starting implementation, completing tasks, or moving to for_review.
+- **Evidence**: [plans/WP04-email-delivery.md](plans/WP04-email-delivery.md#L1905) -- single entry.
+
+#### WARN - Process Compliance: Batched commits
+- **Requirement**: Commit history should show one commit per task
+- **Status**: Deviating
+- **Detail**: All 11 tasks (T04-01 through T04-11) were committed in a single commit `a30eaa1`. This is consistent with the project-wide pattern (WP01-WP03 also use batched commits) but does not match one-per-task guidance.
+- **Evidence**: `git log --oneline` shows `a30eaa1 feat(delivery): add Gmail send, OAuth auth, file output, delivery agent with tests (WP04)` as the sole WP04 commit.
+
+#### WARN - Spec Adherence: FR-030 Email From field
+- **Requirement**: FR-030 -- "The email From field SHALL be the authenticated Gmail account"
+- **Status**: Deviating
+- **Detail**: `gmail_send.py` line 42 sets `message["From"] = recipient_email` with the comment "MVP: operator is also the sender". The spec says From SHALL be the authenticated Gmail account. While the operator is the recipient in MVP, the From field should come from the authenticated credentials, not be hardcoded to recipient_email. Gmail API uses `userId="me"` so the actual sender is the authenticated account regardless, but the MIME header is technically incorrect.
+- **Evidence**: [newsletter_agent/tools/gmail_send.py](newsletter_agent/tools/gmail_send.py#L42)
+
+#### WARN - Spec Adherence: _strip_html incomplete tag handling
+- **Requirement**: T04-02 implementation guidance and WP reference implementation
+- **Status**: Partial
+- **Detail**: `_strip_html()` in `gmail_send.py` is missing: (1) `re.IGNORECASE` flags on all regex patterns, (2) `</li>` to newline conversion, (3) `</h[1-6]>` to double-newline conversion, (4) `[ \t]+` horizontal whitespace compression. This reduces plain-text fallback quality for emails with mixed-case HTML tags or list/heading elements.
+- **Evidence**: [newsletter_agent/tools/gmail_send.py](newsletter_agent/tools/gmail_send.py#L68-L72) vs WP reference implementation lines 695-701.
+
+#### WARN - Spec Adherence: file_output.py missing descriptive IOError wrapping
+- **Requirement**: T04-03 acceptance criteria -- "the function raises IOError with a descriptive message"
+- **Status**: Partial
+- **Detail**: `save_newsletter_html()` calls `mkdir(parents=True, exist_ok=True)` without wrapping `OSError` in a descriptive `IOError`. In Python 3 `IOError is OSError`, so the type constraint is satisfied, but the descriptive error message with context ("Cannot create output directory 'path'") is missing. The WP reference implementation explicitly wraps it.
+- **Evidence**: [newsletter_agent/tools/file_output.py](newsletter_agent/tools/file_output.py#L26-L27)
+
+#### WARN - Architecture: Dead code -- GmailSendError
+- **Requirement**: Section 9.3 -- clean module structure
+- **Status**: Deviating
+- **Detail**: `GmailSendError` is declared in `gmail_auth.py` (line 24) but never imported or used anywhere in the codebase. `gmail_send.py` returns error dicts on failure instead of raising this exception. Either remove the dead class or use it.
+- **Evidence**: [newsletter_agent/tools/gmail_auth.py](newsletter_agent/tools/gmail_auth.py#L24) -- `class GmailSendError(Exception)` with zero usages.
+
+#### PASS - Spec Adherence: FR-027 Gmail API send
+- **Requirement**: FR-027 -- Send HTML newsletter via Gmail API with OAuth2
+- **Status**: Compliant
+- **Detail**: `send_newsletter_email()` constructs MIME message, authenticates via OAuth2, sends via `users().messages().send()`. Returns status dict on success/failure.
+- **Evidence**: [newsletter_agent/tools/gmail_send.py](newsletter_agent/tools/gmail_send.py)
+
+#### PASS - Spec Adherence: FR-028 OAuth2 refresh
+- **Requirement**: FR-028 -- OAuth2 offline access with refresh token, automatic token refresh
+- **Status**: Compliant
+- **Detail**: `get_gmail_credentials()` constructs Credentials with refresh_token and calls `creds.refresh(Request())`. Catches `RefreshError` and raises `GmailAuthError` with clear message.
+- **Evidence**: [newsletter_agent/tools/gmail_auth.py](newsletter_agent/tools/gmail_auth.py#L53-L68)
+
+#### PASS - Spec Adherence: FR-029 MIME multipart
+- **Requirement**: FR-029 -- MIME multipart with HTML and plain-text
+- **Status**: Compliant
+- **Detail**: Uses `MIMEMultipart("alternative")` with both `text/plain` and `text/html` parts attached.
+- **Evidence**: [newsletter_agent/tools/gmail_send.py](newsletter_agent/tools/gmail_send.py#L38-L45)
+
+#### PASS - Spec Adherence: FR-031 Dry-run mode
+- **Requirement**: FR-031 -- Skip email, save HTML to disk
+- **Status**: Compliant
+- **Detail**: `DeliveryAgent` checks `config_dry_run` and early-returns after `save_newsletter_html()`. Never calls `send_newsletter_email()` in dry-run.
+- **Evidence**: [newsletter_agent/tools/delivery.py](newsletter_agent/tools/delivery.py#L37-L47)
+
+#### PASS - Spec Adherence: FR-032 Failure fallback
+- **Requirement**: FR-032 -- Log error, save HTML locally, set error state
+- **Status**: Compliant
+- **Detail**: On send failure, agent calls `save_newsletter_html()` and stores `{"status": "failed", "fallback_file": ..., "error": ...}` in state.
+- **Evidence**: [newsletter_agent/tools/delivery.py](newsletter_agent/tools/delivery.py#L73-L85)
+
+#### PASS - Spec Adherence: FR-033, FR-034, FR-035
+- **Requirement**: Full pipeline in dry-run, path format, auto-create dir
+- **Status**: Compliant
+- **Detail**: `save_newsletter_html()` uses `{output_dir}/{date}-newsletter.html` pattern, calls `mkdir(parents=True, exist_ok=True)`, writes UTF-8.
+- **Evidence**: [newsletter_agent/tools/file_output.py](newsletter_agent/tools/file_output.py)
+
+#### PASS - API/Interface: Section 8.3 function signature
+- **Requirement**: `send_newsletter_email(html_content, recipient_email, subject) -> dict`
+- **Status**: Compliant
+- **Detail**: Signature matches exactly. Return dict has correct keys.
+- **Evidence**: [newsletter_agent/tools/gmail_send.py](newsletter_agent/tools/gmail_send.py#L19-L23)
+
+#### PASS - Data Model: Session state keys
+- **Requirement**: Section 7.6 NewsletterMetadata, delivery_status
+- **Status**: Compliant
+- **Detail**: Agent reads `newsletter_html`, `newsletter_metadata`, `config_dry_run`, `config_output_dir`, `config_recipient_email`. Writes `delivery_status` with correct structure for all three paths.
+- **Evidence**: [newsletter_agent/tools/delivery.py](newsletter_agent/tools/delivery.py#L27-L35)
+
+#### PASS - Architecture: Section 9.1 pipeline structure
+- **Requirement**: Delivery agent as final child in root SequentialAgent
+- **Status**: Compliant
+- **Detail**: `DeliveryAgent` wired into `OutputPhase` SequentialAgent in `agent.py`, which is the last sub-agent of `NewsletterPipeline`.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L108-L113)
+
+#### PASS - Architecture: Section 9.3 file structure
+- **Requirement**: Correct file paths for all modules
+- **Status**: Compliant
+- **Detail**: `newsletter_agent/tools/gmail_auth.py`, `gmail_send.py`, `file_output.py`, `delivery.py`, `setup_gmail_oauth.py` all exist at specified paths.
+
+#### PASS - Test Coverage: T04-07 Gmail Auth (10 tests >= 8)
+- **Requirement**: T04-07 -- at least 8 test cases
+- **Status**: Compliant
+- **Evidence**: [tests/unit/test_gmail_auth.py](tests/unit/test_gmail_auth.py) -- 10 test methods.
+
+#### PASS - Test Coverage: T04-08 Gmail Send (11 tests >= 10)
+- **Requirement**: T04-08 -- at least 10 test cases
+- **Status**: Compliant
+- **Evidence**: [tests/unit/test_gmail_send.py](tests/unit/test_gmail_send.py) -- 11 test methods.
+
+#### PASS - Test Coverage: T04-09 File Output (6 tests >= 6)
+- **Requirement**: T04-09 -- at least 6 test cases
+- **Status**: Compliant
+- **Evidence**: [tests/unit/test_file_output.py](tests/unit/test_file_output.py) -- 6 test methods.
+
+#### PASS - Test Coverage: T04-11 BDD (4 scenarios >= 4)
+- **Requirement**: T04-11 -- at least 4 BDD scenarios
+- **Status**: Compliant
+- **Evidence**: [tests/bdd/test_email_delivery.py](tests/bdd/test_email_delivery.py) -- 4 scenario classes.
+
+#### PASS - Test Execution: All tests pass
+- **Requirement**: All tests pass
+- **Status**: Compliant
+- **Detail**: 38 passed, 0 failed across all WP04 test files.
+
+#### PASS - Non-Functional: Security
+- **Requirement**: Section 10.2 -- OAuth2, no credentials logged, minimum scope
+- **Status**: Compliant
+- **Detail**: No credential values logged. Gmail scope is `gmail.send` only. Env vars stripped of whitespace. Missing credentials raise descriptive errors.
+
+#### PASS - Scope Discipline
+- **Requirement**: No code outside WP04 scope
+- **Status**: Compliant
+- **Detail**: Commit `a30eaa1` modifies only WP04-scoped files plus expected `agent.py` wiring and `plans/README.md` status update.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, curly apostrophes
+- **Status**: Compliant
+- **Detail**: All 10 WP04 source and test files checked -- no prohibited Unicode characters found.
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 2 | 1 |
+| Spec Adherence | 6 | 2 | 0 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 1 | 0 | 0 |
+| Architecture | 2 | 1 | 0 |
+| Test Coverage | 5 | 0 | 1 |
+| Non-Functional | 1 | 0 | 0 |
+| Performance | 0 | 0 | 0 |
+| Documentation | N/A | N/A | N/A |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. **(FB-01)** Add the Spec Compliance Checklist for all tasks T04-01 through T04-11. Each task's acceptance criteria from the WP should be listed with checked/unchecked status.
+2. **(FB-02)** Add at least 1 more test to `tests/unit/test_delivery_agent.py` to reach the 8-test minimum. Test the scenario where `newsletter_html` key is entirely absent from state (not just empty string).

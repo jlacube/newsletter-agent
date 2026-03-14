@@ -54,26 +54,53 @@ class FormatterAgent(BaseAgent):
         # Collect synthesis sections
         sections = []
         all_sources: list[dict] = []
-        topic_index = 0
+        topic_count = state.get("config_topic_count", 0)
 
-        while True:
-            key = f"synthesis_{topic_index}"
-            section_data = state.get(key)
-            if section_data is None:
-                break
+        # Use known topic count to iterate; insert placeholders for missing sections
+        if topic_count > 0:
+            for topic_index in range(topic_count):
+                key = f"synthesis_{topic_index}"
+                section_data = state.get(key)
+                if section_data is None:
+                    sections.append({
+                        "title": f"Topic {topic_index + 1}",
+                        "body_html": "<p>Research unavailable for this topic.</p>",
+                        "sources": [],
+                    })
+                    continue
 
-            body_html = sanitize_synthesis_html(
-                section_data.get("body_markdown", "")
-            )
+                body_html = sanitize_synthesis_html(
+                    section_data.get("body_markdown", "")
+                )
 
-            section = {
-                "title": section_data.get("title", f"Topic {topic_index}"),
-                "body_html": body_html,
-                "sources": section_data.get("sources", []),
-            }
-            sections.append(section)
-            all_sources.extend(section["sources"])
-            topic_index += 1
+                section = {
+                    "title": section_data.get("title", f"Topic {topic_index + 1}"),
+                    "body_html": body_html,
+                    "sources": section_data.get("sources", []),
+                }
+                sections.append(section)
+                all_sources.extend(section["sources"])
+        else:
+            # Fallback: iterate until missing key (legacy behavior)
+            topic_index = 0
+            while True:
+                key = f"synthesis_{topic_index}"
+                section_data = state.get(key)
+                if section_data is None:
+                    break
+
+                body_html = sanitize_synthesis_html(
+                    section_data.get("body_markdown", "")
+                )
+
+                section = {
+                    "title": section_data.get("title", f"Topic {topic_index}"),
+                    "body_html": body_html,
+                    "sources": section_data.get("sources", []),
+                }
+                sections.append(section)
+                all_sources.extend(section["sources"])
+                topic_index += 1
 
         # Deduplicate all sources
         seen_urls: set[str] = set()

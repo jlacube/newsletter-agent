@@ -5,13 +5,17 @@ Spec refs: Section 9.1, FR-008 through FR-035.
 """
 
 import logging
+from collections.abc import AsyncGenerator
 
 from newsletter_agent.logging_config import setup_logging
 
 setup_logging()
 
-from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
+from google.adk.agents import BaseAgent, LlmAgent, ParallelAgent, SequentialAgent
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.events import Event
 from google.adk.tools import google_search
+from google.genai import types
 
 from newsletter_agent.config.schema import NewsletterConfig, load_config
 from newsletter_agent.prompts.research_google import get_google_search_instruction
@@ -20,6 +24,7 @@ from newsletter_agent.prompts.synthesis import get_synthesis_instruction
 from newsletter_agent.tools.delivery import DeliveryAgent
 from newsletter_agent.tools.formatter import FormatterAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool
+from newsletter_agent.tools.synthesis_utils import parse_synthesis_output
 from newsletter_agent.timing import after_agent_callback, before_agent_callback
 
 logger = logging.getLogger(__name__)
@@ -80,6 +85,91 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
     return ParallelAgent(name="ResearchPhase", sub_agents=topic_agents)
 
 
+class ResearchValidatorAgent(BaseAgent):
+    """Checks research state keys after ResearchPhase completes.
+
+    If all research keys are missing or have error=True, sets
+    research_all_failed=True in state and logs at CRITICAL level.
+    Spec refs: FR-013, T02-06.
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+    topic_count: int = 0
+    providers: list = []
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        state = ctx.session.state
+        all_failed = True
+
+        for idx in range(self.topic_count):
+            for provider in self.providers:
+                key = f"research_{idx}_{provider}"
+                val = state.get(key)
+                if val is not None and not (isinstance(val, dict) and val.get("error")):
+                    all_failed = False
+                    break
+            if not all_failed:
+                break
+
+        if all_failed and self.topic_count > 0:
+            state["research_all_failed"] = True
+            logger.critical(
+                "All research providers failed for all %d topics", self.topic_count
+            )
+            yield Event(
+                author=self.name,
+                content=types.Content(
+                    parts=[types.Part(text="All research providers failed")]
+                ),
+            )
+        else:
+            state["research_all_failed"] = False
+            yield Event(
+                author=self.name,
+                content=types.Content(
+                    parts=[types.Part(text="Research validation passed")]
+                ),
+            )
+
+
+class SynthesisPostProcessorAgent(BaseAgent):
+    """Parses synthesis_raw into synthesis_N and executive_summary state keys.
+
+    Bridges the gap between the Synthesizer LlmAgent output and the
+    FormatterAgent input. Spec refs: FR-019, T03-02.
+    """
+
+    model_config = {"arbitrary_types_allowed": True}
+    topic_names: list = []
+
+    async def _run_async_impl(
+        self, ctx: InvocationContext
+    ) -> AsyncGenerator[Event, None]:
+        state = ctx.session.state
+        raw = state.get("synthesis_raw", "")
+
+        parsed = parse_synthesis_output(str(raw), self.topic_names)
+
+        for key, value in parsed.items():
+            state[key] = value
+
+        state["config_topic_count"] = len(self.topic_names)
+
+        section_count = sum(1 for k in parsed if k.startswith("synthesis_"))
+        logger.info(
+            "Synthesis post-processing: %d sections parsed from raw output",
+            section_count,
+        )
+        yield Event(
+            author=self.name,
+            content=types.Content(
+                parts=[types.Part(text=f"Parsed {section_count} synthesis sections")]
+            ),
+        )
+
+
 def build_synthesis_agent(config: NewsletterConfig) -> LlmAgent:
     """Build the synthesis LlmAgent from config.
 
@@ -115,7 +205,30 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
     output phases per spec Section 9.1.
     """
     research_phase = build_research_phase(config)
+
+    # Collect providers configured across all topics
+    all_providers = set()
+    for topic in config.topics:
+        for src in topic.sources:
+            if src == "google_search":
+                all_providers.add("google")
+            elif src == "perplexity":
+                all_providers.add("perplexity")
+
+    research_validator = ResearchValidatorAgent(
+        name="ResearchValidator",
+        topic_count=len(config.topics),
+        providers=sorted(all_providers),
+    )
+
     synthesis_agent = build_synthesis_agent(config)
+
+    topic_names = [t.name for t in config.topics]
+    synthesis_post_processor = SynthesisPostProcessorAgent(
+        name="SynthesisPostProcessor",
+        topic_names=topic_names,
+    )
+
     output_phase = SequentialAgent(
         name="OutputPhase",
         sub_agents=[
@@ -134,7 +247,9 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
         name=_ROOT_AGENT_NAME,
         sub_agents=[
             research_phase,
+            research_validator,
             synthesis_agent,
+            synthesis_post_processor,
             output_phase,
         ],
         before_agent_callback=before_agent_callback,

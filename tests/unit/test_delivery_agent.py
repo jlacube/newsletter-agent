@@ -142,3 +142,21 @@ class TestEmptyHtml:
 
         # Should still save (even empty content)
         mock_save.assert_called_once()
+
+
+class TestMissingHtmlKey:
+    @pytest.mark.asyncio
+    @patch("newsletter_agent.tools.delivery.save_newsletter_html", return_value="/tmp/out.html")
+    async def test_missing_newsletter_html_key_uses_empty_string(self, mock_save):
+        """When newsletter_html key is absent from state, agent should default to empty."""
+        agent = DeliveryAgent(name="TestDelivery")
+        state = _make_state(dry_run=True)
+        del state["newsletter_html"]  # Remove the key entirely
+        ctx = _make_ctx(state)
+
+        async for _ in agent._run_async_impl(ctx):
+            pass
+
+        # Should still save with empty default
+        mock_save.assert_called_once()
+        assert state["delivery_status"]["status"] == "dry_run"

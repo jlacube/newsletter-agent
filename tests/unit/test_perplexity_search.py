@@ -173,3 +173,21 @@ class TestSearchPerplexityErrors:
         assert result["error"] is True
         assert "RuntimeError" in result["message"]
         assert result["provider"] == "perplexity"
+
+    @patch.dict(os.environ, {"PERPLEXITY_API_KEY": "test-key"})
+    @patch("newsletter_agent.tools.perplexity_search.OpenAI")
+    def test_api_auth_error_401_returns_error_dict(self, mock_openai_class):
+        from openai import AuthenticationError
+
+        mock_client = MagicMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = AuthenticationError(
+            message="Invalid API key",
+            response=MagicMock(status_code=401),
+            body=None,
+        )
+
+        result = search_perplexity("test", "standard")
+
+        assert result["error"] is True
+        assert result["provider"] == "perplexity"

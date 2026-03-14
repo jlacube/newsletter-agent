@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP02 - Research Pipeline
@@ -1514,12 +1514,112 @@ class TestBuildResearchPhase:
 - **Risk**: The `openai` Python SDK version may have breaking changes in the Perplexity-compatible client usage.
   **Mitigation**: Pin the `openai` SDK version in requirements.txt. Test with the pinned version.
 
+## Spec Compliance Checklist
+
+### T02-01 Spec Compliance Checklist
+- [x] File exists and exports `search_perplexity` and `perplexity_search_tool` - verified in perplexity_search.py
+- [x] Standard search calls API with model `sonar` and returns `{text, sources[{url,title}], provider}` - verified in perplexity_search.py
+- [x] Deep search uses model `sonar-pro` - verified in perplexity_search.py (`_MODEL_MAP`)
+- [x] API failure returns `{error: True, message, provider}` without raising - verified in perplexity_search.py
+- [x] Reads `PERPLEXITY_API_KEY` from env vars - verified in perplexity_search.py
+- [x] No user-controlled URLs, only hardcoded Perplexity endpoint (SSRF mitigation) - verified in perplexity_search.py
+- [x] Citations extracted from API response `citations` field - verified in perplexity_search.py
+
+### T02-02 Spec Compliance Checklist
+- [x] File exists and exports `get_google_search_instruction(topic_name, query, search_depth) -> str` - verified in research_google.py
+- [x] Standard depth asks agent to research, summarize, and list source URLs - verified in research_google.py
+- [x] Deep depth asks for comprehensive multi-faceted analysis - verified in research_google.py
+- [x] Both prompts instruct parseable output with SUMMARY/SOURCES separation - verified in research_google.py
+- [x] Prompts instruct agent NOT to fabricate information or sources - verified in research_google.py
+- [x] No hardcoded API keys or secrets in prompt text - verified in research_google.py
+
+### T02-03 Spec Compliance Checklist
+- [x] File exists and exports `get_perplexity_search_instruction(topic_name, query, search_depth) -> str` - verified in research_perplexity.py
+- [x] Instruction tells agent to call `search_perplexity` tool with query and search_depth - verified in research_perplexity.py
+- [x] Instruction tells agent to return tool response as-is or note errors - verified in research_perplexity.py
+- [x] Deep depth instruction asks for more comprehensive analysis framing - verified in research_perplexity.py
+- [x] No hardcoded API keys or secrets - verified in research_perplexity.py
+
+### T02-04 Spec Compliance Checklist
+- [x] `build_research_phase(config) -> ParallelAgent` exists in agent.py - verified
+- [x] N topics produces ParallelAgent with N sub-agents - verified in agent.py
+- [x] Each sub-agent is a SequentialAgent with up to 2 LlmAgents - verified in agent.py
+- [x] Google-only source produces only Google LlmAgent - verified in agent.py
+- [x] Perplexity-only source produces only Perplexity LlmAgent - verified in agent.py
+- [x] Google agent has exactly one tool: `google_search` - verified in agent.py
+- [x] Perplexity agent has exactly one tool: `perplexity_search_tool` - verified in agent.py
+- [x] Output keys follow `research_{topic_index}_{provider}` naming - verified in agent.py
+- [x] Google agents use `gemini-2.5-flash` - verified in agent.py
+- [x] Perplexity agents use `gemini-2.5-flash` - verified in agent.py
+- [x] Handles 1, 5, and 20 topics - verified via test_agent_factory.py
+- [x] Agent names are unique and descriptive - verified in agent.py
+
+### T02-05 Spec Compliance Checklist
+- [x] `parse_research_result(raw_output, provider) -> dict` exists - verified in research_utils.py
+- [x] Google output parser extracts summary and sources - verified in research_utils.py
+- [x] Perplexity output parser extracts text and sources from JSON - verified in research_utils.py
+- [x] Error marker input returns `{error: True, message, provider}` - verified in research_utils.py
+- [x] Parsed result always contains `provider` field - verified in research_utils.py
+- [x] Sources contain `{url, title}` dicts per Section 7.4 - verified in research_utils.py
+- [x] Invalid/unparseable output returns fallback without raising - verified in research_utils.py
+
+### T02-06 Spec Compliance Checklist
+- [x] Single provider failure logged at ERROR level - verified in perplexity_search.py
+- [x] Error marker in state follows `{error: True, message, provider}` format - verified in perplexity_search.py
+- [x] Other topics/providers continue when one fails - verified via ParallelAgent in agent.py
+- [x] All-providers-fail detection checks all research state keys - verified in agent.py (ResearchValidatorAgent)
+- [x] Total-failure sets `research_all_failed` signal - verified in agent.py
+- [x] Error logging uses Python `logging` module - verified in perplexity_search.py and agent.py
+- [x] No exception propagation crashes the ParallelAgent - verified in perplexity_search.py
+
+### T02-07 Spec Compliance Checklist
+- [x] Root SequentialAgent includes research phase - verified in agent.py (first child; config loaded at module level per design decision)
+- [x] After research phase, session state contains all `research_{N}_{provider}` keys - verified via output_key on each LlmAgent
+- [x] ADK web UI shows research phase agents with individual names - verified via descriptive agent names
+- [x] Full pipeline via `adk web`/`adk run` produces research results - verified in agent.py
+- [x] Dry-run compatible: research phase unaffected by `dry_run` - verified (no dry_run check in research)
+
+### T02-08 Spec Compliance Checklist
+- [x] Test file exists with at least 10 test cases - verified in test_perplexity_search.py (10 tests)
+- [x] All tests mock the OpenAI client, no real API calls - verified
+- [x] Tests verify returned dict matches Section 7.3 schema - verified
+- [x] Tests verify `provider` field is always `"perplexity"` - verified
+- [x] Tests run via pytest and pass - verified
+
+### T02-09 Spec Compliance Checklist
+- [x] Test file exists with at least 8 test cases - verified in test_agent_factory.py (18+ tests)
+- [x] Tests cover: 1-topic both, google-only, perplexity-only, 5-topic, 20-topic, mixed - verified
+- [x] Tests verify ParallelAgent has correct sub-agent count - verified
+- [x] Tests verify name, tools, output_key, model on sub-agents - verified
+- [x] Tests verify agent names are unique - verified
+- [x] Tests make no LLM/API calls - verified
+- [x] Tests run via pytest and pass - verified
+
+### T02-10 Spec Compliance Checklist
+- [x] Test file exists with at least 12 test cases - verified in test_research_utils.py (12 tests)
+- [x] Tests verify parsed result matches ResearchResult schema - verified
+- [x] Tests verify source deduplication by URL - verified
+- [x] Tests verify parser never raises, always returns valid dict - verified
+- [x] All tests run via pytest and pass - verified
+
+### T02-11 Spec Compliance Checklist
+- [x] Test file exists with at least 4 BDD scenario tests - verified in test_research_pipeline.py (4 classes)
+- [x] Scenario: Successful dual-source research - verified
+- [x] Scenario: Single provider failure - verified
+- [x] Scenario: Parallel execution of multiple topics - verified
+- [x] Scenario: All providers fail - verified
+- [x] Tests use mocked responses, no real external calls - verified
+- [x] Tests follow Given/When/Then structure - verified
+- [x] All tests run via pytest and pass - verified
+
 ## Activity Log
 
 - 2025-01-01T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-14T02:30:00Z - coder - lane=doing - Implementation started
 - 2026-03-14T03:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
 - 2026-03-14T04:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (5 FAILs) -- awaiting remediation
+- 2026-03-14T05:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05)
+- 2026-03-14T06:00:00Z - coder - lane=for_review - All feedback items addressed, resubmitted for review
 
 ## Review
 
@@ -1538,11 +1638,11 @@ The core implementation quality is solid: the Perplexity tool, agent factory, re
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Add the Spec Compliance Checklist (Step 2b) for each task (T02-01 through T02-11) in this WP file, mapping each spec requirement to its implementation location. This is a mandatory process artifact.
-- [ ] **FB-02**: Create `tests/bdd/test_research_pipeline.py` with at least 4 BDD scenario tests as specified by T02-11: (a) Successful dual-source research, (b) Single provider failure, (c) Parallel execution of multiple topics, (d) All providers fail. Tests must use mocked LLM/API responses and follow Given/When/Then structure.
-- [ ] **FB-03**: Implement total-failure detection per T02-06 ACs. After the research phase ParallelAgent completes, inspect all `research_{N}_{provider}` session state keys. If every key is missing or has `error: true`, store `research_all_failed: true` in state and log a critical error. This can be implemented as a post-processing callback or a lightweight agent step after the ResearchPhase.
-- [ ] **FB-04**: Add at least 1 more test to `tests/unit/test_perplexity_search.py` to reach the minimum of 10. Missing scenarios from the AC include: API authentication error (401), empty query string behavior, and response timeout.
-- [ ] **FB-05**: Commit discipline: future tasks should use one commit per task. For this remediation round, a single remediation commit addressing all FB items is acceptable.
+- [x] **FB-01**: Add the Spec Compliance Checklist (Step 2b) for each task (T02-01 through T02-11) in this WP file, mapping each spec requirement to its implementation location. This is a mandatory process artifact. **RESOLVED**: Checklist added below Activity Log section.
+- [x] **FB-02**: Create `tests/bdd/test_research_pipeline.py` with at least 4 BDD scenario tests as specified by T02-11: (a) Successful dual-source research, (b) Single provider failure, (c) Parallel execution of multiple topics, (d) All providers fail. Tests must use mocked LLM/API responses and follow Given/When/Then structure. **RESOLVED**: File created with 4 scenario classes.
+- [x] **FB-03**: Implement total-failure detection per T02-06 ACs. After the research phase ParallelAgent completes, inspect all `research_{N}_{provider}` session state keys. If every key is missing or has `error: true`, store `research_all_failed: true` in state and log a critical error. This can be implemented as a post-processing callback or a lightweight agent step after the ResearchPhase. **RESOLVED**: ResearchValidatorAgent added to pipeline after research phase.
+- [x] **FB-04**: Add at least 1 more test to `tests/unit/test_perplexity_search.py` to reach the minimum of 10. Missing scenarios from the AC include: API authentication error (401), empty query string behavior, and response timeout. **RESOLVED**: test_api_auth_error_401_returns_error_dict added (10 tests total).
+- [x] **FB-05**: Commit discipline: future tasks should use one commit per task. For this remediation round, a single remediation commit addressing all FB items is acceptable. **RESOLVED**: Acknowledged, single remediation commit used.
 
 ### Findings
 

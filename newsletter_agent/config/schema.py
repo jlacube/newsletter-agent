@@ -1,0 +1,162 @@
+"""
+Configuration models and loader for Newsletter Agent.
+
+Loads and validates config/topics.yaml using Pydantic v2 models.
+Spec refs: FR-001 through FR-007, Section 7.1, 7.2, 8.4.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+
+# ---------------------------------------------------------------------------
+# Custom exceptions
+# ---------------------------------------------------------------------------
+
+
+class ConfigValidationError(Exception):
+    """Raised when config loading or validation fails.
+
+    Wraps both YAML parse errors and Pydantic validation errors with
+    a unified interface providing field-level error details.
+    """
+
+    def __init__(self, message: str, field_errors: list[dict] | None = None):
+        super().__init__(message)
+        self.field_errors = field_errors or []
+
+    @classmethod
+    def from_pydantic(cls, error: ValidationError) -> ConfigValidationError:
+        field_errors = [
+            {
+                "field": ".".join(str(loc) for loc in e["loc"]),
+                "message": e["msg"],
+                "type": e["type"],
+            }
+            for e in error.errors()
+        ]
+        summary = f"Config validation failed with {len(field_errors)} error(s): "
+        details = "; ".join(
+            f'{e["field"]}: {e["message"]}' for e in field_errors[:3]
+        )
+        summary += details
+        if len(field_errors) > 3:
+            summary += f" ... and {len(field_errors) - 3} more"
+        return cls(summary, field_errors)
+
+
+# ---------------------------------------------------------------------------
+# Email validation pattern
+# ---------------------------------------------------------------------------
+
+_EMAIL_PATTERN = re.compile(
+    r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$"
+)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+
+class TopicConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    query: str = Field(min_length=1, max_length=500)
+    search_depth: Literal["standard", "deep"] = "standard"
+    sources: list[Literal["google_search", "perplexity"]] = Field(
+        default=["google_search", "perplexity"]
+    )
+
+    @field_validator("sources", mode="before")
+    @classmethod
+    def default_empty_sources(cls, v: object) -> object:
+        if isinstance(v, list) and len(v) == 0:
+            return ["google_search", "perplexity"]
+        return v
+
+
+class NewsletterSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    schedule: str = Field(min_length=1)
+    recipient_email: str
+
+    @field_validator("recipient_email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        if not _EMAIL_PATTERN.match(v):
+            raise ValueError(f"'{v}' is not a valid email address")
+        return v
+
+
+class AppSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dry_run: bool = False
+    output_dir: str = "output/"
+
+
+class NewsletterConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    newsletter: NewsletterSettings
+    settings: AppSettings = Field(default_factory=AppSettings)
+    topics: list[TopicConfig] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_unique_topic_names(self) -> NewsletterConfig:
+        names = [t.name for t in self.topics]
+        if len(names) != len(set(names)):
+            dupes = {n for n in names if names.count(n) > 1}
+            raise ValueError(
+                f"Topic names must be unique. Duplicates found: {dupes}"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Config loader
+# ---------------------------------------------------------------------------
+
+
+def load_config(path: str = "config/topics.yaml") -> NewsletterConfig:
+    """Load and validate newsletter config from a YAML file.
+
+    Args:
+        path: Path to the YAML config file.
+
+    Returns:
+        Validated NewsletterConfig instance.
+
+    Raises:
+        FileNotFoundError: If the config file does not exist.
+        ConfigValidationError: If YAML is invalid or data fails validation.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Config file not found: {path}")
+    except yaml.YAMLError as e:
+        raise ConfigValidationError(f"Invalid YAML in {path}: {e}")
+
+    if data is None:
+        raise ConfigValidationError(f"Empty config file: {path}")
+
+    if not isinstance(data, dict):
+        raise ConfigValidationError(
+            f"Config file must contain a YAML mapping, got {type(data).__name__}"
+        )
+
+    try:
+        return NewsletterConfig(**data)
+    except ValidationError as e:
+        raise ConfigValidationError.from_pydantic(e) from e

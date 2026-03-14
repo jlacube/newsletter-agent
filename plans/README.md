@@ -7,7 +7,7 @@
 
 | ID | Title | Priority | Status | Depends On | Parallelisable |
 |----|-------|----------|--------|-----------|----------------|
-| [WP01](WP01-project-scaffolding.md) | Project Scaffolding and Config System | P0 | Not Started | none | - |
+| [WP01](WP01-project-scaffolding.md) | Project Scaffolding and Config System | P0 | Complete | none | - |
 | [WP02](WP02-research-pipeline.md) | Research Pipeline | P1 | Not Started | WP01 | No |
 | [WP03](WP03-synthesis-formatting.md) | Content Synthesis and Formatting | P1 | Not Started | WP01, WP02 | No |
 | [WP04](WP04-email-delivery.md) | Email Delivery and Local Output | P1 | Not Started | WP01, WP03 | No |

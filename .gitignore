@@ -1,0 +1,37 @@
+# === Secrets (SECURITY CRITICAL) ===
+.env
+.env.*
+!.env.example
+token.json
+gmail_token.json
+credentials.json
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# === Virtual Environments ===
+venv/
+.venv/
+env/
+ENV/
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === Generated Output ===
+newsletter_agent/output/*.html
+output/*.html
+
+# === OS ===
+.DS_Store
+Thumbs.db

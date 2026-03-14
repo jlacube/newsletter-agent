@@ -1,0 +1,44 @@
+# =============================================================================
+# Newsletter Agent - Topic Configuration
+# =============================================================================
+# This file defines the newsletter content, schedule, and delivery settings.
+# See specs/newsletter-agent.spec.md Sections 7.1, 7.2, 8.4 for full schema.
+# =============================================================================
+
+# Newsletter metadata and delivery settings
+newsletter:
+  title: "Weekly Tech Digest"            # Display title (1-200 chars)
+  schedule: "0 8 * * 0"                  # Cron: Sunday 8am UTC
+  recipient_email: "your-email@gmail.com" # Delivery target
+
+# Application settings
+settings:
+  dry_run: true                          # true = save HTML only, no email
+  output_dir: "output/"                  # Where to save HTML output
+
+# Research topics (1-20 items)
+topics:
+  # Topic with all options specified (deep research, both providers)
+  - name: "AI Frameworks"
+    query: >-
+      Latest developments in AI agent frameworks, including LangChain,
+      CrewAI, Google ADK, and AutoGen. Focus on new releases, benchmarks,
+      and adoption trends.
+    search_depth: "deep"
+    sources:
+      - google_search
+      - perplexity
+
+  # Topic with minimal config (uses defaults: standard depth, both sources)
+  - name: "Cloud Native"
+    query: >-
+      Recent developments in cloud-native technologies, Kubernetes,
+      serverless platforms, and major cloud provider announcements.
+
+  # Topic with single source
+  - name: "Open Source Highlights"
+    query: >-
+      Notable new open source projects, major releases, and community
+      trends in software development.
+    sources:
+      - google_search

@@ -26,6 +26,7 @@ from newsletter_agent.prompts.research_perplexity import get_perplexity_search_i
 from newsletter_agent.prompts.synthesis import get_synthesis_instruction
 from newsletter_agent.tools.delivery import DeliveryAgent
 from newsletter_agent.tools.formatter import FormatterAgent
+from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool, search_perplexity
 from newsletter_agent.tools.synthesis_utils import parse_synthesis_output
 from newsletter_agent.timing import after_agent_callback, before_agent_callback
@@ -367,6 +368,8 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
         ],
     )
 
+    link_verifier = LinkVerifierAgent(name="LinkVerifier")
+
     logger.info(
         "Pipeline built: %d topics, root=%s",
         len(config.topics),
@@ -382,6 +385,7 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
             abort_check,
             synthesis_agent,
             synthesis_post_processor,
+            link_verifier,
             output_phase,
         ],
         before_agent_callback=before_agent_callback,

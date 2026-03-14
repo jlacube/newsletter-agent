@@ -19,6 +19,7 @@ from newsletter_agent.agent import (
     build_research_phase,
     build_synthesis_agent,
 )
+from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent
 from newsletter_agent.config.schema import (
     AppSettings,
     NewsletterConfig,
@@ -204,10 +205,10 @@ class TestBuildPipeline:
         assert isinstance(pipeline, SequentialAgent)
         assert pipeline.name == _ROOT_AGENT_NAME
 
-    def test_root_has_seven_sub_agents(self):
+    def test_root_has_eight_sub_agents(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
-        assert len(pipeline.sub_agents) == 7
+        assert len(pipeline.sub_agents) == 8
 
     def test_sub_agent_order(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
@@ -224,13 +225,15 @@ class TestBuildPipeline:
         assert pipeline.sub_agents[4].name == "Synthesizer"
         assert isinstance(pipeline.sub_agents[5], SynthesisPostProcessorAgent)
         assert pipeline.sub_agents[5].name == "SynthesisPostProcessor"
-        assert isinstance(pipeline.sub_agents[6], SequentialAgent)
-        assert pipeline.sub_agents[6].name == "OutputPhase"
+        assert isinstance(pipeline.sub_agents[6], LinkVerifierAgent)
+        assert pipeline.sub_agents[6].name == "LinkVerifier"
+        assert isinstance(pipeline.sub_agents[7], SequentialAgent)
+        assert pipeline.sub_agents[7].name == "OutputPhase"
 
     def test_output_phase_wraps_formatter_and_delivery(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
-        output_phase = pipeline.sub_agents[6]
+        output_phase = pipeline.sub_agents[7]
         assert len(output_phase.sub_agents) == 2
         assert output_phase.sub_agents[0].name == "FormatterAgent"
         assert output_phase.sub_agents[1].name == "DeliveryAgent"

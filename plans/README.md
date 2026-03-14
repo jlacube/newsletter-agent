@@ -108,3 +108,80 @@ The Newsletter Agent is a greenfield project with a linear pipeline architecture
 | T05-10 | Performance validation tests | WP05 | Yes |
 | T05-11 | Security tests | WP05 | Yes |
 | T05-12 | Project README | WP05 | Yes |
+
+---
+
+## Enhancement: Link Verification & Search Timeframe
+
+> **Spec**: `specs/link-verification-timeframe.spec.md`
+> **Added**: 2025-01-01
+
+### Enhancement Work Packages
+
+| ID | Title | Priority | Status | Depends On | Parallelisable |
+|----|-------|----------|--------|-----------|----------------|
+| [WP06](WP06-search-timeframe.md) | Search Timeframe Filtering | P1 | Not Started | WP01-WP05 (base system) | Yes |
+| [WP07](WP07-link-verification.md) | Source Link Verification | P1 | Not Started | WP01-WP05 (base system) | Yes |
+| [WP08](WP08-integration-testing.md) | Integration Testing, E2E & Documentation | P2 | Not Started | WP06, WP07 | No |
+
+### Enhancement MVP Scope
+
+All three enhancement work packages are required for release: **WP06, WP07, WP08**.
+
+- **WP06** delivers search timeframe filtering (config fields, resolver, research builder integration, Perplexity API passthrough).
+- **WP07** delivers source link verification (async HTTP checker, SSRF protection, LinkVerifierAgent, pipeline integration).
+- **WP08** delivers the cross-feature quality gate (integration tests, E2E tests, backward compatibility verification, documentation).
+
+### Enhancement Dependency & Execution Summary
+
+- **Prerequisite**: WP01-WP05 must all be complete (the base system must be working).
+- **Sequence**: WP06 + WP07 (parallel) -> WP08 (integration/quality gate)
+- **Parallelization**: WP06 and WP07 have zero shared dependencies and can be worked simultaneously.
+- **Critical path**: WP06 or WP07 (whichever finishes last) -> WP08
+
+### Enhancement Sequencing Notes
+
+WP06 (Search Timeframe) and WP07 (Link Verification) are fully independent features modifying different pipeline stages:
+
+- **WP06** touches: config schema (timeframe fields), timeframe resolver (new module), research phase builder, Perplexity search tool
+- **WP07** touches: config schema (verify_links field), link verifier (new module), LinkVerifierAgent (new agent), pipeline agent factory
+
+The only shared file is `newsletter_agent/config/schema.py`, where both WPs add new Pydantic fields to `AppSettings`. This is a non-conflicting additive change, so parallel implementation is safe.
+
+WP08 must wait for both WP06 and WP07 because it tests combined behavior, backward compatibility, and the full E2E pipeline with both features active.
+
+### Enhancement Task Index
+
+| Task ID | Summary | Work Package | Parallel? |
+|---------|---------|--------------|----------|
+| T06-01 | Config schema: timeframe field on AppSettings and TopicConfig | WP06 | No |
+| T06-02 | Timeframe resolver: parse presets, custom ranges, absolute dates | WP06 | No |
+| T06-03 | Google Search instruction builder: inject date clause | WP06 | Yes |
+| T06-04 | Perplexity search: add search_recency_filter parameter | WP06 | Yes |
+| T06-05 | Research phase builder: pass resolved timeframe to agents | WP06 | No |
+| T06-06 | Session state: populate config_timeframes key | WP06 | No |
+| T06-07 | Unit tests: timeframe resolver and config validation | WP06 | Yes |
+| T06-08 | Unit tests: research builder with timeframe | WP06 | Yes |
+| T06-09 | BDD tests: timeframe configuration scenarios | WP06 | No |
+| T06-10 | Unit tests: Perplexity search with recency filter | WP06 | Yes |
+| T07-01 | Config schema: verify_links field on AppSettings | WP07 | No |
+| T07-02 | URL extraction utility: parse URLs from markdown and sources | WP07 | Yes |
+| T07-03 | verify_urls: async HTTP HEAD with GET fallback and concurrency | WP07 | No |
+| T07-04 | SSRF protection: private IP blocking and scheme validation | WP07 | No |
+| T07-05 | clean_broken_links_from_markdown: remove broken citations | WP07 | Yes |
+| T07-06 | LinkVerifierAgent: BaseAgent subclass | WP07 | No |
+| T07-07 | All-broken notice: append notice when all sources fail | WP07 | No |
+| T07-08 | Pipeline integration: add LinkVerifierAgent to agent factory | WP07 | No |
+| T07-09 | Unit tests: link verifier utilities and agent | WP07 | Yes |
+| T07-10 | BDD tests: link verification scenarios | WP07 | No |
+| T08-01 | Integration test: Config + Research timeframe flow | WP08 | Yes |
+| T08-02 | Integration test: Config + Perplexity timeframe passthrough | WP08 | Yes |
+| T08-03 | Integration test: Synthesis + LinkVerifier flow | WP08 | Yes |
+| T08-04 | Integration test: Timeframe + Link Verification combined | WP08 | No |
+| T08-05 | Backward compatibility test suite | WP08 | Yes |
+| T08-06 | E2E test: full pipeline with both features | WP08 | No |
+| T08-07 | E2E test: full pipeline backward compatibility | WP08 | Yes |
+| T08-08 | Performance test: link verification throughput | WP08 | Yes |
+| T08-09 | Security test: SSRF prevention in pipeline context | WP08 | Yes |
+| T08-10 | Documentation: README and configuration examples | WP08 | Yes |
+| T08-11 | Test configuration and CI integration | WP08 | Yes |

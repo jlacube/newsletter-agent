@@ -6,6 +6,10 @@ Spec refs: Section 9.1, FR-008 through FR-035.
 
 import logging
 
+from newsletter_agent.logging_config import setup_logging
+
+setup_logging()
+
 from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
 from google.adk.tools import google_search
 

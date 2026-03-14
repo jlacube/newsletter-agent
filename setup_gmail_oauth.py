@@ -49,6 +49,27 @@ def main() -> None:
                 "Google Cloud Console > APIs & Services > Credentials."
             )
             sys.exit(1)
+        if "web" in data and "installed" not in data:
+            print(
+                "Warning: This file contains 'web' application credentials.\n"
+                "The OAuth setup script works best with 'Desktop app' credentials.\n"
+                "To create Desktop credentials:\n"
+                "  1. Go to Google Cloud Console > APIs & Services > Credentials\n"
+                "  2. Click '+ CREATE CREDENTIALS' > 'OAuth client ID'\n"
+                "  3. Choose Application type: 'Desktop app'\n"
+                "  4. Download the JSON and re-run this script with the new file.\n"
+            )
+            # Attempt to continue -- extract redirect URI port if available
+            redirect_uris = data["web"].get("redirect_uris", [])
+            if redirect_uris:
+                from urllib.parse import urlparse
+                parsed = urlparse(redirect_uris[0])
+                if parsed.port and parsed.port != args.port:
+                    print(
+                        f"Note: Web credentials have redirect_uri port {parsed.port}, "
+                        f"but --port is {args.port}. Using port {parsed.port} to match.\n"
+                    )
+                    args.port = parsed.port
     except json.JSONDecodeError as e:
         print(f"Error: Client secrets file is not valid JSON: {e}")
         sys.exit(1)

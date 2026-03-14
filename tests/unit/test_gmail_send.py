@@ -126,6 +126,26 @@ class TestStripHtml:
         assert "Title" in result
         assert "<" not in result
 
+    def test_heading_tags_add_double_newline(self):
+        result = _strip_html("<h2>Section</h2><p>Content</p>")
+        assert "Section\n\n" in result
+
+    def test_list_items_add_newline(self):
+        result = _strip_html("<ul><li>Item 1</li><li>Item 2</li></ul>")
+        assert "Item 1\n" in result
+        assert "Item 2" in result
+
+    def test_case_insensitive_tags(self):
+        result = _strip_html("<P>Hello</P><BR>World")
+        assert "Hello" in result
+        assert "World" in result
+        assert "<" not in result
+
+    def test_horizontal_whitespace_compressed(self):
+        result = _strip_html("<p>Hello    World</p>")
+        assert "Hello World" in result
+        assert "    " not in result
+
 
 class TestSpecialCharacters:
     @patch("newsletter_agent.tools.gmail_send.build")

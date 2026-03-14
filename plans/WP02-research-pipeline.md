@@ -1,5 +1,5 @@
 ---
-lane: done
+lane: for_review
 review_status:
 ---
 
@@ -1621,6 +1621,8 @@ class TestBuildResearchPhase:
 - 2026-03-14T05:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05)
 - 2026-03-14T06:00:00Z - coder - lane=for_review - All feedback items addressed, resubmitted for review
 - 2025-07-25T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (3 WARNs)
+- 2026-03-14T07:00:00Z - coder - lane=doing - Addressing carried-forward WARNs: test edge case gaps (T02-08, T02-10), URL validation in _normalize_sources
+- 2026-03-14T07:30:00Z - coder - lane=for_review - WARN remediation complete, resubmitted for review
 
 ## Review
 
@@ -1848,3 +1850,30 @@ All five original FAILs are resolved. The Spec Compliance Checklist is present f
 | FB Remediation | 4 | 1 | 0 |
 | Regression | 1 | 0 | 0 |
 | Carried Forward | 0 | 2 | 0 |
+
+## WARN Remediation (Round 3)
+
+> **Implemented by**: Coder Agent
+> **Date**: 2026-03-14
+> **Scope**: Address carried-forward WARNs from Round 2
+
+### Changes Made
+
+1. **Test Edge Case Gaps (T02-08)**: Added 2 tests to test_perplexity_search.py:
+   - `test_empty_query_still_calls_api` - verifies empty query string is passed to API
+   - `test_timeout_error_returns_error_dict` - verifies APITimeoutError returns error dict
+
+2. **Test Edge Case Gaps (T02-10)**: Added 3 tests to test_research_utils.py:
+   - `test_invalid_urls_filtered_from_sources` - verifies ftp://, javascript:, and non-URL sources are filtered
+   - `test_very_long_text_preserved` - verifies 50K character text is preserved
+   - `test_special_characters_in_source_titles` - verifies quotes, ampersands, angle brackets in titles
+
+3. **URL Validation Fix (research_utils.py)**: Fixed `_normalize_sources` to filter non-http/https URLs from dict-format sources. Previously only string-format sources were validated.
+
+### Self-Review
+
+- [x] All new tests pass (252 total, 0 failures)
+- [x] No encoding violations
+- [x] No scope creep - only test files and one validation fix
+- [x] WARN for "Config Loader Agent Absent" not addressed - architectural decision, not a bug
+- [x] WARN for "Commit Discipline" not addressed - historical, cannot retroactively split

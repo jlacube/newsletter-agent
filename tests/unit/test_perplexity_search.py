@@ -191,3 +191,35 @@ class TestSearchPerplexityErrors:
 
         assert result["error"] is True
         assert result["provider"] == "perplexity"
+
+    @patch.dict(os.environ, {"PERPLEXITY_API_KEY": "test-key"})
+    @patch("newsletter_agent.tools.perplexity_search.OpenAI")
+    def test_empty_query_still_calls_api(self, mock_openai_class):
+        mock_client = MagicMock()
+        mock_openai_class.return_value = mock_client
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=MagicMock(content="No results"))]
+        mock_response.citations = []
+        mock_client.chat.completions.create.return_value = mock_response
+
+        result = search_perplexity("", "standard")
+
+        assert result["provider"] == "perplexity"
+        mock_client.chat.completions.create.assert_called_once()
+
+    @patch.dict(os.environ, {"PERPLEXITY_API_KEY": "test-key"})
+    @patch("newsletter_agent.tools.perplexity_search.OpenAI")
+    def test_timeout_error_returns_error_dict(self, mock_openai_class):
+        from openai import APITimeoutError
+
+        mock_client = MagicMock()
+        mock_openai_class.return_value = mock_client
+        mock_client.chat.completions.create.side_effect = APITimeoutError(
+            request=MagicMock()
+        )
+
+        result = search_perplexity("test", "standard")
+
+        assert result["error"] is True
+        assert result["provider"] == "perplexity"

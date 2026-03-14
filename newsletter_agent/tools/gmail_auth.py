@@ -21,10 +21,6 @@ class GmailAuthError(Exception):
     """Raised when Gmail OAuth2 authentication fails."""
 
 
-class GmailSendError(Exception):
-    """Raised when Gmail API send operation fails."""
-
-
 def get_gmail_credentials() -> Credentials:
     """Load and validate Gmail OAuth2 credentials from environment.
 

@@ -95,9 +95,12 @@ def _normalize_sources(raw_sources: list) -> list[dict]:
     normalized = []
     for src in raw_sources:
         if isinstance(src, dict) and "url" in src:
+            url = str(src["url"])
+            if not url.startswith(("http://", "https://")):
+                continue
             normalized.append({
-                "url": str(src["url"]),
-                "title": str(src.get("title", src["url"])),
+                "url": url,
+                "title": str(src.get("title", url)),
             })
         elif isinstance(src, str) and src.startswith(("http://", "https://")):
             normalized.append({"url": src, "title": src})

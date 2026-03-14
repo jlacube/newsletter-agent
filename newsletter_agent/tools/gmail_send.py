@@ -71,8 +71,11 @@ def send_newsletter_email(
 
 def _strip_html(html: str) -> str:
     """Strip HTML tags for plain-text fallback."""
-    text = re.sub(r"<br\s*/?>", "\n", html)
-    text = re.sub(r"</p>", "\n\n", text)
+    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    text = re.sub(r"</p>", "\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</li>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</h[1-6]>", "\n\n", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]+", " ", text)
     return text.strip()

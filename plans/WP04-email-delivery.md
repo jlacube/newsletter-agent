@@ -1,5 +1,5 @@
 ---
-lane: done
+lane: for_review
 review_status:
 ---
 
@@ -1997,6 +1997,8 @@ These packages should be added to `pyproject.toml` or `requirements.txt` during 
 - 2026-03-14T05:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02)
 - 2026-03-14T06:00:00Z - coder - lane=for_review - All feedback items addressed, resubmitted for review
 - 2025-07-25T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (5 WARNs)
+- 2026-03-14T07:00:00Z - coder - lane=doing - Addressing carried-forward WARNs: _strip_html tag handling, file_output IOError wrapping, dead GmailSendError
+- 2026-03-14T07:30:00Z - coder - lane=for_review - WARN remediation complete, resubmitted for review
 
 ## Review
 
@@ -2234,3 +2236,36 @@ Both original FAILs are resolved. Spec Compliance Checklist is present for all W
 | FB Remediation | 2 | 0 | 0 |
 | Regression | 1 | 0 | 0 |
 | Carried Forward | 0 | 5 | 0 |
+
+## WARN Remediation (Round 3)
+
+> **Implemented by**: Coder Agent
+> **Date**: 2026-03-14
+> **Scope**: Address carried-forward WARNs from Round 2
+
+### Changes Made
+
+1. **_strip_html Incomplete Tag Handling**: Updated `gmail_send.py:_strip_html()` to match WP reference implementation:
+   - Added `re.IGNORECASE` flags to `<br>` and `</p>` patterns
+   - Added `</li>` to newline conversion
+   - Added `</h[1-6]>` to double-newline conversion
+   - Added `[ \t]+` horizontal whitespace compression
+   - Added 4 new tests: heading spacing, list items, case-insensitive tags, whitespace compression
+
+2. **file_output.py Missing IOError Wrapping**: Wrapped `mkdir` call in try/except to provide descriptive `IOError` message with directory path context per WP reference implementation.
+
+3. **Dead GmailSendError Class**: Removed unused `GmailSendError` exception class from `gmail_auth.py`. No production or test code imported it.
+
+### Not Addressed (Non-Actionable)
+
+- **Commit Discipline**: Historical - cannot retroactively split past commits
+- **Activity Log Incomplete**: Historical - original implementation entries cannot be fabricated
+
+### Self-Review
+
+- [x] All 252 tests pass (0 failures)
+- [x] No encoding violations in modified files
+- [x] No scope creep - only files touched for WARN fixes
+- [x] _strip_html now matches WP reference implementation exactly
+- [x] file_output.py IOError wrapping matches WP reference implementation
+- [x] GmailSendError removal is clean - no imports anywhere in codebase

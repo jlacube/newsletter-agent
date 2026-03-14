@@ -114,3 +114,40 @@ class TestParseResearchResultFallback:
     def test_provider_always_set(self):
         result = parse_research_result("some text", "custom_provider")
         assert result["provider"] == "custom_provider"
+
+
+class TestParseResearchResultEdgeCases:
+
+    def test_invalid_urls_filtered_from_sources(self):
+        raw = json.dumps({
+            "text": "Content",
+            "sources": [
+                {"url": "ftp://invalid.com", "title": "FTP"},
+                {"url": "javascript:alert(1)", "title": "XSS"},
+                {"url": "not-a-url", "title": "Bad"},
+                {"url": "https://valid.com", "title": "Good"},
+            ],
+        })
+        result = parse_research_result(raw, "google")
+        assert len(result["sources"]) == 1
+        assert result["sources"][0]["url"] == "https://valid.com"
+
+    def test_very_long_text_preserved(self):
+        long_text = "A" * 50000
+        raw = json.dumps({"text": long_text, "sources": []})
+        result = parse_research_result(raw, "perplexity")
+        assert len(result["text"]) == 50000
+        assert "error" not in result
+
+    def test_special_characters_in_source_titles(self):
+        raw = json.dumps({
+            "text": "Content",
+            "sources": [
+                {"url": "https://example.com", "title": "O'Reilly & Sons <2024>"},
+                {"url": "https://other.com", "title": 'Title with "quotes"'},
+            ],
+        })
+        result = parse_research_result(raw, "google")
+        assert len(result["sources"]) == 2
+        assert result["sources"][0]["title"] == "O'Reilly & Sons <2024>"
+        assert result["sources"][1]["title"] == 'Title with "quotes"'

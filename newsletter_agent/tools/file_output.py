@@ -27,7 +27,12 @@ def save_newsletter_html(
         IOError: If the directory cannot be created or the file cannot be written.
     """
     output_path = Path(output_dir) / f"{newsletter_date}-newsletter.html"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise IOError(
+            f"Cannot create output directory '{output_dir}': {e}"
+        ) from e
     output_path.write_text(html_content, encoding="utf-8")
     resolved = str(output_path.resolve())
     logger.info("Newsletter saved to %s", resolved)

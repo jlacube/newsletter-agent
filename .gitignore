@@ -35,3 +35,5 @@ output/*.html
 # === OS ===
 .DS_Store
 Thumbs.db
+
+client_secret*.json

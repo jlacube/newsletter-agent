@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger("newsletter_agent.timing")
 
+_ROOT_AGENT_NAME = "NewsletterPipeline"
+
 # Module-level dict to track phase start times (keyed by invocation_id + agent_name)
 _phase_starts: dict[str, float] = {}
 
@@ -27,7 +29,7 @@ def before_agent_callback(callback_context) -> None:
     _phase_starts[key] = time.monotonic()
 
     agent_name = callback_context.agent_name
-    if agent_name == "newsletter_agent":
+    if agent_name == _ROOT_AGENT_NAME:
         # Root agent - record pipeline start time in state for the formatter
         callback_context.state["pipeline_start_time"] = (
             datetime.now(timezone.utc).isoformat()
@@ -47,7 +49,7 @@ def after_agent_callback(callback_context) -> None:
     agent_name = callback_context.agent_name
     if start is not None:
         elapsed = time.monotonic() - start
-        if agent_name == "newsletter_agent":
+        if agent_name == _ROOT_AGENT_NAME:
             logger.info("Pipeline completed in %.1fs", elapsed)
             callback_context.state.setdefault("newsletter_metadata", {})
             callback_context.state["newsletter_metadata"][

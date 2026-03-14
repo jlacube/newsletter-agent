@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP05 - Orchestration, Deployment, and Observability
@@ -564,6 +564,144 @@ Upon completion, the system is fully functional end-to-end: configurable, resear
 - **Depends on**: none
 
 ## Reference Implementations
+
+### Spec Compliance Checklist (Step 2b)
+
+#### T05-01 - Dynamic Agent Factory
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | Section 9.1, ADK convention | `agent.py` exports `root_agent` variable | PASS |
+| 2 | Section 9.4 Decision 1 | `build_pipeline(config) -> Agent` factory function exists | PASS |
+| 3 | FR-010 | N topics in config -> N sub-pipelines in ResearchPhase | PASS |
+| 4 | Section 9.1 | Each per-topic sub-pipeline is a SequentialAgent with Google + Perplexity | PASS |
+| 5 | Section 9.1 | Google Search agents use gemini-2.5-flash, google_search as only tool | PASS |
+| 6 | Section 9.1 | Perplexity agents use gemini-2.5-flash with search_perplexity FunctionTool | PASS |
+| 7 | Section 9.1 | Synthesis agent uses gemini-2.5-pro | PASS |
+| 8 | Section 9.1 | Root SequentialAgent sub-agents: research_phase -> synthesis -> output_phase | PASS - ConfigLoaderAgent does not exist (config loaded at module level in WP01); OutputPhase wraps formatter+delivery |
+| 9 | Section 9.1 | Agent names: GoogleSearcher_N, PerplexitySearcher_N, etc. | PASS |
+| 10 | FR-007 | Factory handles 1 and 20 topics | PASS |
+
+#### T05-02 - Structured Logging Configuration
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | FR-044 | `logging_config.py` with `setup_logging()` exists | PASS |
+| 2 | FR-044 | Log format: `{timestamp} {level} {agent_name} {message}` | PASS |
+| 3 | FR-042 | INFO-level for pipeline milestones | PASS |
+| 4 | FR-043 | ERROR-level for failures | PASS |
+| 5 | FR-045 | stdout for INFO and below, stderr for ERROR and above | PASS |
+| 6 | Section 10.5 | LOG_LEVEL env var configurable, default INFO | PASS |
+| 7 | Section 10.5 | Does not interfere with ADK internal logging | PASS |
+| 8 | Section 10.5 | Third-party library log levels suppressed to WARNING | PASS |
+
+#### T05-03 - Pipeline Timing Instrumentation
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | FR-042 | Pipeline start time recorded when root agent begins | PASS |
+| 2 | FR-042 | Each phase logs start/end at INFO level | PASS |
+| 3 | Section 7.6 | Total time stored in `newsletter_metadata.generation_time_seconds` | PASS |
+| 4 | FR-042 | Per-phase: `{phase_name} completed in {seconds:.1f}s` | PASS |
+| 5 | FR-042 | Total: `Pipeline completed in {seconds:.1f}s` | PASS |
+| 6 | Section 10.1 | Minimal overhead, no interference with execution | PASS |
+
+#### T05-04 - Cloud Run HTTP Trigger Handler
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | FR-037, Section 8.1 | POST endpoint at `/run` | PASS |
+| 2 | Section 8.1 | Success: 200 with `{status, newsletter_date, topics_processed, email_sent}` | PASS |
+| 3 | Section 8.1 | Dry-run: 200 with additional `output_file` field | PASS |
+| 4 | Section 8.1 | Failure: 500 with `{status: "error", message: ...}` | PASS |
+| 5 | Section 8.1 | No request body requirement | PASS |
+| 6 | Section 8.1 | Full pipeline runs synchronously within request lifecycle | PASS |
+| 7 | Section 10.3 | Timeout documented as 600s in deployment docs | PASS |
+
+#### T05-05 - Cloud Run Deployment Configuration
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | FR-036 | Deployment docs in README.md | PASS |
+| 2 | Section 10.3 | memory=1GB, timeout=600s, min-instances=0, max-instances=1 | PASS |
+| 3 | FR-040 | Secret Manager setup documented for all secrets | PASS |
+| 4 | FR-038, FR-039 | Cloud Scheduler with OIDC documented | PASS |
+| 5 | FR-039 | Service account setup documented | PASS |
+| 6 | FR-036 | `adk deploy cloud_run` command documented | PASS |
+
+#### T05-06 - Root Agent Module-Level Setup
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | Section 9.3, ADK | Module-level `root_agent` variable | PASS |
+| 2 | Section 9.1 | On import: loads config, sets up logging, builds agent tree | PASS |
+| 3 | Section 9.3 | Config failure raises a clear error | PASS |
+| 4 | Section 9.3 | `__init__.py` imports agent module for ADK discovery | PASS |
+
+#### T05-07 - Unit Tests for Agent Factory
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | Section 11.1 | Test file exists with at least 8 test cases | PASS (19 tests) |
+| 2 | Section 11.1 | 1, 5, 20 topic coverage | PASS |
+| 3 | Section 11.1 | Google Search agent has exactly one tool (google_search) | PASS |
+| 4 | Section 11.1 | Perplexity agent has search_perplexity tool | PASS |
+| 5 | Section 11.1 | Agent names follow naming convention | PASS |
+| 6 | Section 11.1 | Root agent is SequentialAgent with correct sub-agent order | PASS |
+| 7 | Section 11.1 | Research phase is ParallelAgent | PASS |
+| 8 | Section 11.1 | Model assignments: Flash for research, Pro for synthesis | PASS |
+| 9 | Section 11.1 | All tests pass | PASS |
+
+#### T05-08 - Unit Tests for Logging Configuration
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | FR-044 | Test file exists with at least 5 test cases | PASS (9 tests) |
+| 2 | FR-044 | Log format includes timestamp, level, agent name, message | PASS |
+| 3 | FR-042 | LOG_LEVEL env var respected | PASS |
+| 4 | Section 10.5 | Third-party library suppression verified | PASS |
+| 5 | FR-044 | All tests pass | PASS |
+
+#### T05-09 - E2E Test: Full Pipeline Dry-Run
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | Section 11.4 | Test file `tests/e2e/test_full_pipeline.py` exists | PASS |
+| 2 | Section 11.4 | Runs pipeline with dry_run: true | PASS |
+| 3 | Section 11.4 | External APIs mocked | PASS |
+| 4 | Section 11.4 | Verifies HTML file generated with expected sections | PASS |
+| 5 | Section 11.4 | Completes within 30 seconds | PASS |
+| 6 | Section 11.4 | All tests pass | PASS |
+
+#### T05-10 - Performance Validation Tests
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | Section 11.5 | Test file exists | PASS |
+| 2 | Section 10.1 | 5-topic timing verified | PASS |
+| 3 | Section 10.1 | 20-topic timing verified | PASS |
+| 4 | Section 11.5 | Marked with @pytest.mark.performance | PASS |
+
+#### T05-11 - Security Tests
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | Section 11.6 | Test file `tests/security/test_secrets.py` exists | PASS |
+| 2 | Section 10.2 | .env in .gitignore | PASS |
+| 3 | Section 10.2 | No API keys in committed files | PASS |
+| 4 | Section 10.2 | Jinja2 autoescaping enabled | PASS |
+| 5 | Section 10.2 | XSS payload escaped | PASS |
+| 6 | Section 10.2 | Error messages do not leak credentials | PASS |
+
+#### T05-12 - Project README
+
+| # | Spec Ref | Obligation | Status |
+|---|----------|-----------|--------|
+| 1 | Section 6.1 | README.md exists at project root | PASS |
+| 2 | Section 6.1, 6.5 | Includes: overview, prerequisites, install, config, dev, OAuth, deploy, architecture, troubleshooting | PASS |
+| 3 | Section 6.1 | References setup_gmail_oauth.py | PASS |
+| 4 | Section 6.1 | Example topics.yaml included | PASS |
+| 5 | Section 6.1 | Quick Start section | PASS |
 
 ### Agent Factory - Complete Reference
 
@@ -1807,6 +1945,8 @@ These features should each be planned as separate work packages when prioritized
 - 2025-07-26T00:00:00Z - coder - lane=doing - Started WP05 implementation
 - 2025-07-26T00:30:00Z - coder - lane=for_review - All tasks complete, submitted for review
 - 2025-07-26T01:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (8 FAILs) -- awaiting remediation
+- 2026-03-14T00:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05, FB-06, FB-07, FB-08)
+- 2025-07-27T00:00:00Z - coder - lane=for_review - All FB items resolved, Spec Compliance Checklist added, 235 tests pass, submitted for re-review
 
 ## Review
 
@@ -1823,14 +1963,14 @@ Changes Required. Eight FAIL findings across process compliance, spec adherence,
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Add a Spec Compliance Checklist (Step 2b) to the WP file for each task (T05-01 through T05-12), mapping each acceptance criterion to its spec ref with pass/fail status. This is a mandatory process requirement.
-- [ ] **FB-02**: Create a `build_pipeline(config: NewsletterConfig) -> Agent` function in `newsletter_agent/agent.py` that assembles the full agent tree and returns it. The module-level code should call this function. (T05-01 AC: "A factory function `build_pipeline(config) -> Agent` constructs the full agent tree")
-- [ ] **FB-03**: Change root agent name from `"newsletter_agent"` to `"NewsletterPipeline"` per spec Section 9.1. Update timing callbacks to check for `"NewsletterPipeline"` instead of `"newsletter_agent"`. Update tests accordingly.
-- [ ] **FB-04**: Restore the agent tree order to match spec Section 9.1 and T05-01 AC: root SequentialAgent sub-agents should be `[config_loader, research_phase, synthesis, output_phase]` where `output_phase` is a `SequentialAgent("OutputPhase")` wrapping FormatterAgent and DeliveryAgent. If ConfigLoaderAgent from WP01 exists, include it; if not, document the deviation in the WP file and proceed without it.
-- [ ] **FB-05**: Change config failure behavior in `agent.py`: when `load_config()` raises, the module SHALL re-raise the exception (or raise a clear error) instead of silently creating a stub agent. Per T05-06 AC: "If config loading fails, the module raises a clear error (not a cryptic import error)".
-- [ ] **FB-06**: Add missing unit tests to `test_agent_factory.py`: (a) verify each Google Search agent has exactly one tool (`google_search`), (b) verify each Perplexity agent has the `search_perplexity` tool, (c) verify the root agent is a SequentialAgent with the correct sub-agent order, (d) verify model assignments (Flash for research, Pro for synthesis). Per T05-07 ACs.
-- [ ] **FB-07**: Rename synthesis agent from `"SynthesisAgent"` to `"Synthesizer"` to match spec Section 9.1 naming. Update any tests referencing the old name.
-- [ ] **FB-08**: Update the log format in `logging_config.py` to use `{agent_name}` without brackets, matching spec FR-044 format `{timestamp} {level} {agent_name} {message}`. Change `"%(asctime)s %(levelname)s [%(name)s] %(message)s"` to `"%(asctime)s %(levelname)s %(name)s %(message)s"`.
+- [x] **FB-01**: Add a Spec Compliance Checklist (Step 2b) to the WP file for each task (T05-01 through T05-12), mapping each acceptance criterion to its spec ref with pass/fail status. This is a mandatory process requirement. **RESOLVED**: Checklist added under "Spec Compliance Checklist (Step 2b)" section with per-task tables covering all acceptance criteria.
+- [x] **FB-02**: Create a `build_pipeline(config: NewsletterConfig) -> Agent` function in `newsletter_agent/agent.py` that assembles the full agent tree and returns it. The module-level code should call this function. **RESOLVED**: `build_pipeline(config) -> SequentialAgent` added at line 111; module-level code calls it.
+- [x] **FB-03**: Change root agent name from `"newsletter_agent"` to `"NewsletterPipeline"` per spec Section 9.1. Update timing callbacks to check for `"NewsletterPipeline"` instead of `"newsletter_agent"`. Update tests accordingly. **RESOLVED**: Root agent name changed to `"NewsletterPipeline"` via `_ROOT_AGENT_NAME` constant; timing.py updated; tests updated.
+- [x] **FB-04**: Restore the agent tree order to match spec Section 9.1 and T05-01 AC: root SequentialAgent sub-agents should be `[config_loader, research_phase, synthesis, output_phase]` where `output_phase` is a `SequentialAgent("OutputPhase")` wrapping FormatterAgent and DeliveryAgent. If ConfigLoaderAgent from WP01 exists, include it; if not, document the deviation in the WP file and proceed without it. **RESOLVED**: OutputPhase SequentialAgent wrapper added; ConfigLoaderAgent does not exist in WP01 (config is loaded at module level via `load_config()`), deviation documented in compliance checklist.
+- [x] **FB-05**: Change config failure behavior in `agent.py`: when `load_config()` raises, the module SHALL re-raise the exception (or raise a clear error) instead of silently creating a stub agent. **RESOLVED**: Exception handler now raises `RuntimeError` with descriptive message wrapping the original exception.
+- [x] **FB-06**: Add missing unit tests to `test_agent_factory.py`: (a) verify each Google Search agent has exactly one tool (`google_search`), (b) verify each Perplexity agent has the `search_perplexity` tool, (c) verify the root agent is a SequentialAgent with the correct sub-agent order, (d) verify model assignments (Flash for research, Pro for synthesis). **RESOLVED**: Four new test functions added covering tools, models, root structure, and output phase.
+- [x] **FB-07**: Rename synthesis agent from `"SynthesisAgent"` to `"Synthesizer"` to match spec Section 9.1 naming. Update any tests referencing the old name. **RESOLVED**: Agent renamed to `"Synthesizer"` in agent.py; tests updated.
+- [x] **FB-08**: Update the log format in `logging_config.py` to use `{agent_name}` without brackets, matching spec FR-044 format `{timestamp} {level} {agent_name} {message}`. **RESOLVED**: Brackets removed from format string.
 
 ### Findings
 

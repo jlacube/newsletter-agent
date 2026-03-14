@@ -34,7 +34,7 @@ class TestBeforeAgentCallback:
         _phase_starts.pop(key, None)
 
     def test_root_agent_sets_pipeline_start_time(self):
-        ctx = _make_callback_context(agent_name="newsletter_agent")
+        ctx = _make_callback_context(agent_name="NewsletterPipeline")
         before_agent_callback(ctx)
         assert "pipeline_start_time" in ctx.state
         key = f"{ctx.invocation_id}:{ctx.agent_name}"
@@ -66,14 +66,14 @@ class TestAfterAgentCallback:
         assert "ResearchPhase completed in" in caplog.text
 
     def test_root_agent_logs_pipeline_completed(self, caplog):
-        ctx = _make_callback_context(agent_name="newsletter_agent")
+        ctx = _make_callback_context(agent_name="NewsletterPipeline")
         before_agent_callback(ctx)
         with caplog.at_level(logging.INFO, logger="newsletter_agent.timing"):
             after_agent_callback(ctx)
         assert "Pipeline completed in" in caplog.text
 
     def test_root_agent_stores_generation_time(self):
-        ctx = _make_callback_context(agent_name="newsletter_agent")
+        ctx = _make_callback_context(agent_name="NewsletterPipeline")
         before_agent_callback(ctx)
         time.sleep(0.01)
         after_agent_callback(ctx)

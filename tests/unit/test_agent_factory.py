@@ -5,14 +5,23 @@ Spec refs: Section 11.1, FR-010, Section 9.4 Decision 1.
 
 import pytest
 from google.adk.agents import LlmAgent, ParallelAgent, SequentialAgent
+from google.adk.tools import google_search
 
-from newsletter_agent.agent import build_research_phase
+from newsletter_agent.agent import (
+    _RESEARCH_MODEL,
+    _ROOT_AGENT_NAME,
+    _SYNTHESIS_MODEL,
+    build_pipeline,
+    build_research_phase,
+    build_synthesis_agent,
+)
 from newsletter_agent.config.schema import (
     AppSettings,
     NewsletterConfig,
     NewsletterSettings,
     TopicConfig,
 )
+from newsletter_agent.tools.perplexity_search import perplexity_search_tool
 
 
 def _make_config(topics_data):
@@ -141,3 +150,75 @@ class TestBuildResearchPhase:
         assert len(phase.sub_agents[0].sub_agents) == 1  # google only
         assert len(phase.sub_agents[1].sub_agents) == 1  # perplexity only
         assert len(phase.sub_agents[2].sub_agents) == 2  # both
+
+
+class TestAgentTools:
+    """Verify each agent has the correct tools assigned (T05-07 AC)."""
+
+    def test_google_search_agent_has_exactly_one_tool(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        phase = build_research_phase(config)
+        google_agent = phase.sub_agents[0].sub_agents[0]
+        assert len(google_agent.tools) == 1
+        assert google_agent.tools[0] is google_search
+
+    def test_perplexity_agent_has_search_tool(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        phase = build_research_phase(config)
+        perplexity_agent = phase.sub_agents[0].sub_agents[1]
+        assert len(perplexity_agent.tools) == 1
+        assert perplexity_agent.tools[0] is perplexity_search_tool
+
+
+class TestModelAssignments:
+    """Verify model assignments: Flash for research, Pro for synthesis (T05-07 AC)."""
+
+    def test_google_search_agent_uses_flash(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        phase = build_research_phase(config)
+        google_agent = phase.sub_agents[0].sub_agents[0]
+        assert google_agent.model == _RESEARCH_MODEL
+
+    def test_perplexity_agent_uses_flash(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        phase = build_research_phase(config)
+        perplexity_agent = phase.sub_agents[0].sub_agents[1]
+        assert perplexity_agent.model == _RESEARCH_MODEL
+
+    def test_synthesis_agent_uses_pro(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        agent = build_synthesis_agent(config)
+        assert agent.model == _SYNTHESIS_MODEL
+
+
+class TestBuildPipeline:
+    """Verify full pipeline construction via build_pipeline() (T05-07 AC)."""
+
+    def test_root_is_sequential_agent(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        pipeline = build_pipeline(config)
+        assert isinstance(pipeline, SequentialAgent)
+        assert pipeline.name == _ROOT_AGENT_NAME
+
+    def test_root_has_three_sub_agents(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        pipeline = build_pipeline(config)
+        assert len(pipeline.sub_agents) == 3
+
+    def test_sub_agent_order(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        pipeline = build_pipeline(config)
+        assert isinstance(pipeline.sub_agents[0], ParallelAgent)
+        assert pipeline.sub_agents[0].name == "ResearchPhase"
+        assert isinstance(pipeline.sub_agents[1], LlmAgent)
+        assert pipeline.sub_agents[1].name == "Synthesizer"
+        assert isinstance(pipeline.sub_agents[2], SequentialAgent)
+        assert pipeline.sub_agents[2].name == "OutputPhase"
+
+    def test_output_phase_wraps_formatter_and_delivery(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        pipeline = build_pipeline(config)
+        output_phase = pipeline.sub_agents[2]
+        assert len(output_phase.sub_agents) == 2
+        assert output_phase.sub_agents[0].name == "FormatterAgent"
+        assert output_phase.sub_agents[1].name == "DeliveryAgent"

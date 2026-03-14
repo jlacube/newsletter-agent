@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP05 - Orchestration, Deployment, and Observability
@@ -1805,3 +1806,177 @@ These features should each be planned as separate work packages when prioritized
 - 2025-01-01T00:00:00Z - planner - lane=planned - Work package created
 - 2025-07-26T00:00:00Z - coder - lane=doing - Started WP05 implementation
 - 2025-07-26T00:30:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2025-07-26T01:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (8 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-26
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Changes Required. Eight FAIL findings across process compliance, spec adherence, architecture, and test coverage. The implementation delivers working functionality (HTTP handler, logging, timing, test suites) but deviates from the spec and plan in agent tree structure, naming, error handling, and unit test completeness. No security or performance issues found.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Add a Spec Compliance Checklist (Step 2b) to the WP file for each task (T05-01 through T05-12), mapping each acceptance criterion to its spec ref with pass/fail status. This is a mandatory process requirement.
+- [ ] **FB-02**: Create a `build_pipeline(config: NewsletterConfig) -> Agent` function in `newsletter_agent/agent.py` that assembles the full agent tree and returns it. The module-level code should call this function. (T05-01 AC: "A factory function `build_pipeline(config) -> Agent` constructs the full agent tree")
+- [ ] **FB-03**: Change root agent name from `"newsletter_agent"` to `"NewsletterPipeline"` per spec Section 9.1. Update timing callbacks to check for `"NewsletterPipeline"` instead of `"newsletter_agent"`. Update tests accordingly.
+- [ ] **FB-04**: Restore the agent tree order to match spec Section 9.1 and T05-01 AC: root SequentialAgent sub-agents should be `[config_loader, research_phase, synthesis, output_phase]` where `output_phase` is a `SequentialAgent("OutputPhase")` wrapping FormatterAgent and DeliveryAgent. If ConfigLoaderAgent from WP01 exists, include it; if not, document the deviation in the WP file and proceed without it.
+- [ ] **FB-05**: Change config failure behavior in `agent.py`: when `load_config()` raises, the module SHALL re-raise the exception (or raise a clear error) instead of silently creating a stub agent. Per T05-06 AC: "If config loading fails, the module raises a clear error (not a cryptic import error)".
+- [ ] **FB-06**: Add missing unit tests to `test_agent_factory.py`: (a) verify each Google Search agent has exactly one tool (`google_search`), (b) verify each Perplexity agent has the `search_perplexity` tool, (c) verify the root agent is a SequentialAgent with the correct sub-agent order, (d) verify model assignments (Flash for research, Pro for synthesis). Per T05-07 ACs.
+- [ ] **FB-07**: Rename synthesis agent from `"SynthesisAgent"` to `"Synthesizer"` to match spec Section 9.1 naming. Update any tests referencing the old name.
+- [ ] **FB-08**: Update the log format in `logging_config.py` to use `{agent_name}` without brackets, matching spec FR-044 format `{timestamp} {level} {agent_name} {message}`. Change `"%(asctime)s %(levelname)s [%(name)s] %(message)s"` to `"%(asctime)s %(levelname)s %(name)s %(message)s"`.
+
+### Findings
+
+#### FAIL - Process Compliance: Missing Spec Compliance Checklist
+- **Requirement**: Step 2b process requirement (all tasks T05-01 through T05-12)
+- **Status**: Missing
+- **Detail**: No Spec Compliance Checklist section exists in the WP file. The WP contains a "Deployment Checklist" (line 1710) which is operational, not a spec compliance mapping.
+- **Evidence**: grep for "Spec Compliance" in WP05 file returns zero matches
+
+#### FAIL - Spec Adherence: No `build_pipeline()` factory function
+- **Requirement**: T05-01 AC: "A factory function `build_pipeline(config: NewsletterConfig) -> Agent` constructs the full agent tree"
+- **Status**: Missing
+- **Detail**: Implementation has separate `build_research_phase()`, `build_synthesis_agent()`, `build_formatter_agent()`, `build_delivery_agent()` functions assembled at module level. No single `build_pipeline()` function exists.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) — no function named `build_pipeline`
+
+#### FAIL - Spec Adherence: Root agent name deviation
+- **Requirement**: Spec Section 9.1: `root_agent (SequentialAgent: "NewsletterPipeline")`
+- **Status**: Deviating
+- **Detail**: Implementation names root agent `"newsletter_agent"`. Timing callbacks hardcode this name for root detection.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) line ~121: `name="newsletter_agent"`; [newsletter_agent/timing.py](newsletter_agent/timing.py) line ~30: `if agent_name == "newsletter_agent"`
+
+#### FAIL - Spec Adherence: Agent tree structure deviation
+- **Requirement**: T05-01 AC: "The root SequentialAgent order is: config_loader -> research_phase -> synthesis -> output_phase (formatter -> delivery)"; Spec Section 9.1 architecture
+- **Status**: Deviating
+- **Detail**: Implementation root sub-agents are `[research_phase, synthesis_agent, formatter_agent, delivery_agent]` — missing ConfigLoader at start, missing OutputPhase wrapper around formatter+delivery. The spec explicitly shows `output_phase (SequentialAgent: "OutputPhase")` as a wrapper.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) lines ~117-123
+
+#### FAIL - Spec Adherence: Config failure silently creates stub
+- **Requirement**: T05-06 AC: "If config loading fails, the module raises a clear error (not a cryptic import error)"
+- **Status**: Deviating
+- **Detail**: On exception, the module logs a warning and creates a stub LlmAgent instead of raising. This means a misconfigured deployment would appear to start successfully but produce no newsletter.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) lines ~126-131: `except Exception: logger.warning("Config not loaded; using stub agent")`
+
+#### FAIL - Test Coverage: Missing agent tool verification tests
+- **Requirement**: T05-07 AC: "Tests verify each Google Search agent has exactly one tool (google_search)" and "Tests verify each Perplexity agent has the search_perplexity tool"
+- **Status**: Missing
+- **Detail**: No test in `test_agent_factory.py` checks the `tools` attribute of any created agent.
+- **Evidence**: [tests/unit/test_agent_factory.py](tests/unit/test_agent_factory.py) — no assertion on `.tools`
+
+#### FAIL - Test Coverage: Missing root agent structure test
+- **Requirement**: T05-07 AC: "Tests verify the root agent is a SequentialAgent with the correct sub-agent order"
+- **Status**: Missing
+- **Detail**: Tests only verify `build_research_phase()`. No test constructs or verifies the full root agent tree structure.
+- **Evidence**: [tests/unit/test_agent_factory.py](tests/unit/test_agent_factory.py) — all tests operate on `build_research_phase()` only
+
+#### FAIL - Test Coverage: Missing model assignment unit tests
+- **Requirement**: T05-07 AC: "Tests verify model assignments: Flash for research, Pro for synthesis"
+- **Status**: Missing
+- **Detail**: No unit test checks that research agents use `gemini-2.5-flash` or that synthesis uses `gemini-2.5-pro`. The E2E test checks `"pro" in agent.model.lower()` for synthesis but no unit test covers research model.
+- **Evidence**: [tests/unit/test_agent_factory.py](tests/unit/test_agent_factory.py) — no assertion on `.model`
+
+#### WARN - Architecture: Synthesis agent naming
+- **Requirement**: Spec Section 9.1: `synthesis_agent (LlmAgent: "Synthesizer")`
+- **Status**: Deviating
+- **Detail**: Implementation uses `"SynthesisAgent"` instead of `"Synthesizer"`. Functional behavior is identical.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py) line ~95: `name="SynthesisAgent"`
+
+#### WARN - Architecture: Log format brackets
+- **Requirement**: FR-044: `{timestamp} {level} {agent_name} {message}`
+- **Status**: Deviating
+- **Detail**: Log format wraps logger name in square brackets: `[%(name)s]`. The four fields are present but the format includes extra brackets not in the spec.
+- **Evidence**: [newsletter_agent/logging_config.py](newsletter_agent/logging_config.py) line 14: `"%(asctime)s %(levelname)s [%(name)s] %(message)s"`
+
+#### WARN - Process: Bundled commits
+- **Requirement**: Commit history should show one commit per task
+- **Status**: Deviating
+- **Detail**: Commit `441f06c` bundles T05-02 and T05-08 ("feat(logging): add structured logging configuration (WP05 T05-02, T05-08)"). Other commits appear to be single-task.
+- **Evidence**: git log
+
+#### WARN - Test Coverage: Test file path
+- **Requirement**: T05-07 AC: "Test file `tests/test_agent_factory.py` exists"
+- **Status**: Deviating
+- **Detail**: Actual path is `tests/unit/test_agent_factory.py`. Better organization but deviates from the plan's stated path.
+- **Evidence**: File at `tests/unit/test_agent_factory.py`
+
+#### PASS - API / Interface Adherence
+- **Requirement**: Section 8.1 (Cloud Run HTTP trigger endpoint)
+- **Status**: Compliant
+- **Detail**: POST `/run` returns 200 with correct JSON shape (status, newsletter_date, topics_processed, email_sent), 200 with output_file on dry_run, 500 with error details, 405 on GET. No body consumed (secure trigger-only design). All response fields match spec.
+- **Evidence**: [newsletter_agent/http_handler.py](newsletter_agent/http_handler.py); [tests/unit/test_http_handler.py](tests/unit/test_http_handler.py)
+
+#### PASS - Data Model Adherence
+- **Requirement**: Section 7.6 (pipeline state keys), plan state key inventory
+- **Status**: Compliant
+- **Detail**: `pipeline_start_time`, `newsletter_metadata.generation_time_seconds`, `delivery_status` state keys used correctly by timing callbacks and HTTP handler.
+- **Evidence**: [newsletter_agent/timing.py](newsletter_agent/timing.py); [newsletter_agent/http_handler.py](newsletter_agent/http_handler.py)
+
+#### PASS - Non-Functional: Security
+- **Requirement**: Section 10.2, Section 11.6
+- **Status**: Compliant
+- **Detail**: No injection surfaces (POST body not consumed), .env gitignored, token.json gitignored, Jinja2 autoescape enabled, nh3 sanitization present, XSS tests pass, no secrets in code. No OWASP Top 10 violations detected.
+- **Evidence**: [.gitignore](.gitignore); [tests/security/test_secrets.py](tests/security/test_secrets.py)
+
+#### PASS - Non-Functional: Observability
+- **Requirement**: FR-042, FR-043, FR-045, Section 10.5
+- **Status**: Compliant
+- **Detail**: Logging configured at module load, stdout for INFO/below, stderr for ERROR+. Per-phase timing logged. Pipeline start/end timestamps recorded. Cloud Run stdout/stderr integration works by default.
+- **Evidence**: [newsletter_agent/logging_config.py](newsletter_agent/logging_config.py); [newsletter_agent/timing.py](newsletter_agent/timing.py)
+
+#### PASS - Performance
+- **Requirement**: Section 10.1, Section 11.5
+- **Status**: Compliant
+- **Detail**: Build times tested for 5 and 20 topics. HTML rendering times tested. All performance thresholds met. No N+1 patterns, no unbounded fetches, no blocking in hot paths.
+- **Evidence**: [tests/performance/test_pipeline_timing.py](tests/performance/test_pipeline_timing.py)
+
+#### PASS - Documentation Accuracy
+- **Requirement**: T05-05, T05-12
+- **Status**: Compliant
+- **Detail**: README covers Quick Start, Prerequisites, Installation, Environment Setup, Configuration, Gmail OAuth2 Setup, Local Development, Architecture, Deployment to Cloud Run (with Secret Manager, Cloud Scheduler, OIDC), Deployment Checklist, Troubleshooting. Cloud Run config documents memory=1GB, timeout=600s, min-instances=0.
+- **Evidence**: [README.md](README.md)
+
+#### PASS - Scope Discipline
+- **Requirement**: WP05 task scope
+- **Status**: Compliant
+- **Detail**: All files created/modified are within the WP05 scope. No unspecified features or abstractions added. No files modified outside the declared scope.
+- **Evidence**: Commit history `441f06c` through `c3dfbf7`
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No encoding violations
+- **Status**: Compliant
+- **Detail**: No em dashes, smart quotes, or curly apostrophes found in any Python files under `newsletter_agent/` or `tests/`.
+- **Evidence**: Byte-level scan of all .py files
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 1 | 1 |
+| Spec Adherence | 0 | 0 | 4 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 1 | 0 | 0 |
+| Architecture | 0 | 1 | 0 |
+| Test Coverage | 0 | 1 | 3 |
+| Non-Functional | 2 | 0 | 0 |
+| Performance | 1 | 0 | 0 |
+| Documentation | 1 | 0 | 0 |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. **(FB-01)** Add Spec Compliance Checklist to WP file for all tasks.
+2. **(FB-02)** Create `build_pipeline(config) -> Agent` function encapsulating root agent assembly.
+3. **(FB-03)** Rename root agent to `"NewsletterPipeline"`, update timing callbacks and tests.
+4. **(FB-04)** Add `OutputPhase` SequentialAgent wrapper for formatter+delivery. Investigate ConfigLoaderAgent from WP01.
+5. **(FB-05)** Change config failure from stub creation to raising a clear error.
+6. **(FB-06)** Add unit tests for agent tools, root agent structure, and model assignments.
+7. **(FB-07)** Rename synthesis agent to `"Synthesizer"`.
+8. **(FB-08)** Remove brackets from log format `%(name)s`.

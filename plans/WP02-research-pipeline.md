@@ -1,5 +1,5 @@
 ---
-lane: for_review
+lane: done
 review_status:
 ---
 
@@ -1623,6 +1623,7 @@ class TestBuildResearchPhase:
 - 2025-07-25T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (3 WARNs)
 - 2026-03-14T07:00:00Z - coder - lane=doing - Addressing carried-forward WARNs: test edge case gaps (T02-08, T02-10), URL validation in _normalize_sources
 - 2026-03-14T07:30:00Z - coder - lane=for_review - WARN remediation complete, resubmitted for review
+- 2026-03-14T08:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs, both non-actionable/accepted)
 
 ## Review
 
@@ -1877,3 +1878,44 @@ All five original FAILs are resolved. The Spec Compliance Checklist is present f
 - [x] No scope creep - only test files and one validation fix
 - [x] WARN for "Config Loader Agent Absent" not addressed - architectural decision, not a bug
 - [x] WARN for "Commit Discipline" not addressed - historical, cannot retroactively split
+
+## Re-Review (Round 3)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-14
+> **Verdict**: Approved with Findings
+> **Scope**: Re-review of WARN remediation items from Round 2
+
+### Summary
+
+All three actionable WARNs from Round 2 are resolved. Test edge case gaps for T02-08 and T02-10 are filled with 5 new tests. The URL validation fix in `_normalize_sources` correctly closes a gap where dict-format sources with non-http/https URLs were not filtered. Two non-actionable WARNs remain (commit discipline, config loader agent) -- both are historical/architectural and accepted. All 252 tests pass. No regressions. No encoding violations.
+
+### Re-Review Findings
+
+#### PASS - Test Edge Case Gaps (T02-08)
+- **Original WARN**: Empty query string and response timeout tests absent
+- **Status**: Resolved
+- **Evidence**: `test_empty_query_still_calls_api` at test_perplexity_search.py L168 calls `search_perplexity("", "standard")`. `test_timeout_error_returns_error_dict` at L181 uses `APITimeoutError`.
+
+#### PASS - Test Edge Case Gaps (T02-10)
+- **Original WARN**: Invalid URLs, very long text, special characters in source titles tests absent
+- **Status**: Resolved
+- **Evidence**: 3 new tests in `TestParseResearchResultEdgeCases` class at test_research_utils.py L101-131. Invalid URL test correctly validates that ftp://, javascript:, and non-URL sources are filtered.
+
+#### PASS - URL Validation Fix (Bonus)
+- **Detail**: `_normalize_sources` in research_utils.py now filters non-http/https URLs from dict-format sources (L91-92). This was a real bug exposed by the new test -- not merely a missing test.
+- **Evidence**: `if not url.startswith(("http://", "https://")): continue` at research_utils.py L91-92.
+
+#### WARN - Carried Forward: Config Loader Agent Absent (T02-07)
+- **Detail**: Architectural decision to load config at module level. Functionally correct. Accepted.
+
+#### WARN - Carried Forward: Commit Discipline
+- **Detail**: Historical. Cannot retroactively split. Accepted.
+
+### Statistics (Round 3)
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| WARN Remediation | 3 | 0 | 0 |
+| Regression | 1 | 0 | 0 |
+| Carried Forward | 0 | 2 | 0 |

@@ -1,5 +1,5 @@
 ---
-lane: for_review
+lane: done
 review_status:
 ---
 
@@ -1999,6 +1999,7 @@ These packages should be added to `pyproject.toml` or `requirements.txt` during 
 - 2025-07-25T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (5 WARNs)
 - 2026-03-14T07:00:00Z - coder - lane=doing - Addressing carried-forward WARNs: _strip_html tag handling, file_output IOError wrapping, dead GmailSendError
 - 2026-03-14T07:30:00Z - coder - lane=for_review - WARN remediation complete, resubmitted for review
+- 2026-03-14T08:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs, both non-actionable/accepted)
 
 ## Review
 
@@ -2269,3 +2270,45 @@ Both original FAILs are resolved. Spec Compliance Checklist is present for all W
 - [x] _strip_html now matches WP reference implementation exactly
 - [x] file_output.py IOError wrapping matches WP reference implementation
 - [x] GmailSendError removal is clean - no imports anywhere in codebase
+
+## Re-Review (Round 3)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-14
+> **Verdict**: Approved with Findings
+> **Scope**: Re-review of WARN remediation items from Round 2
+
+### Summary
+
+All three actionable WARNs from Round 2 are resolved. `_strip_html` now matches the WP reference implementation exactly with IGNORECASE flags, list/heading tag handling, and whitespace compression. `file_output.py` wraps mkdir in try/except with descriptive IOError. Dead `GmailSendError` class removed cleanly. Four new tests cover the `_strip_html` improvements. Two non-actionable WARNs remain (commit discipline, activity log incomplete) -- both are historical and accepted. All 252 tests pass. No regressions. No encoding violations.
+
+### Re-Review Findings
+
+#### PASS - _strip_html Incomplete Tag Handling
+- **Original WARN**: Missing IGNORECASE flags, </li> newline, </h[1-6]> double-newline, whitespace compression
+- **Status**: Resolved
+- **Evidence**: gmail_send.py L78-85 now has all 7 regex substitutions matching the WP reference implementation line-for-line. 4 new tests in TestStripHtml verify heading spacing, list items, case-insensitive tags, and whitespace compression.
+
+#### PASS - file_output.py Missing IOError Wrapping
+- **Original WARN**: mkdir OSError not wrapped with descriptive context
+- **Status**: Resolved
+- **Evidence**: file_output.py L31-34: `try: output_path.parent.mkdir(...) except OSError as e: raise IOError(f"Cannot create output directory '{output_dir}': {e}") from e`
+
+#### PASS - Dead GmailSendError Class
+- **Original WARN**: GmailSendError declared in gmail_auth.py but never used
+- **Status**: Resolved
+- **Evidence**: Class removed from gmail_auth.py. Zero `.py` file references remain. GmailAuthError still present and functional.
+
+#### WARN - Carried Forward: Commit Discipline
+- **Detail**: Historical. Cannot retroactively split. Accepted.
+
+#### WARN - Carried Forward: Activity Log Incomplete
+- **Detail**: Historical. Original implementation entries cannot be fabricated. Accepted.
+
+### Statistics (Round 3)
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| WARN Remediation | 3 | 0 | 0 |
+| Regression | 1 | 0 | 0 |
+| Carried Forward | 0 | 2 | 0 |

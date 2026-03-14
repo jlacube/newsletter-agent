@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP05 - Orchestration, Deployment, and Observability
 
 > **Spec**: `specs/newsletter-agent.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: The root agent pipeline is fully assembled, the Cloud Run HTTP endpoint triggers newsletter generation, Cloud Scheduler automates weekly runs, and structured logging provides observability across all phases
 > **Independent Test**: Run `adk web`, trigger the full pipeline, verify all phases execute in sequence and structured logs appear; deploy to Cloud Run, POST to `/run` endpoint, verify newsletter generation completes
@@ -1803,3 +1803,5 @@ These features should each be planned as separate work packages when prioritized
 ## Activity Log
 
 - 2025-01-01T00:00:00Z - planner - lane=planned - Work package created
+- 2025-07-26T00:00:00Z - coder - lane=doing - Started WP05 implementation
+- 2025-07-26T00:30:00Z - coder - lane=for_review - All tasks complete, submitted for review

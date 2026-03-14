@@ -9,7 +9,7 @@
 newsletter:
   title: "Weekly Tech Digest"            # Display title (1-200 chars)
   schedule: "0 8 * * 0"                  # Cron: Sunday 8am UTC
-  recipient_email: "your-email@gmail.com" # Delivery target
+  recipient_email: "jerome.lacube@gmail.com" # Delivery target
 
 # Application settings
 settings:

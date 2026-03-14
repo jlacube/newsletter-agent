@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP02 - Research Pipeline
 
 > **Spec**: `specs/newsletter-agent.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: Each configured topic is researched in parallel via Google Search grounding and Perplexity Sonar API, with results stored in ADK session state
 > **Independent Test**: Configure 2 topics, run the research pipeline, verify session state contains `research_0_google`, `research_0_perplexity`, `research_1_google`, `research_1_perplexity` keys with text and source URLs
@@ -1516,3 +1516,5 @@ class TestBuildResearchPhase:
 ## Activity Log
 
 - 2025-01-01T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-14T02:30:00Z - coder - lane=doing - Implementation started
+- 2026-03-14T03:00:00Z - coder - lane=for_review - All tasks complete, submitted for review

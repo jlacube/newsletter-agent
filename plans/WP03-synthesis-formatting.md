@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP03 - Content Synthesis and Newsletter Formatting
@@ -1548,3 +1549,139 @@ class TestNewsletterFormatting:
 ## Activity Log
 
 - 2025-01-01T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-14T00:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (4 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-14
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Changes Required. The WP has one critical functional failure: `parse_synthesis_output()` is implemented and thoroughly tested but never called in the production pipeline. The synthesis LlmAgent stores raw JSON as `synthesis_raw` in session state, but no component converts it into the `synthesis_{N}` and `executive_summary` state keys that the FormatterAgent reads. At runtime, the pipeline would produce a newsletter with zero topic sections. Additionally, three process compliance failures: no Spec Compliance Checklist, no coder activity log entries, and all 11 tasks batched into a single commit.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Wire `parse_synthesis_output()` into the pipeline between the synthesis LlmAgent and the FormatterAgent. After the Synthesizer agent runs, its `synthesis_raw` output must be parsed into `synthesis_{N}` and `executive_summary` state keys. Implement as either: (a) a custom BaseAgent wrapper around the LlmAgent that calls `parse_synthesis_output()` after the LLM responds and writes the parsed results to state, or (b) a standalone post-processing BaseAgent inserted as a step between the Synthesizer and the OutputPhase in the root SequentialAgent.
+- [ ] **FB-02**: In `FormatterAgent._run_async_impl`, add handling for missing synthesis sections. The formatter must know the expected topic count (e.g., by reading a `config_topic_count` or `config_topic_names` state key). When `synthesis_{N}` is None for an expected topic, insert a section with "Research unavailable for this topic" instead of silently omitting it. This is required by T03-05 acceptance criterion.
+- [ ] **FB-03**: Add Spec Compliance Checklist (Step 2b) to the WP file for each task (T03-01 through T03-11) and check off each acceptance criterion.
+- [ ] **FB-04**: Add Activity Log entries for coder lane transitions (lane=doing, task completions, lane=for_review).
+
+### Findings
+
+#### FAIL - Process Compliance: Spec Compliance Checklist
+- **Requirement**: Step 2b process requirement
+- **Status**: Missing
+- **Detail**: No Spec Compliance Checklist exists in the WP file for any of the 11 tasks.
+- **Evidence**: WP file contains no "Spec Compliance Checklist" or "Step 2b" section.
+
+#### FAIL - Process Compliance: Activity Log
+- **Requirement**: Activity Log entries for coder lane transitions
+- **Status**: Missing
+- **Detail**: Activity Log only contains the planner's initial entry. No coder entries for `lane=doing`, task completions, or `lane=for_review`.
+- **Evidence**: [Activity Log](WP03-synthesis-formatting.md#L1555) shows only one entry.
+
+#### FAIL - Process Compliance: Commit Discipline
+- **Requirement**: One commit per task
+- **Status**: Deviating
+- **Detail**: All 11 WP03 tasks (T03-01 through T03-11) are batched into a single commit `a3e3f63 feat(synthesis): add synthesis, sanitizer, formatter, HTML template with tests (WP03)` instead of one commit per task.
+- **Evidence**: `git log --oneline` shows only one WP03-related commit.
+
+#### FAIL - Spec Adherence: Synthesis Post-Processing Wiring (FR-019, FR-026, T03-06)
+- **Requirement**: FR-019 (synthesis state structure), FR-026 (newsletter_html in state), T03-06 AC "A post-processing step parses the raw output into `synthesis_{N}` and `executive_summary` state keys"
+- **Status**: Missing
+- **Detail**: `parse_synthesis_output()` in [newsletter_agent/tools/synthesis_utils.py](newsletter_agent/tools/synthesis_utils.py) is correctly implemented and has 22 passing unit tests, but it is **never imported or called anywhere in production code**. The synthesis LlmAgent has `output_key="synthesis_raw"` ([agent.py line 97](newsletter_agent/agent.py#L97)), storing raw JSON text. The FormatterAgent reads `synthesis_{N}` keys from state ([formatter.py lines 60-64](newsletter_agent/tools/formatter.py#L60-L64)), which are never populated. At runtime, the `while True` loop in FormatterAgent immediately breaks on the first iteration (`synthesis_0` is None), producing a newsletter with 0 sections, empty source appendix, and empty executive summary.
+- **Evidence**: `grep -r "parse_synthesis_output" newsletter_agent/` returns zero matches. `grep -r "synthesis_utils" newsletter_agent/` returns zero matches. The function is only imported in test files.
+
+#### FAIL - Spec Adherence: Missing Topic Fallback (T03-05)
+- **Requirement**: T03-05 AC "If a synthesis section is missing for a topic, the formatter includes a 'Research unavailable' note instead of failing"
+- **Status**: Deviating
+- **Detail**: FormatterAgent silently omits missing topics by breaking out of the while loop when `section_data is None`. No "Research unavailable" note is inserted. The formatter also has no way to know the expected topic count to detect gaps.
+- **Evidence**: [formatter.py lines 60-64](newsletter_agent/tools/formatter.py#L60-L64): `if section_data is None: break`
+
+#### PASS - Spec Adherence: Synthesis Prompt (FR-016, FR-017, FR-018, FR-020, T03-01)
+- **Requirement**: FR-016 through FR-020
+- **Status**: Compliant
+- **Detail**: The synthesis instruction prompt correctly requires 200+ word analysis, inline [Title](URL) citations, executive summary with 1-3 sentences per topic, explicit prohibition on fabricating facts/sources. Output format matches Section 7.5 SynthesisResult structure.
+- **Evidence**: [newsletter_agent/prompts/synthesis.py](newsletter_agent/prompts/synthesis.py)
+
+#### PASS - Spec Adherence: HTML Template (FR-021, FR-022, FR-023, FR-024, FR-025)
+- **Requirement**: FR-021 through FR-025
+- **Status**: Compliant
+- **Detail**: Template uses inline CSS only (no `<link>` or `<style>` tags), correct section order (header, executive summary, TOC, topic sections, source appendix, footer), bulleted executive summary, anchor-linked TOC, responsive single-column 600px max-width table layout, web-safe fonts, `bgcolor` attributes alongside `background-color` CSS. Template handles empty executive summary and empty source appendix gracefully.
+- **Evidence**: [newsletter_agent/templates/newsletter.html.j2](newsletter_agent/templates/newsletter.html.j2)
+
+#### PASS - Data Model Adherence (Section 7.5, 7.6)
+- **Requirement**: SynthesisResult structure, NewsletterMetadata structure
+- **Status**: Compliant
+- **Detail**: `parse_synthesis_output()` produces dicts matching Section 7.5 (title, body_markdown, sources with url+title). FormatterAgent stores `newsletter_metadata` with title, date, topic_count, generation_time_seconds per Section 7.6. Source deduplication implemented in both synthesis_utils and formatter.
+- **Evidence**: [synthesis_utils.py](newsletter_agent/tools/synthesis_utils.py), [formatter.py lines 99-105](newsletter_agent/tools/formatter.py#L99-L105)
+
+#### PASS - Architecture Adherence (Section 9.1, 9.2, 9.3, 9.4)
+- **Requirement**: Section 9.1 agent hierarchy, 9.2 technology stack, 9.3 directory structure, 9.4 design decisions
+- **Status**: Compliant
+- **Detail**: Synthesis agent uses `gemini-2.5-pro` (Decision 3). FormatterAgent is a BaseAgent subclass. Jinja2 template with autoescaping (Decision 4). File locations match Section 9.3: `prompts/synthesis.py`, `templates/newsletter.html.j2`, `tools/sanitizer.py`, `tools/synthesis_utils.py`, `tools/formatter.py`.
+- **Evidence**: [agent.py](newsletter_agent/agent.py), [formatter.py](newsletter_agent/tools/formatter.py)
+
+#### PASS - Non-Functional: Security (Section 10.2)
+- **Requirement**: OWASP A03 injection mitigation, Jinja2 autoescaping, HTML sanitization
+- **Status**: Compliant
+- **Detail**: Jinja2 Environment created with `autoescape=True`. The `|safe` filter is used only on content sanitized by `nh3.clean()`. nh3 configured with explicit allowed tags whitelist, allowed attributes (only `href` on `<a>`), and URL schemes (`http`, `https` only). XSS payloads verified stripped in 11 dedicated security tests. No `<script>`, `<iframe>`, `<form>`, `<object>`, `<embed>` pass through.
+- **Evidence**: [sanitizer.py](newsletter_agent/tools/sanitizer.py), [newsletter.html.j2 line 60](newsletter_agent/templates/newsletter.html.j2#L60) uses `{{ section.body_html|safe }}`, [test_sanitizer.py](tests/unit/test_sanitizer.py)
+
+#### PASS - Non-Functional: Performance
+- **Requirement**: Section 10.1 - HTML rendering within 5 seconds
+- **Status**: Compliant
+- **Detail**: No N+1 queries, no synchronous blocking. Template rendering is a single Jinja2 call. Sanitization uses Rust-based nh3 which is fast. No performance anti-patterns observed.
+- **Evidence**: [formatter.py](newsletter_agent/tools/formatter.py), [sanitizer.py](newsletter_agent/tools/sanitizer.py)
+
+#### PASS - Test Coverage (Section 11.1, 11.2, 11.6)
+- **Requirement**: Unit tests for synthesis utils, sanitizer, formatter; BDD tests for synthesis and formatting
+- **Status**: Compliant
+- **Detail**: 78 tests total, all passing. test_synthesis_utils.py: 22 tests (>10 required). test_sanitizer.py: 26 tests (>12 required). test_html_formatter.py: 23 tests (>8 required). test_synthesis_formatting.py: 7 BDD tests (>6 required). Tests cover valid JSON, malformed input, markdown code blocks, missing sections, XSS payloads, tag filtering, URL schemes, template section order, TOC, inline CSS, topic variants, edge cases.
+- **Evidence**: `pytest` output: 78 passed, 0 failed
+
+#### PASS - Documentation Accuracy
+- **Requirement**: Docs match implementation
+- **Status**: Compliant
+- **Detail**: README.md lists synthesis_utils.py in project structure. No `docs/` directory exists (WP05 responsibility). No inaccurate documentation found for WP03 components.
+- **Evidence**: [README.md](README.md)
+
+#### PASS - Scope Discipline
+- **Requirement**: No code outside WP03 scope
+- **Status**: Compliant
+- **Detail**: All files created are within scope of WP03 tasks. The `markdown` library was added as a dependency (not in original Section 9.2 tech stack which listed "bleach") but its use as a full markdown parser is a reasonable improvement over the manual regex approach suggested in the WP reference. No unspecified features or abstractions added.
+- **Evidence**: Files created: synthesis.py, synthesis_utils.py, sanitizer.py, formatter.py, newsletter.html.j2, and corresponding test files.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, curly apostrophes
+- **Status**: Compliant
+- **Detail**: All 9 WP03 source and test files scanned. Zero encoding violations found.
+- **Evidence**: Automated scan of all WP03 files returned "No violations".
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 0 | 3 |
+| Spec Adherence | 2 | 0 | 2 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 0 | 0 | 0 |
+| Architecture | 1 | 0 | 0 |
+| Test Coverage | 1 | 0 | 0 |
+| Non-Functional | 2 | 0 | 0 |
+| Performance | 0 | 0 | 0 |
+| Documentation | 1 | 0 | 0 |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. **(FB-01)** Create a post-processing agent or wrapper that calls `parse_synthesis_output()` on the `synthesis_raw` state value and writes the parsed `synthesis_{N}` and `executive_summary` keys to state. Insert it between the Synthesizer and the OutputPhase in the pipeline sequence.
+2. **(FB-02)** Update FormatterAgent to read expected topic count from state and insert "Research unavailable" placeholders for missing synthesis sections.
+3. **(FB-03)** Add Spec Compliance Checklists to the WP file.
+4. **(FB-04)** Add Activity Log entries for coder lane transitions.

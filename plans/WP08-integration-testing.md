@@ -1,6 +1,5 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
 ---
 
 # WP08 - Integration Testing, E2E Verification & Documentation
@@ -1842,6 +1841,7 @@ pytest -m slow -v
 - 2025-07-15T01:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
 - 2025-07-15T02:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01 through FB-08)
 - 2025-07-15T03:00:00Z - coder - lane=for_review - All FB items resolved, 413 tests passing, resubmitted for review
+- 2026-03-15T05:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (1 WARN) - all FAILs resolved
 
 ## Review
 
@@ -2029,3 +2029,83 @@ Changes Required. Three FAILs found across the combined WP06/WP07/WP08 scope: (1
 6. **FB-06** (WARN): Fix `last_2_weeks` Perplexity Filter in configuration-guide.md from `week` to `month`.
 7. **FB-07** (WARN): Add `timeframe` and `verify_links` to the Full Schema YAML block in configuration-guide.md.
 8. **FB-08** (WARN): Update architecture.md security section to reflect link verifier SSRF protections.
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-15
+> **Verdict**: Approved with Findings
+> **Scope**: Re-review of FB-01 through FB-08 remediation + regression check on touched files
+
+### Summary
+
+All 3 FAILs from Round 1 are resolved. All 5 WARNs from Round 1 are resolved. One new WARN introduced: unused `import textwrap` in the new BDD test file. 413 tests pass. No UTF-8 encoding violations.
+
+### Re-Review of Previous Findings
+
+#### PASS - FB-01 (was FAIL): BDD Timeframe Test File
+- **Status**: Resolved
+- **Detail**: `tests/bdd/test_search_timeframe.py` created with 6 test classes mapping 1:1 to all 6 spec Section 11.2 scenarios: GlobalTimeframeFiltersAllTopics, PerTopicTimeframeOverridesGlobal, CustomDaysTimeframe, AbsoluteDateRangeTimeframe, InvalidTimeframeRejectedAtConfigLoad, NoTimeframeConfigured. All use Given/When/Then comments. All pass.
+- **Evidence**: [tests/bdd/test_search_timeframe.py](tests/bdd/test_search_timeframe.py)
+
+#### PASS - FB-02 (was FAIL): WP06 Spec Compliance Checklists
+- **Status**: Resolved
+- **Detail**: Per-task checklists added for T06-01 through T06-11. Each maps acceptance criteria to FR references with checked status.
+- **Evidence**: [plans/WP06-search-timeframe.md](plans/WP06-search-timeframe.md#L1798)
+
+#### PASS - FB-03 (was FAIL): WP07 Spec Compliance Checklists
+- **Status**: Resolved
+- **Detail**: Per-task checklists added for T07-01 through T07-10. Each maps acceptance criteria to FR references with checked status.
+- **Evidence**: [plans/WP07-link-verification.md](plans/WP07-link-verification.md#L1152)
+
+#### PASS - FB-04 (was WARN): Activity Logs and Frontmatter
+- **Status**: Resolved
+- **Detail**: WP06 and WP07 activity logs now contain coder lane=doing, lane=for_review, reviewer lane=to_do, and coder remediation entries. Frontmatter lanes set to `for_review`.
+- **Evidence**: [WP06 Activity Log](plans/WP06-search-timeframe.md#L1892), [WP07 Activity Log](plans/WP07-link-verification.md#L1798)
+
+#### PASS - FB-05 (was WARN): Unused Imports
+- **Status**: Resolved
+- **Detail**: `functools` and `ResolvedTimeframe` imports removed from `newsletter_agent/agent.py`. 20 imports remain, all used.
+- **Evidence**: [newsletter_agent/agent.py](newsletter_agent/agent.py#L7)
+
+#### PASS - FB-06 (was WARN): Timeframe Values Table
+- **Status**: Resolved
+- **Detail**: `last_2_weeks` Perplexity Filter corrected from `week` to `month` in configuration-guide.md line 85.
+- **Evidence**: [docs/configuration-guide.md](docs/configuration-guide.md#L85)
+
+#### PASS - FB-07 (was WARN): Full Schema YAML
+- **Status**: Resolved
+- **Detail**: `timeframe` and `verify_links` fields added to settings section (lines 27-28). `timeframe` added to topics section (line 38).
+- **Evidence**: [docs/configuration-guide.md](docs/configuration-guide.md#L27)
+
+#### PASS - FB-08 (was WARN): Architecture SSRF Section
+- **Status**: Resolved
+- **Detail**: SSRF Prevention now mentions link verifier outbound requests, private IP blocking, scheme restrictions, and post-redirect checking.
+- **Evidence**: [docs/architecture.md](docs/architecture.md#L123)
+
+### New Findings
+
+#### WARN - Scope Discipline (Unused Import in New File)
+- **Requirement**: No dead code
+- **Status**: Minor regression
+- **Detail**: `import textwrap` on line 10 of `tests/bdd/test_search_timeframe.py` is unused. The module is imported but never referenced.
+- **Evidence**: [tests/bdd/test_search_timeframe.py](tests/bdd/test_search_timeframe.py#L10)
+
+### Statistics
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| FB-01 BDD Test (was FAIL) | 1 | 0 | 0 |
+| FB-02 WP06 Checklists (was FAIL) | 1 | 0 | 0 |
+| FB-03 WP07 Checklists (was FAIL) | 1 | 0 | 0 |
+| FB-04 Activity Logs (was WARN) | 1 | 0 | 0 |
+| FB-05 Unused Imports (was WARN) | 1 | 0 | 0 |
+| FB-06 Values Table (was WARN) | 1 | 0 | 0 |
+| FB-07 Full Schema (was WARN) | 1 | 0 | 0 |
+| FB-08 Architecture (was WARN) | 1 | 0 | 0 |
+| Regression Check | 0 | 1 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+| **Total** | **9** | **1** | **0** |
+
+### Recommended Actions
+
+1. **WARN-01**: Remove unused `import textwrap` from `tests/bdd/test_search_timeframe.py` line 10. Non-blocking.

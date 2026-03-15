@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP18 - Quality, Performance & Documentation
@@ -195,3 +196,120 @@ This post-MVP work package adds performance benchmarks to verify the adaptive lo
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-15T12:00:00Z - coder - lane=doing - Started WP18 implementation
 - 2026-03-15T13:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2026-03-15T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (2 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-15
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Changes Required. Two documentation accuracy FAILs found: `max_searches_per_topic` valid range documented as 1-10 in three doc files but the spec and schema enforce 1-15; `min_research_rounds` valid range documented as 1-5 in the config-guide settings table but the spec and schema enforce 1-3. One WARN for batched commits. All tests pass (9 performance + 15 security). Implementation code is not affected -- only documentation is incorrect.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Fix `max_searches_per_topic` range from "1-10" to "1-15" in: `docs/configuration-guide.md` line 65, `docs/configuration-guide.md` line 100, `README.md` line 127, `docs/user-guide.md` line 66. The spec (FR-ADR-061) and schema (`le=15`) both define the max as 15. `docs/api-reference.md` already correctly says 1-15.
+- [ ] **FB-02**: Fix `min_research_rounds` range from "1-5" to "1-3" in `docs/configuration-guide.md` line 66 (settings table). The adaptive research settings table on line 101 of the same file already correctly says 1-3, creating an internal inconsistency. The spec (FR-ADR-064) and schema (`le=3`) both define the max as 3.
+
+### Findings
+
+#### FAIL - Documentation Accuracy: `max_searches_per_topic` range
+- **Requirement**: FR-ADR-061 (max 15), Section 7.1 (1 <= x <= 15)
+- **Status**: Deviating
+- **Detail**: The `max_searches_per_topic` valid range is documented as "1-10" in three user-facing docs, but the spec defines the max as 15 and the actual schema enforces `le=15`. Users are told the max is 10 when it is actually 15.
+- **Evidence**: `docs/configuration-guide.md` L65 and L100, `README.md` L127, `docs/user-guide.md` L66 all say "1-10". `newsletter_agent/config/schema.py` L158 has `le=15`. `docs/api-reference.md` L80 correctly says "1-15".
+
+#### FAIL - Documentation Accuracy: `min_research_rounds` range in settings table
+- **Requirement**: FR-ADR-064 (minimum 1, maximum 3)
+- **Status**: Deviating
+- **Detail**: The `min_research_rounds` field is documented as "1-5" in the main settings table of the configuration guide, but the spec defines the max as 3 and the schema enforces `le=3`. The same file's adaptive research settings table correctly states "1-3", creating an internal inconsistency.
+- **Evidence**: `docs/configuration-guide.md` L66 says "(1-5)" while L101 says "1-3". `newsletter_agent/config/schema.py` L159 has `le=3`.
+
+#### WARN - Process Compliance: Batched commits
+- **Requirement**: Process requirement (one commit per task)
+- **Status**: Deviating
+- **Detail**: All 5 tasks (T18-01 through T18-05) were committed in a single commit `734d3ed`. The process expects one commit per task for traceability.
+- **Evidence**: `git log --oneline -1` shows `feat(quality): add perf benchmarks, security tests, and doc updates (WP18)`.
+
+#### PASS - Spec Adherence: Performance benchmarks (T18-01)
+- **Requirement**: Section 11.5, SC-ADR-006
+- **Status**: Compliant
+- **Detail**: All 9 performance tests implemented per acceptance criteria. Planning latency (< 3s), search latency (< 15s), analysis latency (< 4s), 3-round total (< 5 min), fan-out comparison (< 500ms absolute overhead), early exit savings all verified. All use `@pytest.mark.performance`.
+- **Evidence**: `tests/performance/test_adaptive_performance.py` -- 9 tests, all passing.
+
+#### PASS - Spec Adherence: Security tests (T18-02)
+- **Requirement**: Section 11.6, Section 10.2
+- **Status**: Compliant
+- **Detail**: 15 security tests implemented. PlanningAgent prompt injection (4), AnalysisAgent prompt injection (4), fallback safety (2), reasoning module attack surface (5). All use `@pytest.mark.security`. Tests verify prompt structure, no sensitive patterns, no eval/exec/subprocess, no override keywords. Existing security tests unaffected.
+- **Evidence**: `tests/security/test_adaptive_security.py` -- 15 tests, all passing.
+
+#### PASS - Spec Adherence: Configuration guide update (T18-03)
+- **Requirement**: FR-ADR-061, FR-ADR-064, FR-ADR-065, Section 8.2
+- **Status**: Compliant (content structure; ranges are wrong per FB-01/FB-02)
+- **Detail**: New "Adaptive Research Settings" subsection added with settings table, interaction explanation, YAML example, and backward compatibility note. All required fields documented. Structure and content are correct apart from the range values flagged in FB-01 and FB-02.
+- **Evidence**: `docs/configuration-guide.md` lines 93-119.
+
+#### PASS - Spec Adherence: Deployment guide update (T18-04)
+- **Requirement**: Section 10.3, Section 10.5
+- **Status**: Compliant
+- **Detail**: API call volume note added, cost estimate ($0.002-$0.005 per topic-provider), 9 `[AdaptiveResearch]` log patterns added to Key Log Messages table. `.env.example` confirmed unchanged.
+- **Evidence**: `docs/deployment-guide.md` -- adaptive research paragraph and 9 log patterns in the Key Log Messages table.
+
+#### PASS - Spec Adherence: README update (T18-05)
+- **Requirement**: SC-ADR-001, Section 1
+- **Status**: Compliant (apart from range value flagged in FB-01)
+- **Detail**: "Adaptive Deep Research" subsection added describing the 4-step loop, config settings, YAML example, backward compat note, and link to configuration guide.
+- **Evidence**: `README.md` lines 110-135.
+
+#### PASS - Non-Functional: Security
+- **Requirement**: Section 10.2
+- **Status**: Compliant
+- **Detail**: No new attack surface from reasoning module. No eval/exec, no subprocess, no file I/O, no network imports in `reasoning.py`. Prompts do not contain override keywords. SSRF protections unaffected.
+
+#### PASS - Architecture Adherence
+- **Requirement**: Section 9.3
+- **Status**: Compliant
+- **Detail**: Files created/modified match the WP plan. `tests/performance/test_adaptive_performance.py` and `tests/security/test_adaptive_security.py` created. Docs updated in declared scope.
+
+#### PASS - Scope Discipline
+- **Requirement**: WP18 plan
+- **Status**: Compliant
+- **Detail**: Additional doc updates (api-reference.md, architecture.md, developer-guide.md, user-guide.md) are appropriate scope for a documentation WP. No code changes outside documentation and test files.
+
+#### PASS - Process Compliance: Spec Compliance Checklists
+- **Requirement**: Step 2b
+- **Status**: Compliant
+- **Detail**: All 5 tasks have Spec Compliance Checklists with all items checked off. Self-review notes present for each task.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: UTF-8 clean files
+- **Status**: Compliant
+- **Detail**: All 9 files scanned (2 test files + 6 doc files + README.md). No non-ASCII bytes found.
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 1 | 1 | 0 |
+| Spec Adherence | 5 | 0 | 0 |
+| Data Model | N/A | N/A | N/A |
+| API / Interface | N/A | N/A | N/A |
+| Architecture | 1 | 0 | 0 |
+| Test Coverage | 1 | 0 | 0 |
+| Non-Functional | 1 | 0 | 0 |
+| Performance | N/A | N/A | N/A |
+| Documentation | 0 | 0 | 2 |
+| Success Criteria | N/A | N/A | N/A |
+| Coverage Thresholds | N/A | N/A | N/A |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. **FB-01**: In `docs/configuration-guide.md` (L65, L100), `README.md` (L127), and `docs/user-guide.md` (L66), change `max_searches_per_topic` range from "1-10" to "1-15" to match spec FR-ADR-061 and schema.
+2. **FB-02**: In `docs/configuration-guide.md` (L66), change `min_research_rounds` range from "1-5" to "1-3" to match spec FR-ADR-064 and schema.

@@ -11,7 +11,7 @@ handoffs:
   - label: Implement Next Work Package
     agent: 4. Coder
     prompt: "Implement the next work package in the plan"
-    send: false
+    send: true
   - label: Update Specification
     agent: 2. Spec Architect
     prompt: "The review found spec gaps that need to be addressed"
@@ -192,7 +192,24 @@ Compare `docs/` content against the actual implementation:
 - [ ] Configuration docs match real env vars and defaults
 - [ ] Data model docs match actual schema
 - [ ] User guide reflects actual behavior
+- [ ] Developer guide reflects actual project structure, setup, and conventions
+- [ ] Deployment guide reflects actual prerequisites and deployment process
 - [ ] No stale or misleading content
+- [ ] All six standard doc files exist and are populated: `api-reference.md`, `architecture.md`, `configuration-guide.md`, `deployment-guide.md`, `developer-guide.md`, `user-guide.md`
+
+### 4h-ii. Success Criteria Validation
+Verify that the spec's success criteria (SC-XXX) are being met by the implementation:
+- [ ] Each SC-XXX referenced by this WP has been evaluated
+- [ ] Evidence exists for each claimed SC (passing test, observable behavior, measurable metric)
+- [ ] SC evidence is not fabricated -- verify the claimed evidence actually exists in the test output or application behavior
+- [ ] Any SC that cannot be verified at this stage is documented with a clear reason
+
+### 4h-iii. Coverage Thresholds
+Verify test coverage meets the project minimums:
+- [ ] Code coverage >= 80% for files in this WP's scope (run the coverage tool if reports are not already present)
+- [ ] Branch coverage >= 90% for files in this WP's scope
+- [ ] No critical code paths are excluded from coverage via `# pragma: no cover` or equivalent without documented justification
+- [ ] Tests are real -- no vacuous assertions, no fully-mocked subjects, no tests that cannot fail
 
 ### 4i. Scope Discipline
 Check for scope creep or under-delivery:
@@ -256,6 +273,8 @@ State the verdict in the first sentence. Then list — without softening — the
 | Non-Functional | X | X | X |
 | Performance | X | X | X |
 | Documentation | X | X | X |
+| Success Criteria | X | X | X |
+| Coverage Thresholds | X | X | X |
 | Scope Discipline | X | X | X |
 | Encoding (UTF-8) | X | X | X |
 
@@ -320,30 +339,56 @@ Re-reviews are **scoped** -- do not re-audit dimensions that previously passed u
 
 If after three rounds the same FB-XX items remain unresolved, halt the cycle, set `lane: blocked`, append `YYYY-MM-DDTHH:MM:SSZ - reviewer - lane=blocked - Cycle stalled: FB-XX unresolved after 3 rounds` to the Activity Log, and escalate to the user via `#tool:vscode/askQuestions`.
 
-## 8. Propose Next Steps
+## 8. Automatic Continuation
 
-At the end of every review — whether you issued a verdict, completed a re-review, or escalated a blocker — always close by naming the next agent explicitly.
+After delivering a verdict, the reviewer does NOT stop and wait for user input. Instead, **proactively scan the project state and continue the pipeline automatically**.
 
-**IMPORTANT: Before proposing next steps, check the current state of ALL work packages.** Read `plans/README.md` and scan all `plans/WP*.md` frontmatter to determine what remains.
+### 8a. Scan Project State
 
-| Condition | Next Agent | Reason |
-|-----------|------------|--------|
-| Verdict is Changes Required (lane=to_do) | **Coder** | Must address every FB-XX finding before a re-review is warranted |
-| Verdict is Approved/Approved with Findings AND more WPs with lane=planned exist | **Coder** | Implement the next work package in the plan sequence |
-| Verdict is Approved/Approved with Findings AND all WPs are now lane=done | **Hand off to user** | All work is complete. Present final summary and stop. |
-| Verdict is Approved/Approved with Findings AND all MVP WPs are lane=done but non-MVP WPs remain | **Hand off to user** | MVP is complete. Present summary and ask user whether to continue with post-MVP work. |
-| Spec gaps or contradictions found during review | **Spec Architect** | The spec must be corrected before the implementation can be judged compliant |
-| Plan tasks were missing, ambiguous, or incorrect | **Planner** | Revise the plan before the next WP is implemented |
-| Review cycle is stalled (lane=blocked) | **Hand off to user** | Fundamental issue requires human decision. Present the full context and stop. |
+Read `plans/README.md` and scan ALL `plans/WP*.md` frontmatter to determine:
+- Which WPs have `lane: for_review` (ready for review)
+- Which WPs have `lane: planned` or `lane: to_do` (ready for implementation)
+- Which WPs have `lane: done` (completed)
+- Which WPs have `lane: blocked` (stalled)
 
-**Graceful termination protocol**: When all work packages have `lane: done`, do NOT invoke another agent. Instead:
+### 8b. Decision Logic (execute in priority order)
+
+| Priority | Condition | Action |
+|----------|-----------|--------|
+| 1 | Verdict is **Changes Required** | Immediately hand off to **Coder** to fix findings (via Step 7 handoff) |
+| 2 | Other WPs have `lane: for_review` | Immediately begin reviewing the next WP -- do NOT wait for user input |
+| 3 | WPs exist with `lane: planned` (respecting dependency order) | Hand off to **Coder** to implement the next WP in sequence |
+| 4 | All MVP WPs are `lane: done` but non-MVP WPs remain | Stop. Present MVP completion summary to user. Ask whether to continue with post-MVP work |
+| 5 | ALL WPs are `lane: done` | Stop. Execute graceful termination protocol (below) |
+| 6 | Spec gaps or contradictions found during review | Hand off to **Spec Architect** for correction |
+| 7 | Plan tasks were missing or incorrect | Hand off to **Planner** for revision |
+| 8 | Review cycle is stalled (`lane: blocked`) | Stop. Escalate to user |
+
+**Key behavior**: When multiple WPs are `lane: for_review`, the reviewer processes them ALL in sequence before handing off to the Coder. This avoids unnecessary context switches.
+
+### 8c. Handoff to Coder for Next WP
+
+When handing off to the Coder for the next planned WP, invoke `#agent:Coder` with:
+
+> The previous WP<NN> has been reviewed and approved.
+> Next work package ready for implementation: WP<XX> - <title>
+> Dependencies satisfied: <list completed dependencies>
+>
+> Please implement WP<XX> following the standard workflow.
+
+### 8d. Graceful Termination Protocol
+
+When all work packages have `lane: done`, do NOT invoke another agent. Instead:
 1. Produce a **Final Project Summary** covering:
    - All completed work packages and their verdicts
    - Total findings: PASSes, WARNs, and any resolved FAILs
    - Outstanding WARNs that were accepted
    - Documentation completeness status
+   - Overall coverage statistics
+   - Success criteria (SC-XXX) achievement status
 2. Present this summary to the user
-3. Stop. The project is complete until the user decides otherwise.
+3. Ask the user what to do next (new features, optimizations, deployment, etc.)
+4. Stop. The project is complete until the user decides otherwise.
 
-Always use the handoff buttons when available. Default to recommending **Coder** — either to fix findings or to continue with the next WP — but ONLY if work remains.
+Always use the handoff buttons when available.
 </workflow>

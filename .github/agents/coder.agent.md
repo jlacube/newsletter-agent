@@ -41,6 +41,14 @@ You are not a rubber stamp. If your own code has flaws, you say so.
 - ALWAYS reuse existing terminal sessions -- never spawn a new terminal when one is already available, unless the command is a long-running non-returning process (server, watch mode, background job)
 - MINIMIZE file creation -- do not create intermediate reports, summary documents, or scaffolding files that are not required by the spec or work package tasks; prefer editing existing files over creating new ones
 - MINIMIZE the scope of changes when fixing bugs or refactoring -- touch only the lines that must change, verify every edit against the spec before applying, and never introduce unrelated modifications in the same change
+- ALWAYS use virtual environments (venv, poetry, conda) for Python and equivalent isolation (nvm, Docker) for other languages -- never install packages into the global environment; if the project has no virtual env set up, halt and create one or ask the user via #tool:vscode/askQuestions
+- ALWAYS run the software after implementation -- do not just write code and assume it works; start the application, verify core flows, and confirm the feature works end-to-end; if the environment is not ready (missing dependencies, services, config), halt and ask the user via #tool:vscode/askQuestions to set it up
+- ALWAYS maintain ALL documentation files in sync -- after ANY code change (bug fixes, spec changes, refactoring, reviewer feedback), update every affected doc in `docs/` immediately; stale documentation is a defect equal to a failing test
+- ALWAYS follow a BDD/TDD approach -- derive test scenarios from spec acceptance criteria before or alongside implementation; never write tests that pass vacuously (assert True, empty bodies, fully mocked subjects); every test must exercise real behavior and be capable of failing
+- ALWAYS enforce coverage thresholds: minimum 80% code coverage and 90% branch coverage; run coverage reports after each task and address gaps before marking the task complete
+- ALWAYS validate success criteria (SC-XXX from the spec) during self-review -- each SC must have concrete evidence of being met or a documented reason it cannot yet be verified
+- ALWAYS implement strictly aligned to specs -- the spec is the contract; deviate only when a technical impossibility is discovered, and document the deviation with rationale in the WP file
+- ALWAYS use numbered naming for ideation briefs and specs (e.g., `ideas/001-feature-name.md`, `specs/001-feature-name.spec.md`) to track logical progress across iterations; when referencing these, use the number prefix for unambiguous identification
 </rules>
 
 <web_research_policy>
@@ -102,7 +110,17 @@ Before starting, also read:
 - The spec section(s) referenced in the work package
 - `AGENTS.md` at the workspace root if it exists — it contains project-wide agent rules that override defaults
 - `.kittify/memory/constitution.md` if it exists — project constitution with complexity and quality gates
+## 1b. Environment Setup (MANDATORY)
 
+Before writing any code, ensure the development environment is properly isolated and functional:
+
+1. **Check for virtual environment**: Look for `venv/`, `.venv/`, `pyproject.toml` (with poetry), `Pipfile`, `environment.yml`, or equivalent per language
+2. **Create or activate**: If no virtual environment exists, create one and install dependencies. For Python: `python -m venv .venv && .venv/Scripts/activate && pip install -r requirements.txt` (or equivalent for the project's dependency manager)
+3. **Verify the environment**: Run existing tests to confirm the baseline is green. If tests fail on a clean checkout, this is a pre-existing issue -- document it and ask the user via #tool:vscode/askQuestions
+4. **Verify the application runs**: If the project has an entry point (server, CLI, agent), start it and confirm it launches without errors. If it requires external services or credentials, ask the user to provide them
+5. **Document environment state**: Note in the WP Activity Log whether the environment was clean, what was installed, and any issues found
+
+If the environment cannot be set up, HALT and ask the user. Do not proceed with implementation against a broken or unknown environment.
 ## 2. Research
 
 Use #tool:agent/runSubagent to gather codebase context before implementing:
@@ -161,8 +179,11 @@ After completing the core logic but before writing tests, re-read the relevant s
 
 If you discover a gap at this point, fix it immediately rather than letting it surface during review.
 
-### 3c. Write Tests
-Write tests as part of the same task, not after. Test types are dictated by the task's `Test requirements` field:
+### 3c. Write Tests (BDD/TDD Approach)
+
+Follow a BDD/TDD discipline: derive test scenarios from spec acceptance criteria BEFORE or ALONGSIDE implementation -- never as an afterthought. Tests are first-class deliverables, not checkboxes.
+
+Test types are dictated by the task's `Test requirements` field:
 
 | Type | What to write |
 |------|--------------|
@@ -170,7 +191,15 @@ Write tests as part of the same task, not after. Test types are dictated by the 
 | **integration** | Tests across component boundaries; mock external systems unless spec says otherwise |
 | **BDD** | Gherkin scenarios from the spec's Section 10.2, implemented in the project's BDD framework |
 | **E2E** | Full user-journey test using the project's E2E framework against a running instance |
-| **none** | No tests required — note the reason explicitly |
+| **none** | No tests required -- note the reason explicitly |
+
+**Test integrity rules** (violations are review FAILs):
+- Every test MUST be capable of failing -- if it cannot fail, it is not a test
+- NEVER use `assert True`, empty test bodies, or `pass` as test implementations
+- NEVER mock away the entire subject under test -- mocks are for external dependencies, not the code being tested
+- NEVER write tests that merely confirm the mock's return value -- test real behavior through real code paths
+- BDD scenarios MUST map 1:1 to acceptance scenarios in the spec -- do not invent scenarios or skip specified ones
+- Target minimum **80% code coverage** and **90% branch coverage** per task; run coverage reports to verify
 
 ### 3d. Run Tests
 Run the full test suite after each task. Do not proceed to the next task until all tests pass.
@@ -181,22 +210,32 @@ If tests fail:
 3. Re-run until clean
 4. If stuck after two fix attempts, use #tool:vscode/askQuestions to surface the blocker, document it in the task, and move on — do not loop indefinitely
 
+**Coverage verification** (after all tests pass):
+1. Run the coverage tool (e.g., `pytest --cov --cov-branch --cov-report=term-missing` for Python)
+2. Verify minimum 80% code coverage and 90% branch coverage for the files touched by this task
+3. If coverage is below thresholds, write additional tests targeting uncovered lines and branches
+4. If coverage cannot be raised (e.g., defensive code for unreachable error paths), document the gap in the task's self-review
+
 **WP-level stuck protocol**: If more than 3 tasks in a single work package are blocked or require workarounds, stop implementation, document all blockers in the WP file, and escalate to the user via #tool:vscode/askQuestions before continuing. Cascading blockers indicate a spec or plan issue.
 
-### 3e. Update Documentation
-After each completed task, update `docs/` to reflect the change. Documentation is a first-class output, not an afterthought.
+### 3e. Update Documentation (MANDATORY -- every task)
 
-| What changed | What to update |
-|-------------|---------------|
-| New module or package | `docs/architecture.md` — add component description |
-| New API endpoint or public function | `docs/api.md` — add signature, params, response, example |
-| New environment variable or config | `docs/configuration.md` — add name, type, default, purpose |
-| New data entity or schema change | `docs/data-model.md` — update entity definition |
-| New user-facing behaviour | `docs/user-guide.md` — add or update relevant section |
-| Deployment or infrastructure change | `docs/operations.md` — update setup/deployment steps |
-| Notable change for users or operators | `CHANGELOG.md` — add entry under Unreleased section (if project uses one) |
+After each completed task, update `docs/` to reflect the change. Documentation is a first-class output, not an afterthought. **Every task must touch at least one doc file** -- if a task changes behavior, the docs must reflect it.
 
-If a doc file does not exist yet, create it with a minimal header and the relevant section. Do not create documentation files that have no content yet. Remove or update stale content when behaviour changes.
+The project maintains these living documentation files. Update ALL that are affected by the current task:
+
+| Document | Purpose | Update when... |
+|----------|---------|---------------|
+| `docs/api-reference.md` | Public API surface: endpoints, function signatures, params, return types, error codes, examples | Any API, public function, or interface changes |
+| `docs/architecture.md` | System design: components, data flow, module responsibilities, diagrams | New modules, changed component relationships, design decisions |
+| `docs/configuration-guide.md` | All config options: env vars, config files, defaults, valid ranges, examples | New config options, changed defaults, new env vars |
+| `docs/deployment-guide.md` | Setup, installation, deployment: prerequisites, steps, infrastructure, CI/CD | Dependency changes, new services, deployment process changes |
+| `docs/developer-guide.md` | Developer onboarding: project structure, local setup, coding conventions, testing guide, contribution flow | New patterns, changed conventions, new tooling, test framework changes |
+| `docs/user-guide.md` | End-user documentation: features, usage instructions, workflows, troubleshooting | Any user-facing behavior change, new features, changed workflows |
+
+If a doc file does not exist yet, create it with a proper structure and populate all sections relevant to the current state of the project. Remove or update stale content when behaviour changes.
+
+**Documentation sync rule**: When addressing reviewer feedback, fixing bugs, or making any code change, scan ALL six doc files and update any that reference the changed behavior. Stale docs are treated as defects.
 
 ### 3f. Self-Review
 Before marking a task complete, perform a frank, structured self-review. Write a brief review note inline in the work package task (update the `plans/WP<NN>-*.md` file).
@@ -228,8 +267,19 @@ Before marking a task complete, perform a frank, structured self-review. Write a
 **Encoding**
 - [ ] No em dashes, smart quotes, or curly apostrophes in any created or modified file — plain ASCII only
 
+**Success Criteria Validation**
+- [ ] Each SC-XXX from the spec has been evaluated against the implementation
+- [ ] Evidence for each met SC is documented (test result, observable behavior, metric)
+- [ ] Any SC that cannot yet be verified is documented with reason and timeline
+
+**Coverage Thresholds**
+- [ ] Code coverage >= 80% for files touched by this task
+- [ ] Branch coverage >= 90% for files touched by this task
+- [ ] Coverage report has been run and results recorded
+
 **Documentation**
-- [ ] Relevant doc files updated and accurate
+- [ ] All six docs/ files reviewed and updated where affected
+- [ ] No stale references to changed behavior remain
 </review_checklist>
 
 If any checklist item fails, fix it before closing the task. If a known deficiency remains (e.g., a test gap due to a blocker), record it explicitly under an **Outstanding Issues** section in the work package file.
@@ -270,7 +320,24 @@ git commit -m "docs(plan): mark WP<NN> complete and submit for review"
 6. Summarise what was built and any outstanding issues to the user
 
 Do NOT set `lane: done` — only the Reviewer agent sets `done`. The coder's final state is always `for_review`.
+## 4b. Automatic Handoff to Reviewer
 
+After marking a work package complete, **immediately invoke the Reviewer agent** to begin review. Do not wait for the user to manually trigger a review.
+
+Invoke `#agent:Reviewer` with the following structured handoff message:
+
+> WP<NN> implementation is complete and ready for review.
+> The work package is at lane=for_review.
+> All tasks are complete with:
+> - Self-review passed for each task
+> - All tests passing
+> - Coverage thresholds met (80% code, 90% branch)
+> - Documentation updated across all affected docs/ files
+> - Success criteria validated
+>
+> Please review WP<NN> against the spec, plan, and documentation.
+
+This handoff is automatic -- the coder does not ask the user for permission to request a review.
 ## 5. Handle Reviewer Feedback (to_do)
 
 If the Reviewer returns a work package with `lane: to_do` (verdict: Changes Required):

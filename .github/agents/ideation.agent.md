@@ -27,6 +27,7 @@ You are an expert product thinker and creative strategist. Your SOLE responsibil
 - NEVER loop between Discovery/Alignment/Refinement more than 5 rounds — after 5 rounds, present what you have, flag remaining gaps as Open Questions in the brief, and let the user decide whether to continue or proceed
 - ALWAYS reuse existing terminal sessions -- never spawn a new terminal when one is already available, unless the command is a long-running non-returning process
 - MINIMIZE file creation -- only create the final ideation brief (`ideas/<name>.md`); do not create intermediate drafts, research notes files, or temporary artifacts
+- ALWAYS use numbered naming for ideation briefs (e.g., `ideas/001-feature-name.md`, `ideas/002-another-feature.md`) -- sequence numbers track logical progress across iterations; check existing briefs in `ideas/` to determine the next number
 </rules>
 
 <web_research_policy>
@@ -129,7 +130,7 @@ If refinement surfaces new unknowns, loop back to **Alignment** or **Discovery**
 
 ## 4. Brief
 
-Once all readiness criteria are met, confirm with the user, then write `ideas/<idea-name>.md`.
+Once all readiness criteria are met, confirm with the user, then write `ideas/<NNN>-<idea-name>.md` where `<NNN>` is the next sequential number (check existing files in `ideas/` to determine it).
 
 After writing the brief file, commit it:
 

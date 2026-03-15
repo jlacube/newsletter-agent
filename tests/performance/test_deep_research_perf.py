@@ -31,17 +31,20 @@ def _deep_config(tmp_path, n_topics=1, max_rounds=3):
         )
         for i in range(n_topics)
     ]
+    settings_kwargs = {
+        "dry_run": True,
+        "output_dir": str(tmp_path),
+        "max_research_rounds": max_rounds,
+    }
+    if max_rounds < 2:
+        settings_kwargs["min_research_rounds"] = max_rounds
     return NewsletterConfig(
         newsletter=NewsletterSettings(
             title="Deep Research Perf Test",
             schedule="0 8 * * 0",
             recipient_email="test@example.com",
         ),
-        settings=AppSettings(
-            dry_run=True,
-            output_dir=str(tmp_path),
-            max_research_rounds=max_rounds,
-        ),
+        settings=AppSettings(**settings_kwargs),
         topics=topics,
     )
 

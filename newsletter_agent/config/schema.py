@@ -155,6 +155,19 @@ class AppSettings(BaseModel):
     timeframe: TimeframeValue = None
     verify_links: bool = False
     max_research_rounds: int = Field(default=3, ge=1, le=5)
+    max_searches_per_topic: int | None = Field(default=None, ge=1, le=15)
+    min_research_rounds: int = Field(default=2, ge=1, le=3)
+
+    @model_validator(mode="after")
+    def resolve_adaptive_defaults(self) -> AppSettings:
+        if self.max_searches_per_topic is None:
+            self.max_searches_per_topic = self.max_research_rounds
+        if self.min_research_rounds > self.max_research_rounds:
+            raise ValueError(
+                f"min_research_rounds ({self.min_research_rounds}) must be "
+                f"<= max_research_rounds ({self.max_research_rounds})"
+            )
+        return self
 
 
 class NewsletterConfig(BaseModel):

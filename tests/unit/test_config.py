@@ -390,7 +390,7 @@ def test_max_research_rounds_default_via_newsletter_config():
 @pytest.mark.parametrize("value", [1, 2, 3, 4, 5])
 def test_max_research_rounds_valid_values(value):
     """Values 1-5 are accepted. FR-CFG-001."""
-    settings = AppSettings(max_research_rounds=value)
+    settings = AppSettings(max_research_rounds=value, min_research_rounds=1)
     assert settings.max_research_rounds == value
 
 
@@ -425,3 +425,106 @@ def test_max_research_rounds_in_yaml_config(make_config_yaml):
     path = make_config_yaml(data)
     config = load_config(path)
     assert config.settings.max_research_rounds == 5
+
+
+# ---------------------------------------------------------------------------
+# Adaptive config field tests (FR-ADR-060 through FR-ADR-065)
+# ---------------------------------------------------------------------------
+
+
+class TestAdaptiveConfigFields:
+    """Tests for max_searches_per_topic and min_research_rounds fields."""
+
+    # --- max_searches_per_topic defaults ---
+
+    def test_max_searches_per_topic_defaults_to_max_research_rounds(self):
+        """Omitted max_searches_per_topic defaults to max_research_rounds. FR-ADR-061."""
+        settings = AppSettings()
+        assert settings.max_searches_per_topic == 3  # max_research_rounds default
+
+    def test_max_searches_per_topic_defaults_to_custom_max_research_rounds(self):
+        """max_searches_per_topic follows custom max_research_rounds. FR-ADR-061."""
+        settings = AppSettings(max_research_rounds=5)
+        assert settings.max_searches_per_topic == 5
+
+    # --- max_searches_per_topic valid values ---
+
+    @pytest.mark.parametrize("value", [1, 5, 10, 15])
+    def test_max_searches_per_topic_accepts_valid_values(self, value):
+        """Boundary values 1, 5, 10, 15 accepted. FR-ADR-061."""
+        settings = AppSettings(max_searches_per_topic=value)
+        assert settings.max_searches_per_topic == value
+
+    # --- max_searches_per_topic invalid values ---
+
+    def test_max_searches_per_topic_rejects_zero(self):
+        """Value 0 is below minimum. FR-ADR-061."""
+        with pytest.raises(Exception, match="greater than or equal to 1"):
+            AppSettings(max_searches_per_topic=0)
+
+    def test_max_searches_per_topic_rejects_sixteen(self):
+        """Value 16 is above maximum. FR-ADR-061."""
+        with pytest.raises(Exception, match="less than or equal to 15"):
+            AppSettings(max_searches_per_topic=16)
+
+    def test_max_searches_per_topic_rejects_non_integer(self):
+        """Non-integer value rejected. FR-ADR-061."""
+        with pytest.raises(Exception):
+            AppSettings(max_searches_per_topic="abc")
+
+    # --- min_research_rounds defaults ---
+
+    def test_min_research_rounds_defaults_to_two(self):
+        """Omitted min_research_rounds defaults to 2. FR-ADR-064."""
+        settings = AppSettings()
+        assert settings.min_research_rounds == 2
+
+    # --- min_research_rounds valid values ---
+
+    @pytest.mark.parametrize("value", [1, 2, 3])
+    def test_min_research_rounds_accepts_valid_values(self, value):
+        """Boundary values 1, 2, 3 accepted. FR-ADR-064."""
+        settings = AppSettings(min_research_rounds=value)
+        assert settings.min_research_rounds == value
+
+    # --- min_research_rounds invalid values ---
+
+    def test_min_research_rounds_rejects_zero(self):
+        """Value 0 is below minimum. FR-ADR-064."""
+        with pytest.raises(Exception, match="greater than or equal to 1"):
+            AppSettings(min_research_rounds=0)
+
+    def test_min_research_rounds_rejects_four(self):
+        """Value 4 is above maximum. FR-ADR-064."""
+        with pytest.raises(Exception, match="less than or equal to 3"):
+            AppSettings(min_research_rounds=4)
+
+    # --- cross-field validation ---
+
+    def test_cross_field_min_greater_than_max_raises_error(self):
+        """min_research_rounds > max_research_rounds raises ValueError. FR-ADR-065."""
+        with pytest.raises(Exception, match="min_research_rounds.*must be.*<=.*max_research_rounds"):
+            AppSettings(min_research_rounds=3, max_research_rounds=2)
+
+    def test_cross_field_min_equals_max_succeeds(self):
+        """min_research_rounds == max_research_rounds is valid edge case. FR-ADR-065."""
+        settings = AppSettings(min_research_rounds=1, max_research_rounds=1)
+        assert settings.min_research_rounds == 1
+        assert settings.max_research_rounds == 1
+
+    # --- backward compatibility ---
+
+    def test_backward_compat_no_new_fields(self):
+        """Existing config without new fields loads with correct defaults."""
+        settings = AppSettings()
+        assert settings.max_research_rounds == 3
+        assert settings.max_searches_per_topic == 3
+        assert settings.min_research_rounds == 2
+
+    def test_backward_compat_yaml_no_new_fields(self, make_config_yaml):
+        """YAML config without new fields loads successfully. FR-ADR-060."""
+        data = make_config()
+        path = make_config_yaml(data)
+        config = load_config(path)
+        assert config.settings.max_searches_per_topic == 3
+        assert config.settings.min_research_rounds == 2

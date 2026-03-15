@@ -1,6 +1,10 @@
 """
-Query expansion prompt template for multi-round deep research.
+DEPRECATED: This module is superseded by newsletter_agent.prompts.reasoning.
+The adaptive research loop (spec 002) generates queries per-round via the
+AnalysisAgent instead of upfront expansion. This module is retained for
+backward compatibility.
 
+Original purpose: Query expansion prompt template for multi-round deep research.
 Generates alternative search queries exploring different angles of a topic.
 
 Spec refs: FR-MRR-003, FR-MRR-004, Section 4.3 (QueryExpanderAgent instruction contract).

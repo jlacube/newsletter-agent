@@ -33,13 +33,16 @@ def _make_config(topics_data, max_research_rounds=3):
         )
         for i, t in enumerate(topics_data)
     ]
+    settings_kwargs = {"max_research_rounds": max_research_rounds}
+    if max_research_rounds < 2:
+        settings_kwargs["min_research_rounds"] = max_research_rounds
     return NewsletterConfig(
         newsletter=NewsletterSettings(
             title="Test Newsletter",
             schedule="0 0 * * 0",
             recipient_email="test@example.com",
         ),
-        settings=AppSettings(max_research_rounds=max_research_rounds),
+        settings=AppSettings(**settings_kwargs),
         topics=topics,
     )
 

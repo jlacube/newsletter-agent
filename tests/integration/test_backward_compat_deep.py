@@ -66,6 +66,7 @@ def _deep_single_round_config(tmp_path):
             dry_run=True,
             output_dir=str(tmp_path),
             max_research_rounds=1,
+            min_research_rounds=1,
         ),
         topics=[
             TopicConfig(

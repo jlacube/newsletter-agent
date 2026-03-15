@@ -1,6 +1,5 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
 ---
 
 # WP12 - Multi-Round Deep Research Orchestrator
@@ -322,6 +321,7 @@ This work package implements the core multi-round deep research capability: a cu
 - 2026-03-15T19:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL) -- awaiting remediation
 - 2026-03-15T20:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03)
 - 2026-03-15T21:00:00Z - coder - lane=for_review - All FB items resolved, re-submitted for review
+- 2026-03-15T22:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 
 ## Self-Review (T12-01 through T12-11)
 
@@ -492,3 +492,52 @@ Changes Required. One FAIL: query expansion events are swallowed instead of yiel
 1. **FB-01**: Refactor `_expand_queries()` to yield events from the QueryExpanderAgent instead of swallowing them with `pass`. Move the async for loop into `_run_async_impl` or convert to an async generator pattern.
 2. **FB-02**: Add a unit test verifying that query expansion events are included in the yielded event stream from `_run_async_impl`.
 3. **FB-03**: Add `max_research_rounds` to `docs/user-guide.md` settings section and include it in at least one YAML configuration example.
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-15
+> **Verdict**: Approved with Findings
+
+### Summary
+All three feedback items from Round 1 are resolved. The previous FAIL (FB-01) is now PASS. Two original WARNs carry forward as recorded findings. No regressions detected -- 526 tests pass.
+
+### FB Item Resolution
+
+#### PASS - FB-01: Query expansion events now yielded
+- **Previous status**: FAIL
+- **Fix**: `_expand_queries()` now returns `tuple[list[str], list[Event]]`. Events are collected in a list during the async for loop and returned alongside variants. `_run_async_impl` yields them via `for ev in expander_events: yield ev`.
+- **Evidence**: `newsletter_agent/tools/deep_research.py` lines 68-70 (yield loop) and lines 176-190 (collection in `_expand_queries`).
+- **Verification**: Two new tests confirm correctness (see FB-02).
+
+#### PASS - FB-02: Tests for expansion event yielding added
+- **Previous status**: FAIL (test gap)
+- **Fix**: Two tests added to `TestQueryExpansion` class:
+  - `test_expand_queries_returns_events` -- verifies `_expand_queries` collects and returns events from the LlmAgent sub-agent.
+  - `test_expansion_events_yielded_from_run_async_impl` -- verifies expansion events appear in the yielded event stream from `_run_async_impl` and precede round progress events.
+- **Evidence**: `tests/unit/test_deep_research.py` lines 611-682. Both tests have real assertions that can fail.
+
+#### PASS - FB-03: max_research_rounds documented in user-guide
+- **Previous status**: WARN
+- **Fix**: `max_research_rounds: 3` with descriptive comment added to the settings block in the YAML example.
+- **Evidence**: `docs/user-guide.md` line 65.
+
+### Carried Findings
+
+#### WARN - Architecture: Sub-agents not created in constructor
+- Unchanged from Round 1. Sub-agents are created on-the-fly rather than in the constructor per T12-03. Does not block correctness.
+
+### Regression Check
+- 526 tests pass (up from 524 in Round 1, +2 new FB-02 tests)
+- 0 failures
+- All 11 mock sites for `_expand_queries` use updated tuple return type
+- Coverage: 99% for deep_research.py, 100% for query_expansion.py
+
+### Statistics (Round 2)
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| FB-01 (Event yielding) | 1 | 0 | 0 |
+| FB-02 (Test coverage) | 1 | 0 | 0 |
+| FB-03 (Documentation) | 1 | 0 | 0 |
+| Architecture (carried) | 0 | 1 | 0 |
+| Regression check | 1 | 0 | 0 |

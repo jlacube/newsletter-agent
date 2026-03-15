@@ -103,6 +103,35 @@ topics:
 - `timeframe`: constrains research to recent content (see below)
 - `verify_links`: when `true`, verifies all source URLs and removes broken ones
 
+### Adaptive Deep Research
+
+When `search_depth: "deep"` is set on a topic, the agent uses an adaptive
+**Plan-Search-Analyze-Decide** loop instead of a single search round. Each
+round's query is chosen based on what previous rounds found and what gaps
+remain, producing more comprehensive and focused research output.
+
+The loop works as follows:
+1. A **PlanningAgent** analyzes the query and identifies key aspects to investigate
+2. A **SearchAgent** executes the current query against the configured provider
+3. An **AnalysisAgent** evaluates findings, identifies gaps, and suggests the next query
+4. The orchestrator decides whether to continue (gaps remain) or stop (saturation reached)
+
+This continues until saturation is detected, knowledge gaps are filled, the
+search budget is exhausted, or `max_research_rounds` is reached.
+
+Configure adaptive research behavior with these settings:
+
+```yaml
+settings:
+  max_research_rounds: 3       # Max adaptive rounds (1-5, default: 3)
+  max_searches_per_topic: 5    # Search budget per topic-provider (1-10)
+  min_research_rounds: 2       # Min rounds before early exit (1-3, default: 2)
+```
+
+Existing configurations without these settings continue to work unchanged.
+See the [Configuration Guide](docs/configuration-guide.md) for detailed
+options and interaction between settings.
+
 ### Timeframe Configuration
 
 The `timeframe` field constrains research to content published within a specified period.

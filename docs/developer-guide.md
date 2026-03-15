@@ -143,8 +143,8 @@ The function signature defines the tool's parameters. ADK handles serialization 
 | `tests/bdd/` | -- | BDD scenario tests |
 | `tests/integration/` | -- | Cross-component tests with mocked external services |
 | `tests/e2e/` | `e2e` | Pipeline integration, mocked LLM calls |
-| `tests/security/` | -- | XSS, sanitization, injection, prompt safety tests |
-| `tests/performance/` | `performance` | Timing and resource validation |
+| `tests/security/` | -- | XSS, sanitization, injection, prompt safety, adaptive prompt injection tests |
+| `tests/performance/` | `performance` | Timing, resource validation, adaptive loop benchmarks |
 
 ### Running Tests
 

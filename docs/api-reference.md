@@ -77,6 +77,8 @@ Top-level configuration model.
 | `timeframe` | `str \| None` | `None` | Global search timeframe constraint |
 | `verify_links` | `bool` | `False` | Verify source URLs and remove broken links |
 | `max_research_rounds` | `int` | `3` | Research rounds for deep-mode topics (1-5) |
+| `max_searches_per_topic` | `int \| None` | Same as `max_research_rounds` | Search budget per topic-provider (1-15). Defaults to `max_research_rounds` if omitted. |
+| `min_research_rounds` | `int` | `2` | Minimum rounds before saturation exit (1-3). Must be <= `max_research_rounds`. |
 
 ### `TopicConfig`
 

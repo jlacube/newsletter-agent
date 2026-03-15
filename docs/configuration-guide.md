@@ -90,6 +90,34 @@ When `search_depth: "deep"`, each provider runs a `DeepResearchOrchestrator` tha
 3. Exits when saturation is detected (and `min_research_rounds` met), knowledge gaps are empty, the search budget is exhausted, or `max_research_rounds` is reached
 4. Merges all round results into a single research output and persists a reasoning chain
 
+### Adaptive Research Settings
+
+The adaptive deep research loop is controlled by three settings that work together:
+
+| Setting | Default | Range | Role |
+|---------|---------|-------|------|
+| `max_research_rounds` | `3` | 1-5 | Maximum reasoning rounds (Plan-Search-Analyze cycles) |
+| `max_searches_per_topic` | same as `max_research_rounds` | 1-10 | Search budget cap per topic-provider pair |
+| `min_research_rounds` | `2` | 1-3 | Minimum rounds before saturation exit is allowed |
+
+**How the settings interact:**
+
+- `max_research_rounds` controls how many adaptive reasoning rounds the orchestrator can execute. Each round performs a search, then analyzes the results to decide whether to continue.
+- `max_searches_per_topic` acts as a **binding search budget constraint**. Even if `max_research_rounds` allows more rounds, the loop exits once the search budget is exhausted. When omitted, it defaults to `max_research_rounds` so each round gets exactly one search.
+- `min_research_rounds` prevents premature early exit. Even if the AnalysisAgent reports saturation at round 1, the orchestrator continues until `min_research_rounds` is met. Must be `<=` `max_research_rounds`.
+- Setting `max_research_rounds: 1` disables the adaptive loop entirely (no planning or analysis agents are invoked), equivalent to the original single-round deep research.
+
+**Example: configuring adaptive research**
+
+```yaml
+settings:
+  max_research_rounds: 3       # Up to 3 adaptive rounds
+  max_searches_per_topic: 5    # Allow up to 5 searches (budget > rounds)
+  min_research_rounds: 2       # Always do at least 2 rounds
+```
+
+**Backward compatibility:** Existing configurations that do not include `max_searches_per_topic` or `min_research_rounds` continue to work unchanged. The defaults (`max_searches_per_topic` = `max_research_rounds`, `min_research_rounds` = 2) preserve the behavior of the original deep research mode.
+
 ### Timeframe Values
 
 The `timeframe` field accepts the following values:

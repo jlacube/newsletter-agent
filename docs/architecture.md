@@ -97,6 +97,9 @@ The pipeline communicates between agents exclusively through ADK session state. 
 | `pipeline_start_time` | before_agent_callback | Formatter | str (ISO 8601) |
 | `research_N_google` | GoogleSearcher_N or DeepResearchOrchestrator | LinkVerifier, Synthesizer | str (raw LLM output) |
 | `research_N_perplexity` | PerplexitySearcher_N or DeepResearchOrchestrator | LinkVerifier, Synthesizer | str (raw LLM output) |
+| `adaptive_context_N_{provider}` | DeepResearchOrchestrator | -- | dict (plan + per-round analysis) |
+| `adaptive_reasoning_chain_N_{provider}` | DeepResearchOrchestrator | -- | str (JSON, persisted reasoning chain) |
+| `deep_urls_accumulated_N_{provider}` | DeepResearchOrchestrator | -- | list[str] (accumulated unique URLs) |
 | `research_all_failed` | ResearchValidator | PipelineAbortCheck | bool |
 | `synthesis_raw` | Synthesizer | SynthesisPostProcessor | str (JSON) |
 | `synthesis_N` | SynthesisPostProcessor | Formatter | dict |

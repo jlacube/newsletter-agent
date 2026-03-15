@@ -63,6 +63,8 @@ settings:
   dry_run: true                             # true = save HTML only, false = send email
   output_dir: "output/"
   max_research_rounds: 3                    # 1-5, rounds per provider for deep topics
+  max_searches_per_topic: 5                  # 1-10, search budget per topic-provider
+  min_research_rounds: 2                     # 1-3, min rounds before early exit
 
 topics:
   - name: "AI Frameworks"
@@ -92,7 +94,7 @@ compatibility but is deprecated. Use `recipient_emails` for new configurations.
 
 - Between 1 and 20 topics are allowed
 - Topic names must be unique
-- `search_depth: "deep"` performs multi-round research: the system generates alternative query angles, runs multiple search rounds per provider (up to `max_research_rounds` in settings), and combines all results for richer analysis. After link verification, a refinement step selects the 5-10 most relevant sources per provider using LLM-based evaluation. It also uses the Perplexity `sonar-pro` model and more detailed Google Search prompts
+- `search_depth: "deep"` enables adaptive research using a Plan-Search-Analyze-Decide loop: a PlanningAgent identifies key aspects, each round's query is chosen based on what was found and what gaps remain, and the loop exits when saturation is detected or the search budget is exhausted. It uses the Perplexity `sonar-pro` model and more detailed Google Search prompts. See the [Configuration Guide](docs/configuration-guide.md) for details on `max_searches_per_topic` and `min_research_rounds`.
 - If `sources` is omitted, both Google Search and Perplexity are used
 
 ## Running the Newsletter

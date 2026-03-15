@@ -140,6 +140,8 @@ The health check endpoint (`GET /`) is automatically used by Cloud Run for start
 
 For newsletters with many topics (10+) using `search_depth: "deep"`, consider increasing the timeout to 900s. Deep-mode topics perform multiple research rounds (up to `max_research_rounds` per provider), which increases total pipeline time.
 
+**Adaptive research API call volume:** When using the adaptive deep research mode (`search_depth: "deep"` with `max_research_rounds` > 1), each topic-provider pair makes additional LLM calls for planning (1 call) and per-round analysis (1 call per round). With the default 3 rounds across 5 topics and 2 providers, this adds up to 30 additional `gemini-2.5-flash` calls per pipeline run. At current pricing, this adds approximately $0.002-$0.005 per topic-provider pair per run. No new environment variables or external dependencies are required for adaptive research.
+
 ### Step 4: Set Up Cloud Scheduler
 
 Create a scheduled job that triggers the pipeline via HTTP POST:
@@ -307,6 +309,14 @@ Pipeline logs are written to stdout/stderr and captured by Cloud Logging:
 | `[DeepResearch] Topic X/provider round N: Y new URLs, Z total accumulated` | Deep research round progress |
 | `[DeepResearch] Topic X/provider: early exit at round N with Z URLs` | Early exit from deep research (15+ URLs) |
 | `[DeepResearch] Topic X/provider: completed N rounds, Z unique URLs` | Deep research orchestration complete |
+| `[AdaptiveResearch] Topic X/provider: Plan - intent: ..., aspects: [...]` | Adaptive planning phase completed |
+| `[AdaptiveResearch] Topic X/provider round N: searched '...', X new URLs, Y total` | Adaptive search round progress |
+| `[AdaptiveResearch] Topic X/provider round N: findings. Gaps: [...]. Saturated: bool` | Analysis phase result |
+| `[AdaptiveResearch] Topic X/provider: saturated at round N` | Early exit due to saturation |
+| `[AdaptiveResearch] Topic X/provider: search budget exhausted (N/max)` | Search budget limit reached |
+| `[AdaptiveResearch] Topic X/provider: completed N rounds, M unique URLs, exit reason: reason` | Adaptive orchestration complete |
+| `[AdaptiveResearch] Planning failed for X/provider, using fallback` | Planning LLM parse failure (fallback engaged) |
+| `[AdaptiveResearch] Analysis failed for X/provider round N, using fallback query` | Analysis LLM parse failure (fallback engaged) |
 | `Config loaded into state` | Config values written to session state |
 | `Email sent: message_id=X` | Newsletter delivered successfully |
 | `Dry run: newsletter saved to X` | HTML saved (dry-run mode) |

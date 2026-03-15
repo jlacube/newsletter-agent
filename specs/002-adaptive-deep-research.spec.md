@@ -201,12 +201,12 @@ Output ONLY the JSON object. No other text.
 ### 4.5 Saturation Detection & Exit Criteria
 
 - **FR-ADR-040**: The orchestrator SHALL exit the adaptive loop when ANY of the following conditions is met:
-  1. The `AnalysisAgent` sets `saturated: true` AND the orchestrator has completed at least 2 rounds (safety minimum).
+  1. The `AnalysisAgent` sets `saturated: true` AND the orchestrator has completed at least `min_research_rounds` rounds (configurable safety minimum, default 2).
   2. The `AnalysisAgent` returns an empty `knowledge_gaps` list (all aspects covered).
   3. The current round index reaches `max_research_rounds` (hard cap from config).
   4. The total number of search API calls reaches `max_searches_per_topic` (hard cap from config).
 - **FR-ADR-041**: The 15-URL threshold early exit (parent spec FR-MRR-007) SHALL be removed. Saturation is now determined by LLM-driven analysis, not URL counting.
-- **FR-ADR-042**: If the `AnalysisAgent` reports `saturated: true` on round 0 (first search), the orchestrator SHALL override the saturation signal and continue for at least one more round. This prevents premature exit on queries with sparse initial results.
+- **FR-ADR-042**: If the `AnalysisAgent` reports `saturated: true` before `min_research_rounds` rounds have completed, the orchestrator SHALL override the saturation signal and continue. This prevents premature exit on queries with sparse initial results.
 - **FR-ADR-043**: When early exit occurs due to saturation, the orchestrator SHALL log: `"[AdaptiveResearch] Topic {name}/{provider}: saturated at round {N} - {coverage_assessment}"` at INFO level.
 - **FR-ADR-044**: When the loop exits at the hard cap without saturation, the orchestrator SHALL log: `"[AdaptiveResearch] Topic {name}/{provider}: reached max rounds ({N}) without saturation. Gaps remaining: {gaps}"` at WARNING level.
 
@@ -226,6 +226,7 @@ Output ONLY the JSON object. No other text.
 - **FR-ADR-052**: The `AdaptiveContext` SHALL be passed to the `AnalysisAgent` as the `prior_rounds_summary` in its instruction. The orchestrator SHALL format the `rounds` list into a human-readable summary for the prompt.
 - **FR-ADR-053**: All intermediate state keys (`adaptive_plan_{idx}_{provider}`, `adaptive_analysis_{idx}_{provider}`, `adaptive_context_{idx}_{provider}`, `deep_research_latest_{idx}_{provider}`, `research_{idx}_{provider}_round_{N}`) SHALL be cleaned up after the final merge, consistent with parent spec behavior.
 - **FR-ADR-054**: The state key `deep_queries_{idx}_{provider}` (parent spec) SHALL no longer be written since upfront query expansion is removed.
+- **FR-ADR-055**: The `AdaptiveContext` reasoning chain SHALL be persisted to a dedicated state key `adaptive_reasoning_chain_{idx}_{provider}` BEFORE intermediate key cleanup. This key SHALL NOT be cleaned up after merge, enabling post-run quality analysis and debugging. The persisted value SHALL be the full `AdaptiveContext` dict serialized as JSON.
 
 ### 4.7 Configuration Changes
 
@@ -237,6 +238,12 @@ Output ONLY the JSON object. No other text.
   - Description: Maximum total search API calls per topic-provider combination.
 - **FR-ADR-062**: If `max_searches_per_topic` is less than `max_research_rounds`, the search budget SHALL be the binding constraint (the loop exits when searches are exhausted even if reasoning rounds remain).
 - **FR-ADR-063**: When `max_research_rounds` is 1, the adaptive loop SHALL execute exactly one search with no analysis phase -- equivalent to current single-round deep research behavior (backward compatibility).
+- **FR-ADR-064**: A new optional field `min_research_rounds` SHALL be added to `AppSettings`:
+  - Type: `int`
+  - Default: 2
+  - Constraints: minimum 1, maximum 3, must be <= `max_research_rounds`
+  - Description: Minimum rounds before saturation can trigger early exit. Replaces the hard-coded safety minimum of 2.
+- **FR-ADR-065**: If `min_research_rounds` > `max_research_rounds`, config validation SHALL raise `ConfigValidationError` with a descriptive message.
 
 **Implementation Contract -- Config Field**:
 
@@ -244,11 +251,17 @@ Output ONLY the JSON object. No other text.
 # In AppSettings (newsletter_agent/config/schema.py)
 max_research_rounds: int = Field(default=3, ge=1, le=5)
 max_searches_per_topic: int = Field(default=None, ge=1, le=15)
+min_research_rounds: int = Field(default=2, ge=1, le=3)
 
 @model_validator(mode="after")
-def resolve_max_searches(self) -> AppSettings:
+def resolve_adaptive_defaults(self) -> AppSettings:
     if self.max_searches_per_topic is None:
         self.max_searches_per_topic = self.max_research_rounds
+    if self.min_research_rounds > self.max_research_rounds:
+        raise ValueError(
+            f"min_research_rounds ({self.min_research_rounds}) must be "
+            f"<= max_research_rounds ({self.max_research_rounds})"
+        )
     return self
 ```
 
@@ -257,12 +270,13 @@ YAML example:
 settings:
   max_research_rounds: 3      # max adaptive reasoning rounds (1-5)
   max_searches_per_topic: 5   # max search API calls per topic/provider (1-15, optional)
+  min_research_rounds: 2      # min rounds before saturation exit (1-3, optional, default 2)
 ```
 
 YAML example (backward compatible, no new field):
 ```yaml
 settings:
-  max_research_rounds: 3      # defaults max_searches_per_topic to 3
+  max_research_rounds: 3      # defaults max_searches_per_topic to 3, min_research_rounds to 2
 ```
 
 ### 4.8 Prompt Templates
@@ -422,6 +436,7 @@ Identical to parent spec. No adaptive loop. Single `LlmAgent` search per provide
 |-------|------|----------|---------|-------------|-------------|
 | `max_research_rounds` | `int` | No | 3 | 1 <= x <= 5 | Max adaptive reasoning rounds per topic-provider (existing, semantic change) |
 | `max_searches_per_topic` | `int` | No | value of `max_research_rounds` | 1 <= x <= 15 | Max search API calls per topic-provider (new) |
+| `min_research_rounds` | `int` | No | 2 | 1 <= x <= 3, must be <= `max_research_rounds` | Min rounds before saturation can trigger early exit (new) |
 
 ### 7.2 Session State -- New Keys (Adaptive Research)
 
@@ -448,6 +463,7 @@ All keys are intermediate and SHALL be cleaned up after merge.
 | `research_{idx}_{provider}_round_{N}` | DeepResearchOrchestrator (copied from latest) | DeepResearchOrchestrator (merge) | Unchanged |
 | `deep_urls_accumulated_{idx}_{provider}` | DeepResearchOrchestrator | DeepResearchOrchestrator | Retained for URL tracking; no longer used for early exit decision |
 | `research_{idx}_{provider}` | DeepResearchOrchestrator (final merge) | LinkVerifier, DeepResearchRefiner, Synthesizer | Unchanged format |
+| `adaptive_reasoning_chain_{idx}_{provider}` | DeepResearchOrchestrator (persisted before cleanup) | Post-run analysis, debugging | New - NOT cleaned up after merge (FR-ADR-055) |
 
 ### 7.5 Data Contracts
 
@@ -945,13 +961,13 @@ Feature: Adaptive Deep Research Loop
 
 ---
 
-## 14. Open Questions
+## 14. Open Questions (Resolved)
 
-| # | Question | Impact if unresolved | Owner |
-|---|----------|---------------------|-------|
-| OQ-ADR-1 | Should the full search result text (potentially large) be passed to the AnalysisAgent, or just a condensed summary? Full text gives better analysis but costs more tokens. | Analysis quality vs. token cost. Spec currently specifies full latest results + condensed prior summaries. May need revision if token costs are excessive. | Implementer |
-| OQ-ADR-2 | Should the AdaptiveContext (reasoning chain) be persisted beyond cleanup for post-run quality analysis? Currently it is deleted after merge. | Debugging and quality improvement capability. Could be preserved in a separate state key or logged as a structured JSON blob. | Operator/Implementer |
-| OQ-ADR-3 | Should the saturation safety minimum (2 rounds) be configurable, or is a fixed minimum sufficient? | Minor flexibility concern. Fixed minimum of 2 is sufficient for MVP. Can be made configurable later if needed. | Spec Architect |
+| # | Question | Resolution | Date |
+|---|----------|------------|------|
+| OQ-ADR-1 | Should the full search result text (potentially large) be passed to the AnalysisAgent, or just a condensed summary? | **Full text**. The full latest round results SHALL be passed to the AnalysisAgent. Token cost is acceptable given gemini-2.5-flash's 1M context window and low per-token pricing. Analysis quality is the priority. Prior rounds remain condensed summaries. See FR-ADR-031. | 2026-03-15 |
+| OQ-ADR-2 | Should the AdaptiveContext (reasoning chain) be persisted beyond cleanup for post-run quality analysis? | **Persisted**. The AdaptiveContext SHALL be persisted to a dedicated state key `adaptive_reasoning_chain_{idx}_{provider}` that survives cleanup. This enables post-run quality analysis and debugging. See FR-ADR-055. | 2026-03-15 |
+| OQ-ADR-3 | Should the saturation safety minimum (2 rounds) be configurable, or is a fixed minimum sufficient? | **Configurable**. A new optional field `min_research_rounds` SHALL be added to AppSettings (default: 2, range: 1-3). This is the minimum rounds before saturation can trigger early exit. See FR-ADR-064. | 2026-03-15 |
 
 ---
 
@@ -966,7 +982,7 @@ Feature: Adaptive Deep Research Loop
 | Saturation | The condition where further searching would yield diminishing returns -- all key aspects are covered or new searches add no significant new information |
 | AdaptiveContext | The accumulated state data structure tracking the planning output and per-round analysis results across the adaptive loop |
 | Prior rounds summary | A condensed representation of all previous rounds' findings and gaps, passed to the AnalysisAgent to inform its analysis |
-| Safety minimum | The minimum number of rounds (2) that must execute before saturation can trigger early exit, preventing premature stop on round 0 |
+| Safety minimum | The configurable minimum number of rounds (`min_research_rounds`, default 2) that must execute before saturation can trigger early exit, preventing premature stop |
 | Search budget | The `max_searches_per_topic` limit on total search API calls per topic-provider combination |
 | Fan-out (deprecated) | The previous approach where all query variants were generated upfront before any search was executed |
 
@@ -1006,10 +1022,13 @@ Feature: Adaptive Deep Research Loop
 | FR-ADR-052 | Context passed to AnalysisAgent | US-ADR-01 | Scenario 2 | unit | 11.1 |
 | FR-ADR-053 | Intermediate keys cleaned up | US-ADR-01 | Scenario 1 | unit | 11.1 |
 | FR-ADR-054 | deep_queries key removed | US-ADR-01 | Scenario 1 | unit | 11.1 |
+| FR-ADR-055 | Reasoning chain persisted | US-ADR-03 | BDD Scenario 10 | unit | 11.1 |
 | FR-ADR-060 | max_research_rounds reused | US-ADR-05 | Scenario 1 | unit | 11.1 |
 | FR-ADR-061 | max_searches_per_topic new field | US-ADR-04 | Scenario 1-4 | unit, BDD | 11.1, 11.2 |
 | FR-ADR-062 | Search budget binding constraint | US-ADR-04 | BDD Scenario 5 | unit, BDD | 11.1, 11.2 |
 | FR-ADR-063 | max_rounds=1 single-round mode | US-ADR-05 | BDD Scenario 6 | unit, BDD | 11.1, 11.2 |
+| FR-ADR-064 | min_research_rounds configurable | US-ADR-04 | BDD Scenario 3 | unit | 11.1 |
+| FR-ADR-065 | min > max validation error | US-ADR-04 | Scenario 4 | unit | 11.1 |
 | FR-ADR-070 | New reasoning.py module | US-ADR-01 | Scenario 1 | unit | 11.1 |
 | FR-ADR-071 | query_expansion.py deprecated | US-ADR-05 | Scenario 3 | unit | 11.1 |
 | FR-ADR-072 | Search prompts unchanged | US-ADR-05 | Scenario 3 | unit | 11.1 |

@@ -1,6 +1,5 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
 ---
 
 # WP10 - Pre-Synthesis Source Verification
@@ -90,6 +89,7 @@ review_status: acknowledged
 - 2026-03-15T07:40:00Z - reviewer - lane=to_do - Verdict: Changes Required (2 FAILs) -- awaiting remediation
 - 2026-03-15T08:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02)
 - 2026-03-15T08:30:00Z - coder - lane=for_review - All feedback items resolved, re-submitting for review
+- 2026-03-15T09:00:00Z - reviewer - lane=done - Verdict: Approved (re-review, 0 FAILs, 0 WARNs)
 
 ## Review
 
@@ -218,3 +218,47 @@ Changes Required. Two FAILs found: the BDD test file `tests/bdd/test_link_verifi
 ### Recommended Actions
 1. **FB-01**: Rewrite `tests/bdd/test_link_verification.py` to use research-key-based state, new constructor signature (`topic_count`, `providers`), and remove all references to `_ALL_BROKEN_NOTICE` and `synthesis_N` keys.
 2. **FB-02**: Add a unit test (e.g., in `tests/unit/test_research_prompts.py`) that verifies the standard prompt template has 5+ source URL slots and the deep prompt template has 8+ source URL slots.
+
+---
+
+## Re-Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-15
+> **Verdict**: Approved
+> **Scope**: FB-01, FB-02 remediation only (no previously-passing dimensions re-audited)
+
+### Summary
+
+Approved. Both feedback items have been fully resolved. The BDD test file was rewritten with correct imports, constructor signatures, and research-key-based state assertions. The Google Search source count unit test verifies both standard (>=5) and deep (>=8) prompt requirements. All 437 tests pass with zero failures.
+
+### FB-01 Resolution: BDD Tests
+
+**Status**: Resolved.
+
+- `tests/bdd/test_link_verification.py` no longer imports `_ALL_BROKEN_NOTICE`
+- All 5 BDD scenario classes use the correct `LinkVerifierAgent(name=..., topic_count=..., providers=...)` constructor
+- State keys are `research_N_google` (research phase), not `synthesis_N`
+- All 5 BDD tests pass: all-valid, some-broken, all-broken, disabled, network-failure
+- Test assertions verify link cleaning, graceful degradation, and no-op behavior correctly
+
+### FB-02 Resolution: Source Count Unit Test
+
+**Status**: Resolved.
+
+- `tests/unit/test_google_search_prompts.py` added with 4 tests
+- `TestStandardModeSourceCount`: verifies >=5 source slots and "at least 5 diverse sources" text
+- `TestDeepModeSourceCount`: verifies >=8 source slots and "at least 8 diverse sources" text
+- All 4 tests pass
+
+### Test Suite
+
+```
+437 passed, 0 failed, 0 errors
+```
+
+### Statistics (Re-Review Scope Only)
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Test Coverage (FB-01) | 1 | 0 | 0 |
+| Test Coverage (FB-02) | 1 | 0 | 0 |

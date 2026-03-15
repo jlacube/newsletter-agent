@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP10 - Pre-Synthesis Source Verification
@@ -88,6 +88,8 @@ review_status: has_feedback
 - 2026-03-15T12:00:00Z - coder - lane=doing - WP10 created, implementation starting
 - 2026-03-15T12:30:00Z - coder - lane=for_review - All tasks complete, submitted for review
 - 2026-03-15T07:40:00Z - reviewer - lane=to_do - Verdict: Changes Required (2 FAILs) -- awaiting remediation
+- 2026-03-15T08:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02)
+- 2026-03-15T08:30:00Z - coder - lane=for_review - All feedback items resolved, re-submitting for review
 
 ## Review
 
@@ -104,8 +106,8 @@ Changes Required. Two FAILs found: the BDD test file `tests/bdd/test_link_verifi
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Update `tests/bdd/test_link_verification.py` to match new LinkVerifierAgent. The file imports the removed `_ALL_BROKEN_NOTICE` constant (line 13), constructs `LinkVerifierAgent(name="LinkVerifier")` without required `topic_count`/`providers` params (lines 57, 98, 132, 174, 210), and asserts against `synthesis_N` keys instead of `research_N_*` keys. This causes `ImportError` at collection time -- 5 BDD scenarios are dead. All 5 test classes must be rewritten to use research-key-based state, the new constructor signature, and remove the `_ALL_BROKEN_NOTICE` import and assertions.
-- [ ] **FB-02**: Add a unit test for FR-PSV-007 and FR-PSV-008 (increased Google Search source counts). Spec Section 5 requires "Unit: Google Search prompts request increased source counts." No such test exists. Add a test that verifies the standard prompt contains at least 5 `[Source Title N](URLN)` entries and the deep prompt contains at least 8.
+- [x] **FB-01**: Update `tests/bdd/test_link_verification.py` to match new LinkVerifierAgent. The file imports the removed `_ALL_BROKEN_NOTICE` constant (line 13), constructs `LinkVerifierAgent(name="LinkVerifier")` without required `topic_count`/`providers` params (lines 57, 98, 132, 174, 210), and asserts against `synthesis_N` keys instead of `research_N_*` keys. This causes `ImportError` at collection time -- 5 BDD scenarios are dead. All 5 test classes must be rewritten to use research-key-based state, the new constructor signature, and remove the `_ALL_BROKEN_NOTICE` import and assertions.
+- [x] **FB-02**: Add a unit test for FR-PSV-007 and FR-PSV-008 (increased Google Search source counts). Spec Section 5 requires "Unit: Google Search prompts request increased source counts." No such test exists. Add a test that verifies the standard prompt contains at least 5 `[Source Title N](URLN)` entries and the deep prompt contains at least 8.
 
 ### Findings
 

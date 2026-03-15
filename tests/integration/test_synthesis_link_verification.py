@@ -1,12 +1,11 @@
-"""Integration test: Synthesis + LinkVerifier Flow.
+"""Integration test: LinkVerifier + research state flow.
 
-Verifies that LinkVerifierAgent correctly processes synthesis state,
-removes broken links, and produces output consumable by the formatter.
+Verifies that LinkVerifierAgent correctly processes research state keys,
+removes broken links from research text before synthesis.
 
-Spec refs: FR-014, FR-015, FR-020, FR-025, Section 11.3.
+Spec refs: FR-PSV-003 through FR-PSV-006, Section 11.3.
 """
 
-import httpx
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -26,7 +25,7 @@ class TestSynthesisLinkVerificationIntegration:
     async def test_broken_links_removed_valid_preserved(
         self, mock_verify, synthesis_state_with_mixed_urls
     ):
-        """Broken URLs removed from sources and citations; valid ones stay."""
+        """Broken URLs removed from research text; valid ones stay."""
         mock_verify.return_value = {
             "https://good.example.com/ai": LinkCheckResult(
                 url="https://good.example.com/ai", status="valid", http_status=200
@@ -52,32 +51,30 @@ class TestSynthesisLinkVerificationIntegration:
         }
 
         state = synthesis_state_with_mixed_urls
-        agent = LinkVerifierAgent(name="LinkVerifier")
+        agent = LinkVerifierAgent(
+            name="LinkVerifier", topic_count=2, providers=["google"],
+        )
         ctx = _make_ctx(state)
         async for _ in agent._run_async_impl(ctx):
             pass
 
-        # Topic 0: 2 of 3 valid
-        s0 = state["synthesis_0"]
-        assert len(s0["sources"]) == 2
-        urls_0 = {s["url"] for s in s0["sources"]}
-        assert "https://broken.example.com/gone" not in urls_0
-        assert "https://good.example.com/ai" in urls_0
-        assert "[Broken Link](https://broken.example.com/gone)" not in s0["body_markdown"]
-        assert "[Good Link](https://good.example.com/ai)" in s0["body_markdown"]
+        # Topic 0: broken link cleaned, valid links preserved
+        r0 = state["research_0_google"]
+        assert "[Broken Link](https://broken.example.com/gone)" not in r0
+        assert "[Good Link](https://good.example.com/ai)" in r0
+        assert "[Another Good](https://good2.example.com)" in r0
 
-        # Topic 1: 1 of 2 valid
-        s1 = state["synthesis_1"]
-        assert len(s1["sources"]) == 1
-        assert s1["sources"][0]["url"] == "https://cloud.example.com"
-        assert "[Dead Page](https://dead.example.com/404)" not in s1["body_markdown"]
+        # Topic 1: broken link cleaned, valid link preserved
+        r1 = state["research_1_google"]
+        assert "[Dead Page](https://dead.example.com/404)" not in r1
+        assert "[Cloud Doc](https://cloud.example.com)" in r1
 
     @pytest.mark.asyncio
     @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
     async def test_cleaned_state_valid_for_formatter(
         self, mock_verify, synthesis_state_with_mixed_urls
     ):
-        """Post-verification state can be consumed by render_newsletter()."""
+        """Post-verification research state has no broken link markdown."""
         mock_verify.return_value = {
             "https://good.example.com/ai": LinkCheckResult(
                 url="https://good.example.com/ai", status="valid", http_status=200
@@ -103,21 +100,14 @@ class TestSynthesisLinkVerificationIntegration:
         }
 
         state = synthesis_state_with_mixed_urls
-        state["config_newsletter_title"] = "Test Newsletter"
-        state["pipeline_start_time"] = "2025-01-01T08:00:00+00:00"
-        state["executive_summary"] = ["AI is evolving.", "Cloud is growing."]
-        state["generation_time_seconds"] = 5.0
-
-        agent = LinkVerifierAgent(name="LinkVerifier")
+        agent = LinkVerifierAgent(
+            name="LinkVerifier", topic_count=2, providers=["google"],
+        )
         ctx = _make_ctx(state)
         async for _ in agent._run_async_impl(ctx):
             pass
 
-        # Verify the formatter can consume this state
-        from newsletter_agent.tools.formatter import render_newsletter
-
-        html = render_newsletter(state)
-        assert "<html" in html.lower() or "<!doctype" in html.lower() or "<div" in html.lower()
-        # Broken link markdown should not appear in HTML
-        assert "[Broken Link](https://broken.example.com/gone)" not in html
-        assert "[Dead Page](https://dead.example.com/404)" not in html
+        # Broken link markdown should not appear in any research key
+        for key in ["research_0_google", "research_1_google"]:
+            assert "[Broken Link](https://broken.example.com/gone)" not in state[key]
+            assert "[Dead Page](https://dead.example.com/404)" not in state[key]

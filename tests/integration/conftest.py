@@ -67,34 +67,22 @@ def config_old_format(tmp_path):
 
 @pytest.fixture
 def synthesis_state_with_mixed_urls():
-    """Synthesis state with some valid and some broken URLs."""
+    """Research state with some valid and some broken URLs.
+
+    Uses research_N_{provider} keys matching the refactored
+    LinkVerifierAgent (WP10).
+    """
     return {
         "config_verify_links": True,
-        "config_topic_count": 2,
-        "synthesis_0": {
-            "topic_name": "AI News",
-            "body_markdown": (
-                "## AI News\n\n"
-                "See [Good Link](https://good.example.com/ai) for details. "
-                "Also check [Broken Link](https://broken.example.com/gone).\n\n"
-                "More at [Another Good](https://good2.example.com)."
-            ),
-            "sources": [
-                {"title": "Good Link", "url": "https://good.example.com/ai"},
-                {"title": "Broken Link", "url": "https://broken.example.com/gone"},
-                {"title": "Another Good", "url": "https://good2.example.com"},
-            ],
-        },
-        "synthesis_1": {
-            "topic_name": "Cloud Updates",
-            "body_markdown": (
-                "## Cloud Updates\n\n"
-                "The [Cloud Doc](https://cloud.example.com) is comprehensive.\n\n"
-                "See also [Dead Page](https://dead.example.com/404) for history."
-            ),
-            "sources": [
-                {"title": "Cloud Doc", "url": "https://cloud.example.com"},
-                {"title": "Dead Page", "url": "https://dead.example.com/404"},
-            ],
-        },
+        "research_0_google": (
+            "## AI News\n\n"
+            "See [Good Link](https://good.example.com/ai) for details. "
+            "Also check [Broken Link](https://broken.example.com/gone).\n\n"
+            "More at [Another Good](https://good2.example.com)."
+        ),
+        "research_1_google": (
+            "## Cloud Updates\n\n"
+            "The [Cloud Doc](https://cloud.example.com) is comprehensive.\n\n"
+            "See also [Dead Page](https://dead.example.com/404) for history."
+        ),
     }

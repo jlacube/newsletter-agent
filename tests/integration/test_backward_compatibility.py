@@ -67,7 +67,9 @@ class TestBackwardCompatibility:
                 "sources": [{"title": "Link", "url": "https://example.com"}],
             },
         }
-        agent = LinkVerifierAgent(name="LinkVerifier")
+        agent = LinkVerifierAgent(
+            name="LinkVerifier", topic_count=1, providers=["google"],
+        )
         ctx = MagicMock()
         ctx.session.state = state
 

@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP17 - Acceptance & Integration Testing
@@ -274,6 +274,7 @@ This work package validates the adaptive deep research implementation through BD
 - 2025-07-25T10:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (4 FAILs, 1 WARN) -- awaiting remediation
 - 2026-03-15T12:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05)
 - 2026-03-15T12:30:00Z - coder - lane=for_review - All FB items resolved, resubmitted for review
+- 2025-07-25T13:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (1 WARN)
 
 ### Self-Review Notes
 
@@ -434,3 +435,62 @@ Changes Required. Three failures found: BDD Scenarios 8 and 9 have `caplog` in s
 3. **(FB-03)** Add E2E test method `test_logs_contain_adaptive_research_entries` using `caplog` to verify `[AdaptiveResearch]` entries for planning, round analysis, and completion appear in INFO-level logs during a multi-round deep research execution.
 4. **(FB-04)** Add a formal Spec Compliance Checklist section to the WP file with all task-level items checked off.
 5. **(FB-05)** Commit discipline: acknowledged as WARN. No retroactive fix required but future WPs should commit per-task.
+
+---
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-25
+> **Verdict**: Approved with Findings
+> **Scope**: Re-review of FB-01 through FB-04 fixes only; dimensions that previously passed were not re-audited (no files in those dimensions were modified).
+
+### Summary
+
+Approved with Findings. All 4 FAIL items from Round 1 are resolved. One WARN (FB-05, single commit for original 7 tasks) remains as an accepted process deviation.
+
+### Re-Review Findings
+
+#### PASS - FB-01: BDD Scenario 8 log verification (previously FAIL)
+- **Requirement**: Section 11.2 Scenario 8 -- "a warning is logged about planning failure"
+- **Status**: Compliant
+- **Detail**: `TestPlanningFailureFallback` now calls `orch._parse_planning_output("not valid json {{")` -- the real instance method -- triggering the actual `try/except` fallback path. WARNING log assertion present: `assert any("[AdaptiveResearch]" in m and "Planning failed" in m for m in caplog.messages)`. `caplog.at_level(logging.WARNING)` used.
+- **Evidence**: `tests/bdd/test_deep_research.py` L643-L671
+
+#### PASS - FB-02: BDD Scenario 9 log verification (previously FAIL)
+- **Requirement**: Section 11.2 Scenario 9 -- "a warning is logged about analysis failure"
+- **Status**: Compliant
+- **Detail**: `TestAnalysisFailureFallback` now calls `orch._parse_analysis_output("not valid json {{", round_idx=1)` -- the real instance method -- triggering the actual fallback path. WARNING log assertion present: `assert any("[AdaptiveResearch]" in m and "Analysis failed" in m for m in caplog.messages)`. `caplog.at_level(logging.WARNING)` used.
+- **Evidence**: `tests/bdd/test_deep_research.py` L711-L727
+
+#### PASS - FB-03: E2E log verification (previously FAIL)
+- **Requirement**: Section 11.4 -- "Log output contains `[AdaptiveResearch]` entries"
+- **Status**: Compliant
+- **Detail**: New test `test_adaptive_research_logs_contain_entries` uses `caplog.at_level(logging.INFO)`, calls `orch._run_async_impl(ctx)` directly (orchestrator's own logging code executes), and asserts `[AdaptiveResearch]` in log text, `round 0` present, and `saturated` present.
+- **Evidence**: `tests/e2e/test_deep_mode_pipeline.py` L269-L331
+
+#### PASS - FB-04: Spec Compliance Checklist (previously FAIL)
+- **Requirement**: Coder Step 2b process requirement
+- **Status**: Compliant
+- **Detail**: All 7 tasks (T17-01 through T17-07) have `Spec Compliance Checklist` subsections with all items checked off.
+- **Evidence**: `plans/WP17-acceptance-integration-testing.md` T17-01 through T17-07 sections
+
+#### WARN - FB-05: Single commit for 7 tasks (unchanged)
+- **Requirement**: Commit discipline -- one commit per task
+- **Status**: Deviating
+- **Detail**: Original 7 tasks remain in single commit `bc644d5`. Remediation commits (`b0bdecb`, `6410909`, `2a445e0`) correctly follow per-fix discipline. Accepted deviation.
+
+### Regression Check
+- 762 tests pass (up from 761 -- new E2E test added)
+- Zero failures, zero errors
+- No files outside WP17 scope modified
+
+### Statistics (Re-Review)
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Test Coverage (FB-01) | 1 | 0 | 0 |
+| Test Coverage (FB-02) | 1 | 0 | 0 |
+| Test Coverage (FB-03) | 1 | 0 | 0 |
+| Process Compliance (FB-04) | 1 | 0 | 0 |
+| Process Compliance (FB-05) | 0 | 1 | 0 |
+| Regression | 1 | 0 | 0 |

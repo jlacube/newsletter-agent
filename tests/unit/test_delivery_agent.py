@@ -15,6 +15,7 @@ def _make_state(dry_run=False, has_html=True, recipient="test@gmail.com"):
         "config_dry_run": dry_run,
         "config_output_dir": "/tmp/output",
         "config_recipient_email": recipient,
+        "config_recipient_emails": [recipient] if recipient else [],
         "newsletter_metadata": {
             "title": "Test Newsletter",
             "date": "2026-03-14",
@@ -67,7 +68,7 @@ class TestDryRunMode:
 
 class TestSuccessfulSend:
     @pytest.mark.asyncio
-    @patch("newsletter_agent.tools.delivery.send_newsletter_email", return_value={"status": "sent", "message_id": "msg-123"})
+    @patch("newsletter_agent.tools.delivery.send_newsletter_email", return_value={"status": "sent", "recipients": [{"email": "test@gmail.com", "status": "sent", "message_id": "msg-123"}]})
     async def test_sends_email(self, mock_send):
         agent = DeliveryAgent(name="TestDelivery")
         state = _make_state(dry_run=False)
@@ -78,10 +79,10 @@ class TestSuccessfulSend:
 
         mock_send.assert_called_once()
         assert state["delivery_status"]["status"] == "sent"
-        assert state["delivery_status"]["message_id"] == "msg-123"
+        assert state["delivery_status"]["recipients"][0]["message_id"] == "msg-123"
 
     @pytest.mark.asyncio
-    @patch("newsletter_agent.tools.delivery.send_newsletter_email", return_value={"status": "sent", "message_id": "x"})
+    @patch("newsletter_agent.tools.delivery.send_newsletter_email", return_value={"status": "sent", "recipients": [{"email": "test@gmail.com", "status": "sent", "message_id": "x"}]})
     async def test_correct_subject_format(self, mock_send):
         agent = DeliveryAgent(name="TestDelivery")
         state = _make_state(dry_run=False)
@@ -98,7 +99,7 @@ class TestSuccessfulSend:
 class TestEmailFailureFallback:
     @pytest.mark.asyncio
     @patch("newsletter_agent.tools.delivery.save_newsletter_html", return_value="/tmp/fallback.html")
-    @patch("newsletter_agent.tools.delivery.send_newsletter_email", return_value={"status": "error", "error_message": "Auth failed"})
+    @patch("newsletter_agent.tools.delivery.send_newsletter_email", return_value={"status": "failed", "recipients": [{"email": "test@gmail.com", "status": "error", "error": "Auth failed"}]})
     async def test_fallback_on_failure(self, mock_send, mock_save):
         agent = DeliveryAgent(name="TestDelivery")
         state = _make_state(dry_run=False)

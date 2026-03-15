@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP12 - Multi-Round Deep Research Orchestrator
@@ -318,6 +319,7 @@ This work package implements the core multi-round deep research capability: a cu
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-15T12:00:00Z - coder - lane=doing - Started implementation of WP12
 - 2026-03-15T18:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2026-03-15T19:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL) -- awaiting remediation
 
 ## Self-Review (T12-01 through T12-11)
 
@@ -363,3 +365,128 @@ This work package implements the core multi-round deep research capability: a cu
 - [x] deployment-guide.md updated (timeout guidance, log messages)
 - [x] developer-guide.md updated (project structure, agent types, naming, provider guide)
 - [x] user-guide.md updated (topic options, configuration rules)
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-15
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+Changes Required. One FAIL: query expansion events are swallowed instead of yielded, violating T12-04 acceptance criteria and the ADK event propagation contract. Two WARNs: sub-agents not created in constructor per T12-03, and user-guide.md omits `max_research_rounds` from the settings documentation.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: `_expand_queries()` in `newsletter_agent/tools/deep_research.py` (lines 170-183) swallows all events from the QueryExpanderAgent with `async for event in expander.run_async(ctx): pass`. The T12-04 acceptance criteria states: "Orchestrator invokes QueryExpanderAgent via `async for event in self._query_expander.run_async(ctx)` and yields all events". The spec Section 4.3 step 2 also specifies the `async for event in query_expander.run_async(ctx)` invocation pattern. Refactor so that query expansion events are yielded from `_run_async_impl`. Either inline the expansion logic into `_run_async_impl` or convert `_expand_queries` into an async generator that yields events and have the caller yield from it.
+- [ ] **FB-02**: Add a test in `tests/unit/test_deep_research.py` that verifies query expansion events are yielded (not just search round events). Currently no test checks for expansion event propagation.
+- [ ] **FB-03**: `docs/user-guide.md` does not document `max_research_rounds` in its settings section or configuration examples. Add it so users know how to configure the number of research rounds.
+
+### Findings
+
+#### FAIL - Spec Adherence: Query Expansion Event Yielding
+- **Requirement**: T12-04 acceptance criteria, Spec Section 4.3 step 2
+- **Status**: Deviating
+- **Detail**: `_expand_queries()` consumes QueryExpanderAgent events with `pass` instead of yielding them. The plan explicitly requires "yields all events". This breaks ADK event propagation for the query expansion sub-agent.
+- **Evidence**: `newsletter_agent/tools/deep_research.py` lines 181-183: `async for event in expander.run_async(ctx): pass`
+
+#### WARN - Architecture: Sub-agents Not Created in Constructor
+- **Requirement**: T12-03 acceptance criteria ("Creates QueryExpanderAgent and DeepSearchRound sub-agents in constructor")
+- **Status**: Deviating
+- **Detail**: Sub-agents are created on-the-fly in `_expand_queries()` and `_make_search_agent()` instead of in the constructor. The plan also recommends registering them in the `sub_agents` property. This is a reasonable architectural choice that avoids state interpolation concerns, but it deviates from the plan's letter. Does not block correctness.
+- **Evidence**: No `sub_agents` property set; agents created per-invocation in helper methods.
+
+#### WARN - Documentation: user-guide.md Missing max_research_rounds
+- **Requirement**: Documentation accuracy (Section 4h)
+- **Status**: Partial
+- **Detail**: `docs/user-guide.md` references deep research behavior but does not document the `max_research_rounds` setting in its settings section or show it in configuration examples. Users cannot discover this setting from the user guide alone.
+- **Evidence**: `docs/user-guide.md` -- no mention of `max_research_rounds` in settings table or YAML examples.
+
+#### PASS - Process Compliance
+- **Requirement**: Spec Compliance Checklist, Activity Log, commit per task
+- **Status**: Compliant
+- **Detail**: Spec Compliance Checklist present with all items checked. Activity Log entries present. Single commit for all tasks (batched, not per-task -- acceptable given single WP scope).
+
+#### PASS - Spec Adherence: Core Orchestrator
+- **Requirement**: FR-MRR-001 through FR-MRR-011
+- **Status**: Compliant
+- **Detail**: DeepResearchOrchestrator extends BaseAgent, implements multi-round search loop, query expansion with fallback, URL tracking, early exit at 15 URLs, round merging with dedup, state cleanup. All FR requirements met except event yielding (separate finding).
+
+#### PASS - Data Model Adherence
+- **Requirement**: Section 7.2 (Session State - New Keys)
+- **Status**: Compliant
+- **Detail**: All intermediate state keys (`deep_queries_`, `deep_research_latest_`, `deep_query_current_`, `research_*_round_*`, `deep_urls_accumulated_`) and final key (`research_{idx}_{provider}`) match spec.
+
+#### PASS - API / Interface Adherence
+- **Requirement**: Section 8.3 (Agent Contracts)
+- **Status**: Compliant
+- **Detail**: DeepResearchOrchestrator contract matches spec. QueryExpanderAgent output_key, DeepSearchRound output_key, and merge behavior all correct.
+
+#### PASS - Architecture Adherence
+- **Requirement**: Section 9.1, 9.4 Decision 1
+- **Status**: Compliant
+- **Detail**: Custom BaseAgent pattern used per Decision 1. Pipeline structure correctly conditionally creates orchestrator for deep-mode topics.
+
+#### PASS - Test Coverage Adherence
+- **Requirement**: Section 11.1, 11.2
+- **Status**: Compliant
+- **Detail**: All 4 BDD scenarios from spec Section 11.2 implemented. Unit tests cover orchestrator invocation, round execution, URL tracking, early exit, merging, cleanup, fallback, and max_rounds=1. 524 tests pass.
+
+#### PASS - Non-Functional Adherence
+- **Requirement**: Section 10
+- **Status**: Compliant
+- **Detail**: No security issues. Logging follows project conventions with `[DeepResearch]` prefix. No user input handling (internal agent). Progress events yielded for round tracking.
+
+#### PASS - Performance
+- **Requirement**: Performance review
+- **Status**: Compliant
+- **Detail**: No N+1 patterns. URL dedup uses set() for O(1). Early exit avoids unnecessary rounds. State cleanup removes intermediate keys.
+
+#### PASS - Documentation: api-reference.md, architecture.md, configuration-guide.md, deployment-guide.md, developer-guide.md
+- **Requirement**: Documentation accuracy
+- **Status**: Compliant
+- **Detail**: All five docs accurately reflect the implementation. Architecture diagram, state key table, agent contracts, config fields, timeout guidance, and project structure all match code.
+
+#### PASS - Success Criteria
+- **Requirement**: SC-002, SC-004, SC-005, SC-006
+- **Status**: Compliant
+- **Detail**: SC-002 (15+ URLs) verified via early exit test. SC-004 (max_rounds respected) verified via unit test. SC-005 (standard unchanged) verified via BDD and unit tests. SC-006 (524 tests pass, exceeding original 437).
+
+#### PASS - Coverage Thresholds
+- **Requirement**: >= 80% code, >= 90% branch
+- **Status**: Compliant
+- **Detail**: deep_research.py: 98% (146/149 stmts, 3 missed in async generator bodies). query_expansion.py: 100%. Total: 97.99%. No `pragma: no cover` exclusions.
+
+#### PASS - Scope Discipline
+- **Requirement**: No scope creep
+- **Status**: Compliant
+- **Detail**: 15 files modified, all within WP12 scope (source, tests, docs, plans). No unspecified features or abstractions.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, curly apostrophes
+- **Status**: Compliant
+- **Detail**: All new/modified files use standard ASCII characters only.
+
+### Statistics
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 1 | 0 | 0 |
+| Spec Adherence | 1 | 0 | 1 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 1 | 0 | 0 |
+| Architecture | 0 | 1 | 0 |
+| Test Coverage | 1 | 0 | 0 |
+| Non-Functional | 1 | 0 | 0 |
+| Performance | 1 | 0 | 0 |
+| Documentation | 1 | 1 | 0 |
+| Success Criteria | 1 | 0 | 0 |
+| Coverage Thresholds | 1 | 0 | 0 |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+1. **FB-01**: Refactor `_expand_queries()` to yield events from the QueryExpanderAgent instead of swallowing them with `pass`. Move the async for loop into `_run_async_impl` or convert to an async generator pattern.
+2. **FB-02**: Add a unit test verifying that query expansion events are included in the yielded event stream from `_run_async_impl`.
+3. **FB-03**: Add `max_research_rounds` to `docs/user-guide.md` settings section and include it in at least one YAML configuration example.

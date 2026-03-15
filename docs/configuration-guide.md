@@ -62,8 +62,8 @@ topics:
 | `timeframe` | string | No | `null` | Global search timeframe constraint (see Timeframe Values below) |
 | `verify_links` | boolean | No | `false` | When `true`, verifies source URLs and removes broken links |
 | `max_research_rounds` | integer | No | `3` | Number of research rounds for deep-mode topics (1-5). Only affects topics with `search_depth: deep`. Standard-mode topics always perform 1 round. |
-| `max_searches_per_topic` | integer | No | Same as `max_research_rounds` | Maximum search API calls per topic (1-10). Defaults to `max_research_rounds` if omitted. |
-| `min_research_rounds` | integer | No | `2` | Minimum rounds before saturation exit is allowed (1-5). Must be <= `max_research_rounds`. |
+| `max_searches_per_topic` | integer | No | Same as `max_research_rounds` | Maximum search API calls per topic (1-15). Defaults to `max_research_rounds` if omitted. |
+| `min_research_rounds` | integer | No | `2` | Minimum rounds before saturation exit is allowed (1-3). Must be <= `max_research_rounds`. |
 
 ### Section: `topics`
 
@@ -97,7 +97,7 @@ The adaptive deep research loop is controlled by three settings that work togeth
 | Setting | Default | Range | Role |
 |---------|---------|-------|------|
 | `max_research_rounds` | `3` | 1-5 | Maximum reasoning rounds (Plan-Search-Analyze cycles) |
-| `max_searches_per_topic` | same as `max_research_rounds` | 1-10 | Search budget cap per topic-provider pair |
+| `max_searches_per_topic` | same as `max_research_rounds` | 1-15 | Search budget cap per topic-provider pair |
 | `min_research_rounds` | `2` | 1-3 | Minimum rounds before saturation exit is allowed |
 
 **How the settings interact:**

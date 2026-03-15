@@ -63,7 +63,7 @@ settings:
   dry_run: true                             # true = save HTML only, false = send email
   output_dir: "output/"
   max_research_rounds: 3                    # 1-5, rounds per provider for deep topics
-  max_searches_per_topic: 5                  # 1-10, search budget per topic-provider
+  max_searches_per_topic: 5                  # 1-15, search budget per topic-provider
   min_research_rounds: 2                     # 1-3, min rounds before early exit
 
 topics:

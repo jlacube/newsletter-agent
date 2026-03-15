@@ -124,7 +124,7 @@ Configure adaptive research behavior with these settings:
 ```yaml
 settings:
   max_research_rounds: 3       # Max adaptive rounds (1-5, default: 3)
-  max_searches_per_topic: 5    # Search budget per topic-provider (1-10)
+  max_searches_per_topic: 5    # Search budget per topic-provider (1-15)
   min_research_rounds: 2       # Min rounds before early exit (1-3, default: 2)
 ```
 

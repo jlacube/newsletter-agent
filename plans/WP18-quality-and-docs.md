@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP18 - Quality, Performance & Documentation
@@ -196,7 +196,10 @@ This post-MVP work package adds performance benchmarks to verify the adaptive lo
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-15T12:00:00Z - coder - lane=doing - Started WP18 implementation
 - 2026-03-15T13:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2026-03-15T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (2 FAILs: doc range inaccuracies)
+- 2026-03-15T14:05:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02)
 - 2026-03-15T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (2 FAILs) -- awaiting remediation
+- 2026-03-15T14:10:00Z - coder - lane=for_review - Fixed FB-01 and FB-02 doc range inaccuracies, re-submitted for review
 
 ## Review
 
@@ -213,8 +216,8 @@ Changes Required. Two documentation accuracy FAILs found: `max_searches_per_topi
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Fix `max_searches_per_topic` range from "1-10" to "1-15" in: `docs/configuration-guide.md` line 65, `docs/configuration-guide.md` line 100, `README.md` line 127, `docs/user-guide.md` line 66. The spec (FR-ADR-061) and schema (`le=15`) both define the max as 15. `docs/api-reference.md` already correctly says 1-15.
-- [ ] **FB-02**: Fix `min_research_rounds` range from "1-5" to "1-3" in `docs/configuration-guide.md` line 66 (settings table). The adaptive research settings table on line 101 of the same file already correctly says 1-3, creating an internal inconsistency. The spec (FR-ADR-064) and schema (`le=3`) both define the max as 3.
+- [x] **FB-01**: Fix `max_searches_per_topic` range from "1-10" to "1-15" in: `docs/configuration-guide.md` line 65, `docs/configuration-guide.md` line 100, `README.md` line 127, `docs/user-guide.md` line 66. The spec (FR-ADR-061) and schema (`le=15`) both define the max as 15. `docs/api-reference.md` already correctly says 1-15.
+- [x] **FB-02**: Fix `min_research_rounds` range from "1-5" to "1-3" in `docs/configuration-guide.md` line 66 (settings table). The adaptive research settings table on line 101 of the same file already correctly says 1-3, creating an internal inconsistency. The spec (FR-ADR-064) and schema (`le=3`) both define the max as 3.
 
 ### Findings
 

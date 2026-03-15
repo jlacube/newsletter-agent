@@ -1,11 +1,11 @@
 ---
-lane: doing
+lane: for_review
 ---
 
 # WP16 - Adaptive Research Orchestrator
 
 > **Spec**: `specs/002-adaptive-deep-research.spec.md`
-> **Status**: In Progress
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: Replace the fan-out query expansion with an adaptive Plan-Search-Analyze-Decide loop in DeepResearchOrchestrator
 > **Independent Test**: Configure a topic with `search_depth: "deep"` and `max_research_rounds: 3`. Run `pytest tests/unit/test_adaptive_research.py -v` and verify all adaptive loop unit tests pass. Inspect that `[AdaptiveResearch]` log entries appear in test output showing planning, per-round analysis, and exit reason.
@@ -442,6 +442,7 @@ This work package implements the core adaptive research loop that replaces the p
 - 2025-07-24T02:00:00Z - coder - lane=doing - T16-10: Created test_adaptive_research.py with 40 test cases
 - 2025-07-24T02:30:00Z - coder - lane=doing - T16-11: Updated test_deep_research.py and test_agent_factory.py for API changes
 - 2025-07-24T03:00:00Z - coder - lane=doing - All 537 unit tests passing, documentation updated
+- 2025-07-24T04:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
 
 ## Self-Review
 

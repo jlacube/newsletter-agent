@@ -7,10 +7,11 @@
 
 # Newsletter metadata and delivery settings
 newsletter:
-  title: "Weekly Tech Digest"            # Display title (1-200 chars)
+  title: "Weekly Agentic & GenAI Digest"            # Display title (1-200 chars)
   schedule: "0 8 * * 0"                  # Cron: Sunday 8am UTC
   recipient_emails:                       # Delivery targets (1-10 emails)
     - "jerome.lacube@gmail.com"
+    - "jerome.lacube@engie.com"
 
 # Application settings
 settings:
@@ -22,13 +23,47 @@ settings:
 # Research topics (1-20 items)
 topics:
   # Topic with all options specified (deep research, both providers)
-  - name: "AI Frameworks"
+  - name: "Agentic Frameworks"
     query: >-
       Latest developments in AI agent frameworks, including LangChain,
-      CrewAI, Google ADK, and AutoGen. Focus on new releases, benchmarks,
+      CrewAI, Google ADK, and AutoGen. Focus on new trendy frameworks, benchmarks,
       and adoption trends.
     search_depth: "deep"
     sources:
       - google_search
-      #- perplexity
+      - perplexity
 
+  - name: "Gen AI RAG"
+    query: >-
+      Latest developments in Gen AI RAG frameworks. Focus on new trendy frameworks, benchmarks,
+      and adoption trends.
+    search_depth: "deep"
+    sources:
+      - google_search
+      - perplexity
+
+  - name: "GenAI Reasoning and Memory"
+    query: >-
+      Latest developments in Gen AI Reasoning and Memory technics inside LLMs. Focus on new trendy approachs, benchmarks,
+      and adoption trends.
+    search_depth: "deep"
+    sources:
+      - google_search
+      - perplexity
+
+  - name: "Gen AI SLMs / MMLs"
+    query: >-
+      Latest developments in Gen AI Small Language Models and Medium Language Models. Focus on new trendy ones, benchmarks,
+      and adoption trends.
+    search_depth: "deep"
+    sources:
+      - google_search
+      - perplexity
+
+  - name: "Gen AI Research"
+    query: >-
+      Latest research and academic work in Gen AI fields. Focus on publications and validations by peers / recognized performance improvements
+    search_depth: "deep"
+    sources:
+      - google_search
+      - perplexity

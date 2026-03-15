@@ -39,8 +39,9 @@ NewsletterAgent/
     conftest.py              # Shared test fixtures
     unit/                    # Unit tests
     bdd/                     # BDD scenario tests
+    integration/             # Cross-component integration tests
     e2e/                     # End-to-end pipeline tests
-    security/                # Security-focused tests (XSS, sanitization)
+    security/                # Security-focused tests (XSS, sanitization, prompt safety)
     performance/             # Performance validation tests
   docs/                      # Documentation
   specs/                     # Specification documents
@@ -139,18 +140,22 @@ The function signature defines the tool's parameters. ADK handles serialization 
 |-----------|--------|-------------|
 | `tests/unit/` | `unit` | Pure logic tests, no external dependencies |
 | `tests/bdd/` | -- | BDD scenario tests |
+| `tests/integration/` | -- | Cross-component tests with mocked external services |
 | `tests/e2e/` | `e2e` | Pipeline integration, mocked LLM calls |
-| `tests/security/` | -- | XSS, sanitization, injection tests |
+| `tests/security/` | -- | XSS, sanitization, injection, prompt safety tests |
 | `tests/performance/` | `performance` | Timing and resource validation |
 
 ### Running Tests
 
 ```bash
-# Full suite
-pytest tests/ -v
+# Full suite (exclude Flask-dependent tests if Flask is not installed)
+pytest tests/ --ignore=tests/unit/test_http_handler.py -v
 
 # Unit tests only
 pytest tests/unit/ -v
+
+# Integration tests (backward compat, deep research, CLI runner, entry points)
+pytest tests/integration/ -v
 
 # With coverage
 pytest tests/ --cov=newsletter_agent --cov-report=term-missing

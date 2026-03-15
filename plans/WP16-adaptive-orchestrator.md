@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP16 - Adaptive Research Orchestrator
@@ -537,6 +537,7 @@ This work package implements the core adaptive research loop that replaces the p
 - 2025-07-25T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL, 6 WARNs) -- awaiting remediation
 - 2026-03-15T12:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05, FB-06)
 - 2026-03-15T12:30:00Z - coder - lane=for_review - All feedback items resolved, submitted for re-review
+- 2025-07-25T15:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (1 WARN)
 
 ## Self-Review
 
@@ -751,3 +752,55 @@ Changes Required. One process FAIL: per-task Spec Compliance Checklist (Step 2b)
 5. **(FB-05)** Update Round search log at L135 to include `current_query`.
 6. **(FB-06)** Either persist `adaptive_context` to state or add code comment documenting the intentional deviation from FR-ADR-050.
 7. **(FB-07)** Acknowledged — no retroactive commit split required.
+
+---
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-25
+> **Verdict**: Approved with Findings
+> **Scope**: Re-review of FB-01 through FB-06 fixes only; dimensions that previously passed were not re-audited.
+
+### Summary
+
+Approved with Findings. All 6 actionable feedback items resolved. One WARN (FB-07, single commit for 11 tasks) remains as an accepted process deviation.
+
+### Re-Review Findings
+
+#### PASS - FB-01: Per-task Spec Compliance Checklists (previously FAIL)
+- All 11 tasks have Spec Compliance Checklist subsections, all items checked off.
+
+#### PASS - FB-02: Planning success logger.info (previously WARN)
+- `logger.info("[AdaptiveResearch] Topic %s/%s: Plan - intent: '%s', aspects: [%s], initial query: '%s'", ...)` at L86-90.
+
+#### PASS - FB-03: Round analysis logger.info (previously WARN)
+- `logger.info("[AdaptiveResearch] Topic %s/%s round %d: %s. Gaps: [%s]. Saturated: %s", ...)` at L189-195.
+
+#### PASS - FB-04: Completion logger.info (previously WARN)
+- `logger.info("[AdaptiveResearch] Topic %s/%s: completed %d rounds, %d unique URLs, exit reason: %s", ...)` at L257-261.
+
+#### PASS - FB-05: Round search log format (previously WARN)
+- `logger.info("[AdaptiveResearch] Topic %s/%s round %d: searched '%s', %d new URLs, %d total", ...)` at L140-144.
+
+#### PASS - FB-06: adaptive_context persisted to session state (previously WARN)
+- `state[f"adaptive_context_{idx}_{prov}"] = adaptive_context` at L198.
+
+#### WARN - FB-07: Single commit for 11 tasks (unchanged)
+- Accepted deviation. Remediation commits follow per-fix discipline.
+
+### Regression Check
+- 762 tests pass, zero failures, zero errors
+- No files outside WP16 scope modified
+
+### Statistics (Re-Review)
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance (FB-01) | 1 | 0 | 0 |
+| Observability (FB-02) | 1 | 0 | 0 |
+| Observability (FB-03) | 1 | 0 | 0 |
+| Observability (FB-04) | 1 | 0 | 0 |
+| Observability (FB-05) | 1 | 0 | 0 |
+| State Management (FB-06) | 1 | 0 | 0 |
+| Process Compliance (FB-07) | 0 | 1 | 0 |
+| Regression | 1 | 0 | 0 |

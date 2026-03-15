@@ -121,6 +121,35 @@ class TestURLExtraction:
         urls = DeepResearchOrchestrator._extract_urls(text)
         assert urls == {"https://a.com"}
 
+    def test_extracts_bare_urls(self):
+        text = (
+            "- RAG in 2026 - ZDNET\n"
+            "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123\n"
+            "- Another Article - TechCrunch\n"
+            "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEF456"
+        )
+        urls = DeepResearchOrchestrator._extract_urls(text)
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123" in urls
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEF456" in urls
+        assert len(urls) == 2
+
+    def test_extracts_mixed_markdown_and_bare_urls(self):
+        text = (
+            "SOURCES:\n"
+            "- [Markdown Source](https://example.com/article1)\n"
+            "- Bare Source Title\n"
+            "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ\n"
+        )
+        urls = DeepResearchOrchestrator._extract_urls(text)
+        assert "https://example.com/article1" in urls
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ" in urls
+        assert len(urls) == 2
+
+    def test_does_not_double_count_markdown_urls(self):
+        text = "[Title](https://example.com/page)"
+        urls = DeepResearchOrchestrator._extract_urls(text)
+        assert urls == {"https://example.com/page"}
+
 
 # ---------------------------------------------------------------------------
 # Test: Query variant parsing (T12-04)
@@ -262,6 +291,43 @@ class TestMergeRounds:
         orch = _make_orchestrator()
         merged = orch._merge_rounds(state, 2)
         assert "First" in merged
+
+    def test_merges_bare_url_sources(self):
+        """Bare URLs (Google grounding format) are collected during merge."""
+        state = {
+            "research_0_google_round_0": (
+                "SUMMARY:\nGrounding findings.\n\n"
+                "SOURCES:\n"
+                "- RAG in 2026 - Squirro\n"
+                "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC\n"
+                "- AI News Today - ZDNET\n"
+                "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEF\n"
+            ),
+        }
+        orch = _make_orchestrator()
+        merged = orch._merge_rounds(state, 1)
+        assert "SOURCES:" in merged
+        assert "vertexaisearch.cloud.google.com/grounding-api-redirect/ABC" in merged
+        assert "vertexaisearch.cloud.google.com/grounding-api-redirect/DEF" in merged
+        assert "RAG in 2026" in merged
+        assert "AI News Today" in merged
+
+    def test_merges_mixed_markdown_and_bare_sources(self):
+        """Both markdown links and bare URLs are captured in merged output."""
+        state = {
+            "research_0_google_round_0": (
+                "SUMMARY:\nMixed format.\n\n"
+                "SOURCES:\n"
+                "- [Markdown Source](https://example.com/article1)\n"
+                "- Bare Source Title\n"
+                "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ\n"
+            ),
+        }
+        orch = _make_orchestrator()
+        merged = orch._merge_rounds(state, 1)
+        sources = merged.split("SOURCES:")[1]
+        assert "https://example.com/article1" in sources
+        assert "vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ" in sources
 
 
 # ---------------------------------------------------------------------------

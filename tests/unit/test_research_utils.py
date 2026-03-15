@@ -151,3 +151,76 @@ class TestParseResearchResultEdgeCases:
         assert len(result["sources"]) == 2
         assert result["sources"][0]["title"] == "O'Reilly & Sons <2024>"
         assert result["sources"][1]["title"] == 'Title with "quotes"'
+
+
+class TestBareURLExtraction:
+    """Tests for extracting Google grounding bare URLs from research output."""
+
+    def test_structured_output_with_bare_urls(self):
+        """SOURCES section with bare URLs extracts title from previous line."""
+        raw = (
+            "SUMMARY:\nRAG is evolving rapidly.\n\n"
+            "SOURCES:\n"
+            "- RAG in 2026 - Squirro\n"
+            "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123\n"
+            "- AI News Today - ZDNET\n"
+            "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEF456\n"
+        )
+        result = parse_research_result(raw, "google")
+        assert not result.get("error")
+        assert len(result["sources"]) == 2
+        urls = {s["url"] for s in result["sources"]}
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123" in urls
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEF456" in urls
+        titles = {s["title"] for s in result["sources"]}
+        assert "RAG in 2026 - Squirro" in titles
+        assert "AI News Today - ZDNET" in titles
+
+    def test_mixed_markdown_and_bare_urls(self):
+        """Both markdown links and bare URLs are captured."""
+        raw = (
+            "SUMMARY:\nMixed format.\n\n"
+            "SOURCES:\n"
+            "- [Markdown Source](https://example.com/article1)\n"
+            "- Bare Source Title\n"
+            "  https://vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ\n"
+        )
+        result = parse_research_result(raw, "google")
+        assert len(result["sources"]) == 2
+        urls = {s["url"] for s in result["sources"]}
+        assert "https://example.com/article1" in urls
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ" in urls
+
+    def test_fallback_with_bare_urls(self):
+        """Bare URLs extracted in fallback mode (no SUMMARY/SOURCES headers)."""
+        raw = (
+            "Here are some results:\n"
+            "- Article Title\n"
+            "  https://example.com/bare-url\n"
+            "Some more text.\n"
+        )
+        result = parse_research_result(raw, "google")
+        assert len(result["sources"]) == 1
+        assert result["sources"][0]["url"] == "https://example.com/bare-url"
+        assert result["sources"][0]["title"] == "Article Title"
+
+    def test_bare_url_without_preceding_title(self):
+        """Bare URL on its own uses URL as title."""
+        raw = (
+            "SUMMARY:\nFindings.\n\n"
+            "SOURCES:\n"
+            "https://example.com/no-title\n"
+        )
+        result = parse_research_result(raw, "google")
+        assert len(result["sources"]) == 1
+        assert result["sources"][0]["title"] == "https://example.com/no-title"
+
+    def test_no_double_counting_markdown_urls(self):
+        """URLs inside markdown links are not also counted as bare URLs."""
+        raw = (
+            "SUMMARY:\nTest.\n\n"
+            "SOURCES:\n"
+            "- [Title](https://example.com/page)\n"
+        )
+        result = parse_research_result(raw, "google")
+        assert len(result["sources"]) == 1

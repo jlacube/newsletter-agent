@@ -23,6 +23,7 @@ from newsletter_agent.prompts.query_expansion import get_query_expansion_instruc
 logger = logging.getLogger(__name__)
 
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^\)]+)\)")
+_BARE_URL_RE = re.compile(r"(?<!\()(https?://[^\s\)\]>\"]+)")
 _MIN_URLS_THRESHOLD = 15
 
 _FALLBACK_SUFFIXES = [
@@ -247,10 +248,14 @@ class DeepResearchOrchestrator(BaseAgent):
 
     @staticmethod
     def _extract_urls(text: str) -> set[str]:
-        """Extract unique URLs from markdown links in text."""
+        """Extract unique URLs from markdown links and bare URLs in text."""
         if not text:
             return set()
-        return {match.group(2) for match in _MARKDOWN_LINK_RE.finditer(text)}
+        # Markdown links: [title](url)
+        urls = {match.group(2) for match in _MARKDOWN_LINK_RE.finditer(text)}
+        # Bare URLs on their own (not already inside a markdown link)
+        urls.update(_BARE_URL_RE.findall(text))
+        return urls
 
     def _merge_rounds(self, state: dict, round_count: int) -> str:
         """Merge all round outputs into a single research result."""
@@ -275,11 +280,14 @@ class DeepResearchOrchestrator(BaseAgent):
                 else:
                     summaries.append(summary_part)
 
-            # Collect unique sources
+            # Collect unique sources from markdown links
             for match in _MARKDOWN_LINK_RE.finditer(sources_part or content):
                 title, url = match.group(1), match.group(2)
                 if url not in seen_urls:
                     seen_urls[url] = title
+
+            # Collect bare URLs not already captured via markdown links
+            self._collect_bare_urls(sources_part or content, seen_urls)
 
         if not summaries:
             return ""
@@ -289,6 +297,36 @@ class DeepResearchOrchestrator(BaseAgent):
         sources_section = "\n".join(sources_lines)
 
         return f"SUMMARY:\n{merged_summary}\n\nSOURCES:\n{sources_section}"
+
+    @staticmethod
+    def _collect_bare_urls(text: str, seen_urls: dict[str, str]) -> None:
+        """Extract bare URLs from text and infer titles from preceding lines.
+
+        Handles output formats like:
+            - Title of the article
+              https://example.com/article
+        """
+        # Get all URLs already captured from markdown links
+        md_urls = {m.group(2) for m in _MARKDOWN_LINK_RE.finditer(text)}
+
+        lines = text.split("\n")
+        for i, line in enumerate(lines):
+            bare_match = _BARE_URL_RE.search(line.strip())
+            if not bare_match:
+                continue
+            url = bare_match.group(1)
+            if url in seen_urls or url in md_urls:
+                continue
+            # Check if this URL is inside a markdown link on the same line
+            if f"]({url})" in line:
+                continue
+            # Try to use the previous line as the title
+            title = url
+            if i > 0:
+                prev = lines[i - 1].strip().lstrip("-*").strip()
+                if prev and not prev.startswith("http"):
+                    title = prev
+            seen_urls[url] = title
 
     @staticmethod
     def _split_sections(content: str) -> tuple[str, str]:

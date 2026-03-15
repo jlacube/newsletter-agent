@@ -221,12 +221,12 @@ class TestBuildPipeline:
         assert pipeline.sub_agents[2].name == "ResearchValidator"
         assert isinstance(pipeline.sub_agents[3], PipelineAbortCheckAgent)
         assert pipeline.sub_agents[3].name == "PipelineAbortCheck"
-        assert isinstance(pipeline.sub_agents[4], LlmAgent)
-        assert pipeline.sub_agents[4].name == "Synthesizer"
-        assert isinstance(pipeline.sub_agents[5], SynthesisPostProcessorAgent)
-        assert pipeline.sub_agents[5].name == "SynthesisPostProcessor"
-        assert isinstance(pipeline.sub_agents[6], LinkVerifierAgent)
-        assert pipeline.sub_agents[6].name == "LinkVerifier"
+        assert isinstance(pipeline.sub_agents[4], LinkVerifierAgent)
+        assert pipeline.sub_agents[4].name == "LinkVerifier"
+        assert isinstance(pipeline.sub_agents[5], LlmAgent)
+        assert pipeline.sub_agents[5].name == "Synthesizer"
+        assert isinstance(pipeline.sub_agents[6], SynthesisPostProcessorAgent)
+        assert pipeline.sub_agents[6].name == "SynthesisPostProcessor"
         assert isinstance(pipeline.sub_agents[7], SequentialAgent)
         assert pipeline.sub_agents[7].name == "OutputPhase"
 

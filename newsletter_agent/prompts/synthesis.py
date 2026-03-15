@@ -33,6 +33,8 @@ You have access to research results stored in session state for {topic_count} to
 {topic_list}
 
 Each state key contains research text with source URLs from either Google Search or Perplexity.
+All source URLs in the research data have been pre-verified as accessible and valid.
+You can trust that every URL present in the research text is a working link.
 
 YOUR TASK:
 Produce a JSON object with the following EXACT structure:

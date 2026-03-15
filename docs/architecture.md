@@ -28,15 +28,16 @@ root_agent (SequentialAgent: "NewsletterPipeline")
 +-- PipelineAbortCheck (Custom BaseAgent)
 |     Aborts pipeline with RuntimeError if all research failed (FR-013)
 |
++-- LinkVerifier (Custom BaseAgent)
+|     Verifies source URLs in research data; removes broken links before
+|     synthesis when verify_links=true (no-ops otherwise)
+|
 +-- Synthesizer (LlmAgent, gemini-2.5-pro)
-|     Reads all research_N_* from state
+|     Reads all research_N_* from state (pre-verified when verify_links=true)
 |     output_key: synthesis_raw
 |
 +-- SynthesisPostProcessor (Custom BaseAgent)
 |     Parses synthesis_raw JSON into synthesis_N and executive_summary state keys
-|
-+-- LinkVerifier (Custom BaseAgent)
-|     Verifies source URLs; removes broken links when verify_links=true (no-ops otherwise)
 |
 +-- OutputPhase (SequentialAgent)
       +-- FormatterAgent (Custom BaseAgent)
@@ -80,8 +81,8 @@ The pipeline communicates between agents exclusively through ADK session state. 
 | `config_verify_links` | ConfigLoader | LinkVerifier | bool |
 | `config_topic_count` | SynthesisPostProcessor | Formatter | int |
 | `pipeline_start_time` | before_agent_callback | Formatter | str (ISO 8601) |
-| `research_N_google` | GoogleSearcher_N | Synthesizer | str (raw LLM output) |
-| `research_N_perplexity` | PerplexitySearcher_N | Synthesizer | str (raw LLM output) |
+| `research_N_google` | GoogleSearcher_N | LinkVerifier, Synthesizer | str (raw LLM output) |
+| `research_N_perplexity` | PerplexitySearcher_N | LinkVerifier, Synthesizer | str (raw LLM output) |
 | `research_all_failed` | ResearchValidator | PipelineAbortCheck | bool |
 | `synthesis_raw` | Synthesizer | SynthesisPostProcessor | str (JSON) |
 | `synthesis_N` | SynthesisPostProcessor | Formatter | dict |

@@ -1,13 +1,14 @@
-"""LinkVerifierAgent - post-synthesis agent that verifies source URLs.
+"""LinkVerifierAgent - pre-synthesis agent that verifies source URLs.
 
-When verify_links is enabled, extracts source URLs from synthesis state,
-verifies them concurrently, and removes broken links from sources and
-inline markdown citations.
+When verify_links is enabled, extracts source URLs from research state keys,
+verifies them concurrently, and removes broken links from research text
+so that only verified sources reach the synthesis agent.
 
-Spec refs: FR-014, FR-015, FR-020, FR-021, FR-023, FR-024, Section 8.6.
+Spec refs: FR-PSV-001 through FR-PSV-006, FR-014, FR-015, Section 8.6.
 """
 
 import logging
+import re
 from collections.abc import AsyncGenerator
 
 from google.adk.agents import BaseAgent
@@ -22,23 +23,24 @@ from newsletter_agent.tools.link_verifier import (
 
 logger = logging.getLogger(__name__)
 
-_ALL_BROKEN_NOTICE = (
-    "\n\n*Note: Sources for this topic could not be verified "
-    "and have been omitted.*"
-)
+# Regex for markdown links: [title](url) - excludes image links
+_MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\(([^)]+)\)")
 
 
 class LinkVerifierAgent(BaseAgent):
-    """Post-synthesis agent that verifies source URLs and removes broken links.
+    """Pre-synthesis agent that verifies source URLs in research results.
 
     Reads config_verify_links from session state. If false, no-ops.
-    If true, collects all source URLs across topics, verifies them
-    concurrently, removes broken links from sources lists and inline
-    markdown citations, and appends a notice when all sources for a
-    topic are removed.
+    If true, collects URLs from research_N_{provider} state keys,
+    verifies them concurrently, and removes broken links from the
+    research text so synthesis only sees verified sources.
 
-    Spec refs: Section 8.6, FR-014 through FR-024.
+    Spec refs: FR-PSV-001 through FR-PSV-006, Section 8.6.
     """
+
+    model_config = {"arbitrary_types_allowed": True}
+    topic_count: int = 0
+    providers: list = []
 
     async def _run_async_impl(
         self,
@@ -56,16 +58,20 @@ class LinkVerifierAgent(BaseAgent):
             )
             return
 
-        # Collect all unique URLs across topics
-        topic_count = state.get("config_topic_count", 0)
+        # Collect all unique URLs from research state keys
         all_urls: set[str] = set()
-        for i in range(topic_count):
-            synth = state.get(f"synthesis_{i}")
-            if synth and "sources" in synth:
-                for source in synth["sources"]:
-                    url = source.get("url")
-                    if url:
-                        all_urls.add(url)
+        research_keys: list[str] = []
+
+        for i in range(self.topic_count):
+            for provider in self.providers:
+                key = f"research_{i}_{provider}"
+                val = state.get(key)
+                if val and isinstance(val, str):
+                    research_keys.append(key)
+                    for match in _MARKDOWN_LINK_RE.finditer(val):
+                        url = match.group(2)
+                        if url.startswith(("http://", "https://")):
+                            all_urls.add(url)
 
         if not all_urls:
             logger.info("Link verification: no source URLs to verify")
@@ -127,29 +133,11 @@ class LinkVerifierAgent(BaseAgent):
             )
             return
 
-        # Clean each topic's synthesis data
-        for i in range(topic_count):
-            synth = state.get(f"synthesis_{i}")
-            if not synth:
-                continue
-
-            original_sources = synth.get("sources", [])
-            cleaned_sources = [
-                s for s in original_sources if s.get("url") not in broken_urls
-            ]
-
-            body = synth.get("body_markdown", "")
-            cleaned_body = clean_broken_links_from_markdown(body, broken_urls)
-
-            # Append notice if all sources were removed
-            if not cleaned_sources and original_sources:
-                cleaned_body += _ALL_BROKEN_NOTICE
-
-            state[f"synthesis_{i}"] = {
-                **synth,
-                "sources": cleaned_sources,
-                "body_markdown": cleaned_body,
-            }
+        # Clean broken links from each research state key
+        for key in research_keys:
+            val = state.get(key)
+            if val and isinstance(val, str):
+                state[key] = clean_broken_links_from_markdown(val, broken_urls)
 
         yield Event(
             author=self.name,

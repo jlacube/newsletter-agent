@@ -99,6 +99,18 @@ Aborts the pipeline if all research failed.
 
 **Behavior**: If `research_all_failed` is True, saves an error HTML page and raises `RuntimeError`.
 
+### `LinkVerifierAgent`
+
+Pre-synthesis agent that verifies source URLs in research results. Runs before synthesis so the LLM only sees verified, accessible sources.
+
+**Parameters**:
+- `topic_count` (int) -- Number of topics to check
+- `providers` (list) -- Provider names (e.g. `["google", "perplexity"]`)
+
+**Reads**: `config_verify_links`, `research_N_{provider}` state keys
+
+**Behavior**: When `config_verify_links` is True, extracts markdown link URLs from research text, verifies them concurrently via HTTP HEAD/GET, and removes broken links from the research text. No-ops when `config_verify_links` is False.
+
 ### `SynthesisPostProcessorAgent`
 
 Parses the synthesis LLM output into structured state keys.

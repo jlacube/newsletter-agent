@@ -368,7 +368,11 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
         ],
     )
 
-    link_verifier = LinkVerifierAgent(name="LinkVerifier")
+    link_verifier = LinkVerifierAgent(
+        name="LinkVerifier",
+        topic_count=len(config.topics),
+        providers=sorted(all_providers),
+    )
 
     logger.info(
         "Pipeline built: %d topics, root=%s",
@@ -383,9 +387,9 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
             research_phase,
             research_validator,
             abort_check,
+            link_verifier,
             synthesis_agent,
             synthesis_post_processor,
-            link_verifier,
             output_phase,
         ],
         before_agent_callback=before_agent_callback,

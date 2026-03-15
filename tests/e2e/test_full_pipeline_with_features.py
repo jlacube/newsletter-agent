@@ -48,7 +48,7 @@ topics:
 
 
 def _make_session_state_with_features(output_dir: str) -> dict:
-    """Session state with both features enabled, including broken URLs."""
+    """Session state with both features enabled, including broken URLs in research data."""
     return {
         "config_newsletter_title": "Feature Test Newsletter",
         "config_recipient_email": "test@example.com",
@@ -61,17 +61,28 @@ def _make_session_state_with_features(output_dir: str) -> dict:
             1: {"perplexity_recency_filter": "month", "instruction_text": "Focus on content from the past 30 days."},
         },
         "pipeline_start_time": "2025-01-01T08:00:00+00:00",
+        # Research keys contain broken links (pre-verification)
+        "research_0_google": (
+            "## AI Frameworks\n\n"
+            "The AI framework landscape evolves. "
+            "[ADK Docs](https://example.com/adk) show updates.\n\n"
+            "[Dead Link](https://broken.example.com/gone) was removed."
+        ),
+        "research_1_google": (
+            "## Cloud Native\n\n"
+            "Cloud tech is maturing. "
+            "[CNCF Report](https://example.com/cncf) highlights trends."
+        ),
+        # Synthesis keys represent post-synthesis output (after verification cleaned research)
         "synthesis_0": {
             "title": "AI Frameworks",
             "body_markdown": (
                 "## AI Frameworks\n\n"
                 "The AI framework landscape evolves. "
-                "[ADK Docs](https://example.com/adk) show updates.\n\n"
-                "[Dead Link](https://broken.example.com/gone) was removed."
+                "[ADK Docs](https://example.com/adk) show updates."
             ),
             "sources": [
                 {"url": "https://example.com/adk", "title": "ADK Docs"},
-                {"url": "https://broken.example.com/gone", "title": "Dead Link"},
             ],
         },
         "synthesis_1": {
@@ -158,18 +169,19 @@ class TestFormatterWithVerifiedLinks:
             ),
         }
 
-        # Step 1: Link verification
-        verifier = LinkVerifierAgent(name="LinkVerifier")
+        # Step 1: Link verification on research data
+        verifier = LinkVerifierAgent(
+            name="LinkVerifier", topic_count=2, providers=["google"],
+        )
         ctx = MagicMock()
         ctx.session.state = state
         async for _ in verifier._run_async_impl(ctx):
             pass
 
-        # Broken link should be removed
-        assert len(state["synthesis_0"]["sources"]) == 1
-        assert "[Dead Link](https://broken.example.com/gone)" not in state["synthesis_0"]["body_markdown"]
+        # Broken link should be removed from research text
+        assert "[Dead Link](https://broken.example.com/gone)" not in state["research_0_google"]
 
-        # Step 2: Format
+        # Step 2: Format (reads synthesis data which is already clean)
         formatter = FormatterAgent(name="FormatterAgent")
         async for _ in formatter._run_async_impl(ctx):
             pass
@@ -207,8 +219,10 @@ class TestFormatterWithVerifiedLinks:
         ctx = MagicMock()
         ctx.session.state = state
 
-        # Link verify
-        verifier = LinkVerifierAgent(name="LinkVerifier")
+        # Link verify on research data
+        verifier = LinkVerifierAgent(
+            name="LinkVerifier", topic_count=2, providers=["google"],
+        )
         async for _ in verifier._run_async_impl(ctx):
             pass
 

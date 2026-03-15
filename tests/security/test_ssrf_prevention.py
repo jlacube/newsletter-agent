@@ -198,32 +198,22 @@ class TestSSRFViaLinkVerifierAgent:
 
         state = {
             "config_verify_links": True,
-            "config_topic_count": 1,
-            "synthesis_0": {
-                "topic_name": "Security Test",
-                "body_markdown": (
-                    "## Security\n\n"
-                    "See [Good](https://good.example.com) and "
-                    "[Internal](http://192.168.1.1/admin)."
-                ),
-                "sources": [
-                    {"title": "Good", "url": "https://good.example.com"},
-                    {"title": "Internal", "url": "http://192.168.1.1/admin"},
-                ],
-            },
+            "research_0_google": (
+                "## Security\n\n"
+                "See [Good](https://good.example.com) and "
+                "[Internal](http://192.168.1.1/admin)."
+            ),
         }
 
-        agent = LinkVerifierAgent(name="LinkVerifier")
+        agent = LinkVerifierAgent(
+            name="LinkVerifier", topic_count=1, providers=["google"],
+        )
         ctx = MagicMock()
         ctx.session.state = state
 
         async for _ in agent._run_async_impl(ctx):
             pass
 
-        # SSRF URL removed from sources
-        assert len(state["synthesis_0"]["sources"]) == 1
-        assert state["synthesis_0"]["sources"][0]["url"] == "https://good.example.com"
-
-        # SSRF URL removed from markdown
-        assert "[Internal](http://192.168.1.1/admin)" not in state["synthesis_0"]["body_markdown"]
-        assert "[Good](https://good.example.com)" in state["synthesis_0"]["body_markdown"]
+        # SSRF URL removed from research text
+        assert "[Internal](http://192.168.1.1/admin)" not in state["research_0_google"]
+        assert "[Good](https://good.example.com)" in state["research_0_google"]

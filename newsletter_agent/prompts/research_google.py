@@ -49,8 +49,11 @@ SOURCES:
 - [Source Title 1](URL1)
 - [Source Title 2](URL2)
 - [Source Title 3](URL3)
+- [Source Title 4](URL4)
+- [Source Title 5](URL5)
 
-Important: Every source listed must be a real URL from your search results. Do not invent URLs."""
+Important: Every source listed must be a real URL from your search results. Do not invent URLs.
+Aim for at least 5 diverse sources from different publications or sites."""
 
 _DEEP_INSTRUCTION = """You are an expert research agent performing comprehensive analysis on the topic "{topic_name}".
 
@@ -84,6 +87,9 @@ SOURCES:
 - [Source Title 3](URL3)
 - [Source Title 4](URL4)
 - [Source Title 5](URL5)
+- [Source Title 6](URL6)
+- [Source Title 7](URL7)
+- [Source Title 8](URL8)
 
 Important: Every source listed must be a real URL from your search results. Do not invent URLs.
-Aim for at least 5 diverse sources from different publications or sites."""
+Aim for at least 8 diverse sources from different publications or sites."""

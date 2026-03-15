@@ -164,6 +164,7 @@ All secrets and API keys are configured via environment variables, typically in 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LOG_LEVEL` | `INFO` | Python logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `LOG_FORMAT_JSON` | `false` | Set to `true` to emit JSON-structured logs (auto-enabled on Cloud Run) |
 
 ### .env File Template
 

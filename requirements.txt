@@ -28,6 +28,10 @@ httpx>=0.27
 # Perplexity API (OpenAI-compatible client)
 openai>=1.0
 
+# Cloud Run HTTP server
+flask>=3.0
+gunicorn>=22.0
+
 # =============================================================================
 # Test Dependencies
 # =============================================================================

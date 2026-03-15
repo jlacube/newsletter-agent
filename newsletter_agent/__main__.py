@@ -15,6 +15,10 @@ import sys
 import time
 from datetime import date
 
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env before importing agent (which reads GOOGLE_API_KEY)
+
 from newsletter_agent.logging_config import setup_logging
 
 logger = logging.getLogger("newsletter_agent.cli")
@@ -90,9 +94,14 @@ def main() -> int:
         print(json.dumps(summary))
         return 0
 
-    except Exception as e:
+    except BaseException as e:
         elapsed = time.monotonic() - start
         logger.error("[CLI] Pipeline failed after %.1fs: %s: %s", elapsed, type(e).__name__, e)
+
+        # Log sub-exceptions from ExceptionGroup (e.g. ParallelAgent failures)
+        if isinstance(e, BaseExceptionGroup):
+            for i, sub in enumerate(e.exceptions):
+                logger.error("[CLI]   Sub-exception %d: %s: %s", i + 1, type(sub).__name__, sub)
 
         summary = {
             "status": "error",

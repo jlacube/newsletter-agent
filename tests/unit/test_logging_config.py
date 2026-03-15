@@ -3,6 +3,7 @@
 Spec refs: FR-042, FR-043, FR-044, FR-045, Section 10.5.
 """
 
+import json
 import logging
 import os
 
@@ -110,3 +111,81 @@ class TestSetupLogging:
             exc_info=None,
         )
         assert stderr_handler.filter(error_record) != 0
+
+
+class TestJsonLogging:
+    """Tests for JSON-structured logging (Cloud Run mode)."""
+
+    def test_json_mode_via_env(self, monkeypatch):
+        monkeypatch.setenv("LOG_FORMAT_JSON", "true")
+        setup_logging()
+        logger = logging.getLogger("newsletter_agent")
+        assert len(logger.handlers) == 1
+        assert isinstance(logger.handlers[0].formatter, lc._CloudJsonFormatter)
+
+    def test_json_mode_auto_detect_cloud_run(self, monkeypatch):
+        monkeypatch.setenv("K_SERVICE", "newsletter-agent")
+        setup_logging()
+        logger = logging.getLogger("newsletter_agent")
+        assert isinstance(logger.handlers[0].formatter, lc._CloudJsonFormatter)
+
+    def test_json_output_structure(self, monkeypatch):
+        monkeypatch.setenv("LOG_FORMAT_JSON", "true")
+        setup_logging()
+        logger = logging.getLogger("newsletter_agent")
+        formatter = logger.handlers[0].formatter
+        record = logging.LogRecord(
+            name="newsletter_agent.test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="Test message",
+            args=None,
+            exc_info=None,
+        )
+        output = formatter.format(record)
+        parsed = json.loads(output)
+        assert parsed["severity"] == "INFO"
+        assert parsed["message"] == "Test message"
+        assert parsed["logger"] == "newsletter_agent.test"
+        assert "timestamp" in parsed
+
+    def test_json_error_includes_severity(self, monkeypatch):
+        monkeypatch.setenv("LOG_FORMAT_JSON", "true")
+        setup_logging()
+        logger = logging.getLogger("newsletter_agent")
+        formatter = logger.handlers[0].formatter
+        record = logging.LogRecord(
+            name="newsletter_agent.test",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg="Something failed",
+            args=None,
+            exc_info=None,
+        )
+        parsed = json.loads(formatter.format(record))
+        assert parsed["severity"] == "ERROR"
+
+    def test_json_with_exception(self, monkeypatch):
+        monkeypatch.setenv("LOG_FORMAT_JSON", "true")
+        setup_logging()
+        logger = logging.getLogger("newsletter_agent")
+        formatter = logger.handlers[0].formatter
+        try:
+            raise ValueError("test error")
+        except ValueError:
+            import sys
+            exc_info = sys.exc_info()
+        record = logging.LogRecord(
+            name="newsletter_agent.test",
+            level=logging.ERROR,
+            pathname="",
+            lineno=0,
+            msg="Error occurred",
+            args=None,
+            exc_info=exc_info,
+        )
+        parsed = json.loads(formatter.format(record))
+        assert "exception" in parsed
+        assert "ValueError" in parsed["exception"]

@@ -54,16 +54,45 @@ Output files are saved to the configured `output_dir` (default: `output/`) with 
   - Gmail API
   - Generative Language API (for Gemini)
 
-### Step 1: Deploy the Agent to Cloud Run
+### Deployment Options
+
+**Option A: Custom Dockerfile (recommended for production)**
+
+Uses the project's `Dockerfile` with gunicorn, giving full control over runtime, logging, and health checks.
+
+**Option B: ADK Deploy**
+
+Uses `adk deploy cloud_run` which generates its own Dockerfile and deploys the standard ADK API server.
+
+---
+
+### Option A: Deploy with Dockerfile
+
+#### Step 1: Build and Deploy
 
 ```bash
-adk deploy cloud_run \
+# Build and deploy in one step using Cloud Build
+gcloud run deploy newsletter-agent \
+  --source=. \
   --project=YOUR_PROJECT_ID \
   --region=us-central1 \
-  ./newsletter_agent
+  --allow-unauthenticated=false
 ```
 
-### Step 2: Store Secrets in Secret Manager
+Or build the image explicitly:
+
+```bash
+# Build the container image
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/newsletter-agent .
+
+# Deploy to Cloud Run
+gcloud run deploy newsletter-agent \
+  --image gcr.io/YOUR_PROJECT_ID/newsletter-agent \
+  --project=YOUR_PROJECT_ID \
+  --region=us-central1
+```
+
+#### Step 2: Store Secrets in Secret Manager
 
 Never pass API keys as plain environment variables in Cloud Run. Use Secret Manager:
 
@@ -96,6 +125,8 @@ gcloud run services update newsletter-agent \
   --concurrency=1 \
   --set-secrets="GOOGLE_API_KEY=GOOGLE_API_KEY:latest,PERPLEXITY_API_KEY=PERPLEXITY_API_KEY:latest,GMAIL_REFRESH_TOKEN=GMAIL_REFRESH_TOKEN:latest,GMAIL_CLIENT_ID=GMAIL_CLIENT_ID:latest,GMAIL_CLIENT_SECRET=GMAIL_CLIENT_SECRET:latest"
 ```
+
+The health check endpoint (`GET /`) is automatically used by Cloud Run for startup and liveness probes.
 
 **Recommended resource settings:**
 
@@ -154,7 +185,18 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 
 ## HTTP Endpoint Reference
 
-The Cloud Run service exposes a single endpoint:
+The Cloud Run service exposes two endpoints:
+
+### GET /
+
+Health check endpoint for Cloud Run startup and liveness probes.
+
+**Response (200)**:
+```json
+{
+  "status": "healthy"
+}
+```
 
 ### POST /run
 
@@ -219,6 +261,33 @@ Deployment:
 
 ## Monitoring
 
+### Structured JSON Logging
+
+On Cloud Run, the application automatically emits JSON-structured log entries that Cloud Logging parses natively. This enables:
+
+- **Severity filtering**: Filter by INFO, WARNING, ERROR, CRITICAL in the Logs Explorer
+- **Full-text search**: Search log messages, logger names, and exceptions
+- **Structured fields**: Each log entry includes `severity`, `message`, `logger`, `timestamp`, and optionally `exception`
+
+JSON logging is auto-detected on Cloud Run (via the `K_SERVICE` environment variable). To force it locally, set `LOG_FORMAT_JSON=true`.
+
+Example JSON log entry:
+```json
+{
+  "severity": "INFO",
+  "message": "Pipeline completed in 245.3s",
+  "logger": "newsletter_agent.timing",
+  "timestamp": "2026-03-15T08:00:45"
+}
+```
+
+To change the log level on Cloud Run:
+```bash
+gcloud run services update newsletter-agent \
+  --region=us-central1 \
+  --set-env-vars="LOG_LEVEL=DEBUG"
+```
+
 ### Cloud Run Logs
 
 Pipeline logs are written to stdout/stderr and captured by Cloud Logging:
@@ -257,7 +326,9 @@ Set up Cloud Monitoring alerts for:
 To update topics or settings:
 
 1. Edit `config/topics.yaml`
-2. Re-deploy: `adk deploy cloud_run --project=YOUR_PROJECT_ID --region=us-central1 ./newsletter_agent`
+2. Re-deploy:
+   - **Dockerfile**: `gcloud run deploy newsletter-agent --source=. --project=YOUR_PROJECT_ID --region=us-central1`
+   - **ADK**: `adk deploy cloud_run --project=YOUR_PROJECT_ID --region=us-central1 ./newsletter_agent`
 
 To update secrets:
 

@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Newsletter Agent is a multi-agent pipeline built with Google Agent Development Kit (ADK). The system uses a `SequentialAgent` as its root, orchestrating research, synthesis, formatting, and delivery phases. Topics configured with `search_depth: "deep"` use a multi-round research orchestrator that generates query variants, executes multiple search rounds per provider, and merges results before synthesis.
+Newsletter Agent is a multi-agent pipeline built with Google Agent Development Kit (ADK). The system uses a `SequentialAgent` as its root, orchestrating research, synthesis, formatting, and delivery phases. Topics configured with `search_depth: "deep"` use an adaptive research orchestrator that follows a Plan-Search-Analyze-Decide loop: a PlanningAgent identifies key aspects and an initial search query, each round is followed by an AnalysisAgent that evaluates findings and suggests the next query, and the orchestrator exits when saturation is detected or configured limits are reached.
 
 ## Agent Pipeline
 
@@ -24,10 +24,12 @@ root_agent (SequentialAgent: "NewsletterPipeline")
 |                 output_key: research_N_perplexity
 |           For deep-mode topics (search_depth: "deep"):
 |           +-- DeepResearch_N_google (DeepResearchOrchestrator)
-|           |     Runs multi-round search: query expansion -> N rounds
+|           |     Adaptive loop: Plan -> Search -> Analyze -> Decide
+|           |     Sub-agents: AdaptivePlanner, DeepSearchRound, AdaptiveAnalyzer
 |           |     output_key: research_N_google (merged)
 |           +-- DeepResearch_N_perplexity (DeepResearchOrchestrator)
-|                 Runs multi-round search: query expansion -> N rounds
+|                 Adaptive loop: Plan -> Search -> Analyze -> Decide
+|                 Sub-agents: AdaptivePlanner, DeepSearchRound, AdaptiveAnalyzer
 |                 output_key: research_N_perplexity (merged)
 |
 +-- ResearchValidator (Custom BaseAgent)
@@ -107,7 +109,7 @@ The pipeline communicates between agents exclusively through ADK session state. 
 
 1. **Config Loading**: `ConfigLoaderAgent` reads the validated `NewsletterConfig` and writes config values into session state so all downstream agents can access them.
 
-2. **Research Phase**: A `ParallelAgent` runs one `SequentialAgent` per topic. All topics execute in parallel. For standard-mode topics, Google Search and Perplexity LlmAgents run sequentially. For deep-mode topics (`search_depth: "deep"`), a `DeepResearchOrchestrator` (custom BaseAgent) replaces each LlmAgent. The orchestrator generates query variants via an internal LLM call, executes up to `max_research_rounds` search rounds with varied queries, tracks URL accumulation (early exit at 15+ unique URLs), and merges all round results into the standard `research_N_{provider}` state key.
+2. **Research Phase**: A `ParallelAgent` runs one `SequentialAgent` per topic. All topics execute in parallel. For standard-mode topics, Google Search and Perplexity LlmAgents run sequentially. For deep-mode topics (`search_depth: "deep"`), a `DeepResearchOrchestrator` (custom BaseAgent) replaces each LlmAgent. The orchestrator follows an adaptive Plan-Search-Analyze-Decide loop: a PlanningAgent identifies key aspects and an initial search query, each round is followed by an AnalysisAgent that evaluates findings and suggests the next query, and the loop exits when saturation is detected, knowledge gaps are empty, the search budget (`max_searches_per_topic`) is exhausted, or `max_research_rounds` is reached. A configurable `min_research_rounds` prevents premature saturation exit. All round results are merged into the standard `research_N_{provider}` state key and a reasoning chain is persisted at `adaptive_reasoning_chain_N_{provider}`.
 
 3. **Research Validation**: Checks all research state keys. If every provider failed for every topic, sets `research_all_failed = True`.
 

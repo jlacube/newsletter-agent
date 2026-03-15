@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: doing
 ---
 
 # WP16 - Adaptive Research Orchestrator
 
 > **Spec**: `specs/002-adaptive-deep-research.spec.md`
-> **Status**: Not Started
+> **Status**: In Progress
 > **Priority**: P1
 > **Goal**: Replace the fan-out query expansion with an adaptive Plan-Search-Analyze-Decide loop in DeepResearchOrchestrator
 > **Independent Test**: Configure a topic with `search_depth: "deep"` and `max_research_rounds: 3`. Run `pytest tests/unit/test_adaptive_research.py -v` and verify all adaptive loop unit tests pass. Inspect that `[AdaptiveResearch]` log entries appear in test output showing planning, per-round analysis, and exit reason.
@@ -437,3 +437,41 @@ This work package implements the core adaptive research loop that replaces the p
 ## Activity Log
 
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
+- 2025-07-24T00:00:00Z - coder - lane=doing - Started WP16 implementation
+- 2025-07-24T01:00:00Z - coder - lane=doing - T16-01 through T16-09: Implemented adaptive orchestrator, planning/analysis agents, exit criteria, state management, factory update
+- 2025-07-24T02:00:00Z - coder - lane=doing - T16-10: Created test_adaptive_research.py with 40 test cases
+- 2025-07-24T02:30:00Z - coder - lane=doing - T16-11: Updated test_deep_research.py and test_agent_factory.py for API changes
+- 2025-07-24T03:00:00Z - coder - lane=doing - All 537 unit tests passing, documentation updated
+
+## Self-Review
+
+### Spec Compliance
+- [x] FR-ADR-001 through FR-ADR-006: Adaptive loop architecture implemented
+- [x] FR-ADR-010 through FR-ADR-014: PlanningAgent with fallback logic
+- [x] FR-ADR-020 through FR-ADR-022: Search phase using existing _make_search_agent
+- [x] FR-ADR-030 through FR-ADR-035: AnalysisAgent with fallback logic
+- [x] FR-ADR-040 through FR-ADR-044: Exit criteria (saturation, full_coverage, max_rounds, budget)
+- [x] FR-ADR-050 through FR-ADR-055: State management and reasoning chain persistence
+- [x] FR-ADR-080 through FR-ADR-085: Backward compatibility (single-round mode)
+
+### Correctness
+- [x] All 537 unit tests pass
+- [x] 109 tests specific to WP16 files all pass
+- [x] deep_research.py coverage: 94% statement, well above 80% threshold
+- [x] agent.py factory lines touched by WP16 are fully covered
+
+### Code Quality
+- [x] No unused imports or dead code
+- [x] No hardcoded values; all limits from config or constants
+- [x] No security issues (no user input without validation)
+- [x] Logic is self-documenting with clear method names
+
+### Scope Discipline
+- [x] Only changed files specified in the WP
+- [x] No unasked-for abstractions added
+
+### Documentation
+- [x] docs/architecture.md updated for adaptive loop
+- [x] docs/api-reference.md updated with new params and behavior
+- [x] docs/configuration-guide.md updated with new config fields
+- [x] docs/developer-guide.md updated with new file listing

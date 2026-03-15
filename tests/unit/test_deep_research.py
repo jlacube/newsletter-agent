@@ -1,9 +1,9 @@
 """Unit tests for DeepResearchOrchestrator.
 
-Covers: query expansion, multi-round loop, URL tracking, early exit,
-round merging, state cleanup, and error handling.
+Covers: URL tracking, round merging, state cleanup, helper methods,
+and backward-compatible instantiation.
 
-Spec refs: FR-MRR-001 through FR-MRR-011, Section 11.1.
+Spec refs: FR-ADR-001 through FR-ADR-085, Section 11.1.
 """
 
 import json
@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from newsletter_agent.tools.deep_research import (
     DeepResearchOrchestrator,
     _MARKDOWN_LINK_RE,
-    _MIN_URLS_THRESHOLD,
 )
 
 
@@ -74,6 +73,22 @@ class TestOrchestratorInstantiation:
         assert orch.topic_name == "Artificial Intelligence"
         assert orch.max_rounds == 3
         assert orch.search_depth == "deep"
+
+    def test_max_searches_default(self):
+        orch = _make_orchestrator()
+        assert orch.max_searches == 3
+
+    def test_min_rounds_default(self):
+        orch = _make_orchestrator()
+        assert orch.min_rounds == 2
+
+    def test_custom_max_searches(self):
+        orch = _make_orchestrator(max_searches=5)
+        assert orch.max_searches == 5
+
+    def test_custom_min_rounds(self):
+        orch = _make_orchestrator(min_rounds=1)
+        assert orch.min_rounds == 1
 
     def test_is_base_agent(self):
         from google.adk.agents import BaseAgent
@@ -149,47 +164,6 @@ class TestURLExtraction:
         text = "[Title](https://example.com/page)"
         urls = DeepResearchOrchestrator._extract_urls(text)
         assert urls == {"https://example.com/page"}
-
-
-# ---------------------------------------------------------------------------
-# Test: Query variant parsing (T12-04)
-# ---------------------------------------------------------------------------
-
-
-class TestParseVariants:
-
-    def test_parses_valid_json_array(self):
-        orch = _make_orchestrator()
-        variants = orch._parse_variants('["q1", "q2", "q3"]', 3)
-        assert variants == ["q1", "q2", "q3"]
-
-    def test_trims_to_variant_count(self):
-        orch = _make_orchestrator()
-        variants = orch._parse_variants('["q1", "q2", "q3", "q4"]', 2)
-        assert len(variants) == 2
-
-    def test_fallback_on_invalid_json(self):
-        orch = _make_orchestrator(query="my query")
-        variants = orch._parse_variants("not json", 2)
-        assert len(variants) == 2
-        assert all("my query" in v for v in variants)
-
-    def test_fallback_on_non_string_array(self):
-        orch = _make_orchestrator(query="q")
-        variants = orch._parse_variants("[1, 2, 3]", 2)
-        assert len(variants) == 2
-        assert all("q" in v for v in variants)
-
-    def test_strips_code_fences(self):
-        raw = '```json\n["q1", "q2"]\n```'
-        orch = _make_orchestrator()
-        variants = orch._parse_variants(raw, 2)
-        assert variants == ["q1", "q2"]
-
-    def test_handles_non_string_input(self):
-        orch = _make_orchestrator()
-        variants = orch._parse_variants(123, 2)
-        assert len(variants) == 2  # falls back
 
 
 # ---------------------------------------------------------------------------
@@ -339,39 +313,43 @@ class TestStateCleanup:
 
     def test_removes_intermediate_keys(self):
         state = {
-            "deep_queries_0_google": '["q1"]',
+            "adaptive_plan_0_google": '{"key": "value"}',
+            "adaptive_analysis_0_google": '{"key": "value"}',
+            "adaptive_context_0_google": '{"key": "value"}',
             "deep_research_latest_0_google": "latest",
             "deep_urls_accumulated_0_google": ["http://a.com"],
-            "deep_query_current_0_google": "current q",
             "research_0_google_round_0": "round 0",
             "research_0_google_round_1": "round 1",
             "research_0_google": "final merged",
+            "adaptive_reasoning_chain_0_google": '{"plan": {}}',
             "unrelated_key": "keep me",
         }
         orch = _make_orchestrator()
         orch._cleanup_state(state, 2)
 
-        assert "deep_queries_0_google" not in state
+        assert "adaptive_plan_0_google" not in state
+        assert "adaptive_analysis_0_google" not in state
+        assert "adaptive_context_0_google" not in state
         assert "deep_research_latest_0_google" not in state
         assert "deep_urls_accumulated_0_google" not in state
-        assert "deep_query_current_0_google" not in state
         assert "research_0_google_round_0" not in state
         assert "research_0_google_round_1" not in state
-        # Should NOT remove the final merged key
+        # Should NOT remove the final merged key or reasoning chain
         assert state["research_0_google"] == "final merged"
+        assert state["adaptive_reasoning_chain_0_google"] == '{"plan": {}}'
         assert state["unrelated_key"] == "keep me"
 
 
 # ---------------------------------------------------------------------------
-# Test: Full orchestrator run (T12-03 through T12-07)
+# Test: Full orchestrator run (adapted for adaptive loop)
 # ---------------------------------------------------------------------------
 
 
 class TestOrchestratorRun:
 
     @pytest.mark.asyncio
-    async def test_max_rounds_1_skips_expansion(self):
-        """When max_rounds=1, no query expansion, single round only. FR-BC-002."""
+    async def test_max_rounds_1_skips_planning_and_analysis(self):
+        """When max_rounds=1, no planning/analysis, single round only. FR-ADR-080."""
         orch = _make_orchestrator(max_rounds=1)
         ctx = _make_ctx()
 
@@ -402,171 +380,12 @@ class TestOrchestratorRun:
         assert "deep_research_latest_0_google" not in ctx.session.state
 
     @pytest.mark.asyncio
-    async def test_three_rounds_with_expansion(self):
-        """Three rounds: expansion + 3 search rounds. FR-MRR-001."""
-        orch = _make_orchestrator(max_rounds=3)
-        ctx = _make_ctx()
-
-        rounds_content = [
-            _research_text(
-                [(f"R{i}S{j}", f"https://r{i}s{j}.com") for j in range(3)],
-                f"Round {i} findings",
-            )
-            for i in range(3)
-        ]
-
-        call_count = [0]
-
-        with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
-             patch.object(orch, "_make_search_agent") as mock_make:
-
-            mock_expand.return_value = (["variant 1", "variant 2"], [])
-
-            mock_agent = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                idx = call_count[0]
-                run_ctx.session.state["deep_research_latest_0_google"] = rounds_content[idx]
-                call_count[0] += 1
-                return
-                yield
-
-            mock_agent.run_async = fake_run_async
-            mock_make.return_value = mock_agent
-
-            events = []
-            async for event in orch._run_async_impl(ctx):
-                events.append(event)
-
-        # Verify expansion was called
-        mock_expand.assert_called_once()
-        # Verify 3 search rounds executed
-        assert call_count[0] == 3
-        # Final merged state key should exist
-        merged = ctx.session.state.get("research_0_google", "")
-        assert "Round 0 findings" in merged
-        assert "Round 1 findings" in merged
-        assert "Round 2 findings" in merged
-
-    @pytest.mark.asyncio
-    async def test_early_exit_at_url_threshold(self):
-        """Stops early when >= 15 unique URLs accumulated. FR-MRR-007."""
-        orch = _make_orchestrator(max_rounds=3)
-        ctx = _make_ctx()
-
-        # Round 0: 8 URLs
-        round0_urls = [(f"S{i}", f"https://r0-{i}.com") for i in range(8)]
-        # Round 1: 8 more URLs (total 16 >= 15 threshold)
-        round1_urls = [(f"S{i}", f"https://r1-{i}.com") for i in range(8)]
-
-        rounds_content = [
-            _research_text(round0_urls, "Round 0"),
-            _research_text(round1_urls, "Round 1"),
-            _research_text([], "Round 2 should not execute"),
-        ]
-        call_count = [0]
-
-        with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
-             patch.object(orch, "_make_search_agent") as mock_make:
-
-            mock_expand.return_value = (["v1", "v2"], [])
-
-            mock_agent = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                idx = call_count[0]
-                run_ctx.session.state["deep_research_latest_0_google"] = rounds_content[idx]
-                call_count[0] += 1
-                return
-                yield
-
-            mock_agent.run_async = fake_run_async
-            mock_make.return_value = mock_agent
-
-            events = []
-            async for event in orch._run_async_impl(ctx):
-                events.append(event)
-
-        # Should exit after round 1 (index 1), not run round 2
-        assert call_count[0] == 2
-
-    @pytest.mark.asyncio
-    async def test_empty_round_output_handled(self):
-        """Empty round output does not crash; loop continues."""
-        orch = _make_orchestrator(max_rounds=2)
-        ctx = _make_ctx()
-
-        rounds_content = [
-            "",  # empty round 0
-            _research_text([("A", "https://a.com")], "Round 1 ok"),
-        ]
-        call_count = [0]
-
-        with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
-             patch.object(orch, "_make_search_agent") as mock_make:
-
-            mock_expand.return_value = (["v1"], [])
-            mock_agent = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                idx = call_count[0]
-                run_ctx.session.state["deep_research_latest_0_google"] = rounds_content[idx]
-                call_count[0] += 1
-                return
-                yield
-
-            mock_agent.run_async = fake_run_async
-            mock_make.return_value = mock_agent
-
-            events = []
-            async for event in orch._run_async_impl(ctx):
-                events.append(event)
-
-        # Both rounds should have run
-        assert call_count[0] == 2
-        # Final merged state key should exist
-        assert "research_0_google" in ctx.session.state
-
-    @pytest.mark.asyncio
-    async def test_round_0_uses_original_query(self):
-        """Round 0 uses the original topic query. FR-MRR-002."""
-        orch = _make_orchestrator(max_rounds=2, query="original query")
-        ctx = _make_ctx()
-
-        captured_queries = []
-
-        with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
-             patch.object(orch, "_make_search_agent") as mock_make:
-
-            mock_expand.return_value = (["expanded variant 1"], [])
-
-            def capture_make(round_idx, query):
-                captured_queries.append((round_idx, query))
-                mock_agent = MagicMock()
-
-                async def fake_run_async(run_ctx):
-                    run_ctx.session.state["deep_research_latest_0_google"] = "SUMMARY:\ntext\n\nSOURCES:\n- [A](https://a.com)"
-                    return
-                    yield
-
-                mock_agent.run_async = fake_run_async
-                return mock_agent
-
-            mock_make.side_effect = capture_make
-
-            async for _ in orch._run_async_impl(ctx):
-                pass
-
-        assert captured_queries[0] == (0, "original query")
-        assert captured_queries[1] == (1, "expanded variant 1")
-
-    @pytest.mark.asyncio
     async def test_perplexity_provider_creates_correct_agent(self):
         """Perplexity provider uses perplexity search instruction."""
         orch = _make_orchestrator(provider="perplexity", max_rounds=1)
 
         agent = orch._make_search_agent(0, "test query")
-        assert "perplexity" in agent.name.lower() or "DeepSearchRound" in agent.name
+        assert "DeepSearchRound" in agent.name
         assert agent.output_key == "deep_research_latest_0_perplexity"
 
     @pytest.mark.asyncio
@@ -577,171 +396,3 @@ class TestOrchestratorRun:
         agent = orch._make_search_agent(0, "test query")
         assert "DeepSearchRound" in agent.name
         assert agent.output_key == "deep_research_latest_0_google"
-
-    @pytest.mark.asyncio
-    async def test_cleanup_removes_all_intermediate_keys(self):
-        """After orchestration, intermediate keys are removed. Section 4.3 step 7."""
-        orch = _make_orchestrator(max_rounds=2)
-        ctx = _make_ctx()
-
-        rounds_content = [
-            _research_text([("A", "https://a.com")], "R0"),
-            _research_text([("B", "https://b.com")], "R1"),
-        ]
-        call_count = [0]
-
-        with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
-             patch.object(orch, "_make_search_agent") as mock_make:
-
-            mock_expand.return_value = (["v1"], [])
-
-            mock_agent = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                idx = call_count[0]
-                run_ctx.session.state["deep_research_latest_0_google"] = rounds_content[idx]
-                call_count[0] += 1
-                return
-                yield
-
-            mock_agent.run_async = fake_run_async
-            mock_make.return_value = mock_agent
-
-            async for _ in orch._run_async_impl(ctx):
-                pass
-
-        state = ctx.session.state
-        # Only the final merged key should remain
-        assert "research_0_google" in state
-        # All intermediate keys should be gone
-        for key in list(state.keys()):
-            assert not key.startswith("deep_"), f"Intermediate key not cleaned: {key}"
-            assert "round_" not in key, f"Round key not cleaned: {key}"
-
-
-# ---------------------------------------------------------------------------
-# Test: Query expansion flow (T12-04)
-# ---------------------------------------------------------------------------
-
-
-class TestQueryExpansion:
-
-    @pytest.mark.asyncio
-    async def test_expand_queries_invokes_llm_agent(self):
-        """Expansion creates and runs a LlmAgent sub-agent."""
-        orch = _make_orchestrator(max_rounds=3)
-        ctx = _make_ctx()
-
-        with patch("newsletter_agent.tools.deep_research.LlmAgent") as MockLlmAgent:
-            mock_instance = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                run_ctx.session.state["deep_queries_0_google"] = '["v1", "v2"]'
-                return
-                yield
-
-            mock_instance.run_async = fake_run_async
-            MockLlmAgent.return_value = mock_instance
-
-            variants, events = await orch._expand_queries(ctx)
-
-        assert variants == ["v1", "v2"]
-        MockLlmAgent.assert_called_once()
-        # Verify it was created with the right output_key
-        call_kwargs = MockLlmAgent.call_args
-        assert call_kwargs.kwargs["output_key"] == "deep_queries_0_google"
-
-    @pytest.mark.asyncio
-    async def test_expand_queries_fallback_on_bad_json(self):
-        """Falls back to suffix-based variants on invalid JSON."""
-        orch = _make_orchestrator(max_rounds=3, query="my query")
-        ctx = _make_ctx()
-
-        with patch("newsletter_agent.tools.deep_research.LlmAgent") as MockLlmAgent:
-            mock_instance = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                run_ctx.session.state["deep_queries_0_google"] = "not valid json at all"
-                return
-                yield
-
-            mock_instance.run_async = fake_run_async
-            MockLlmAgent.return_value = mock_instance
-
-            variants, events = await orch._expand_queries(ctx)
-
-        assert len(variants) == 2  # max_rounds - 1
-        assert all("my query" in v for v in variants)
-
-    @pytest.mark.asyncio
-    async def test_expand_queries_returns_events(self):
-        """Expansion collects and returns events from the LlmAgent (FB-02)."""
-        from google.adk.events import Event
-        from google.genai import types
-
-        orch = _make_orchestrator(max_rounds=3)
-        ctx = _make_ctx()
-
-        fake_event = Event(
-            author="QueryExpander_0_google",
-            content=types.Content(parts=[types.Part(text="expansion output")]),
-        )
-
-        with patch("newsletter_agent.tools.deep_research.LlmAgent") as MockLlmAgent:
-            mock_instance = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                run_ctx.session.state["deep_queries_0_google"] = '["v1", "v2"]'
-                yield fake_event
-
-            mock_instance.run_async = fake_run_async
-            MockLlmAgent.return_value = mock_instance
-
-            variants, events = await orch._expand_queries(ctx)
-
-        assert variants == ["v1", "v2"]
-        assert len(events) == 1
-        assert events[0] is fake_event
-
-    @pytest.mark.asyncio
-    async def test_expansion_events_yielded_from_run_async_impl(self):
-        """Events from query expansion are yielded by _run_async_impl (FB-02)."""
-        from google.adk.events import Event
-        from google.genai import types
-
-        orch = _make_orchestrator(max_rounds=2)
-        ctx = _make_ctx()
-
-        expansion_event = Event(
-            author="QueryExpander_0_google",
-            content=types.Content(parts=[types.Part(text="expansion result")]),
-        )
-
-        round_output = _research_text(
-            [("A", "https://a.com")], "Round findings"
-        )
-
-        with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
-             patch.object(orch, "_make_search_agent") as mock_make:
-
-            mock_expand.return_value = (["v1"], [expansion_event])
-
-            mock_agent = MagicMock()
-
-            async def fake_run_async(run_ctx):
-                run_ctx.session.state["deep_research_latest_0_google"] = round_output
-                return
-                yield
-
-            mock_agent.run_async = fake_run_async
-            mock_make.return_value = mock_agent
-
-            events = []
-            async for event in orch._run_async_impl(ctx):
-                events.append(event)
-
-        # The expansion event should be among the yielded events
-        assert expansion_event in events
-        # It should appear before the round progress events
-        expansion_idx = events.index(expansion_event)
-        assert expansion_idx == 0

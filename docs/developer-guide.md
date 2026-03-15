@@ -18,12 +18,13 @@ NewsletterAgent/
     prompts/
       research_google.py     # Google Search agent instruction builder
       research_perplexity.py # Perplexity agent instruction builder
-      query_expansion.py     # Query expansion prompt for deep research
+      query_expansion.py     # (Deprecated) Query expansion prompt for deep research
+      reasoning.py           # Planning and analysis prompts for adaptive deep research
       refinement.py          # Source refinement prompt for deep research
       synthesis.py           # Synthesis agent instruction builder
     tools/
       perplexity_search.py   # Perplexity Sonar API FunctionTool
-      deep_research.py       # DeepResearchOrchestrator (multi-round deep search)
+      deep_research.py       # DeepResearchOrchestrator (adaptive Plan-Search-Analyze loop)
       deep_research_refiner.py # DeepResearchRefinerAgent (source refinement)
       research_utils.py      # Research output parsing utilities
       synthesis_utils.py     # Synthesis JSON parsing utilities

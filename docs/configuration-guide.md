@@ -62,6 +62,8 @@ topics:
 | `timeframe` | string | No | `null` | Global search timeframe constraint (see Timeframe Values below) |
 | `verify_links` | boolean | No | `false` | When `true`, verifies source URLs and removes broken links |
 | `max_research_rounds` | integer | No | `3` | Number of research rounds for deep-mode topics (1-5). Only affects topics with `search_depth: deep`. Standard-mode topics always perform 1 round. |
+| `max_searches_per_topic` | integer | No | Same as `max_research_rounds` | Maximum search API calls per topic (1-10). Defaults to `max_research_rounds` if omitted. |
+| `min_research_rounds` | integer | No | `2` | Minimum rounds before saturation exit is allowed (1-5). Must be <= `max_research_rounds`. |
 
 ### Section: `topics`
 
@@ -71,22 +73,22 @@ Each topic is a mapping with these fields:
 |-------|------|----------|---------|-------------|-------------|
 | `name` | string | Yes | -- | 1-100 chars, unique | Display name for the topic section |
 | `query` | string | Yes | -- | 1-500 chars | Natural language search query |
-| `search_depth` | string | No | `"standard"` | `"standard"` or `"deep"` | Controls research mode: standard uses single-round search, deep uses multi-round search with query expansion |
+| `search_depth` | string | No | `"standard"` | `"standard"` or `"deep"` | Controls research mode: standard uses single-round search, deep uses adaptive Plan-Search-Analyze loop |
 | `sources` | list | No | Both providers | `"google_search"`, `"perplexity"` | Which search providers to use |
 | `timeframe` | string | No | Inherits from settings | See Timeframe Values | Per-topic timeframe override |
 
 ### Search Depth Behavior
 
-| Depth | Google Search | Perplexity Model | Research Rounds | Query Expansion | Use Case |
-|-------|--------------|-----------------|----------------|----------------|----------|
+| Depth | Google Search | Perplexity Model | Research Rounds | Adaptive Loop | Use Case |
+|-------|--------------|-----------------|----------------|--------------|----------|
 | `standard` | Standard instruction prompt | `sonar` | 1 (single round) | No | Quick research, news summaries |
-| `deep` | Detailed multi-faceted prompt | `sonar-pro` | Up to `max_research_rounds` | Yes (LLM-generated variants) | Comprehensive analysis, trend reports |
+| `deep` | Detailed multi-faceted prompt | `sonar-pro` | Up to `max_research_rounds` | Yes (Plan-Search-Analyze-Decide) | Comprehensive analysis, trend reports |
 
 When `search_depth: "deep"`, each provider runs a `DeepResearchOrchestrator` that:
-1. Generates `max_research_rounds - 1` alternative query angles via LLM
-2. Executes multiple search rounds with varied queries
-3. Tracks unique URLs across rounds and exits early when 15+ are collected
-4. Merges all round results into a single research output for synthesis
+1. Invokes a PlanningAgent to identify key aspects and an initial search query
+2. Executes search rounds, each followed by an AnalysisAgent that evaluates findings
+3. Exits when saturation is detected (and `min_research_rounds` met), knowledge gaps are empty, the search budget is exhausted, or `max_research_rounds` is reached
+4. Merges all round results into a single research output and persists a reasoning chain
 
 ### Timeframe Values
 

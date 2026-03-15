@@ -185,7 +185,7 @@ Delivers the newsletter via email or saves to disk.
 
 ### `DeepResearchOrchestrator`
 
-Custom BaseAgent that orchestrates multi-round deep research for topics with `search_depth: "deep"`. Replaces the single LlmAgent in the research phase.
+Custom BaseAgent that orchestrates adaptive deep research for topics with `search_depth: "deep"`. Uses a Plan-Search-Analyze-Decide loop with LlmAgent sub-agents for planning, per-round searching, and analysis.
 
 **Module**: `newsletter_agent.tools.deep_research`
 
@@ -195,28 +195,36 @@ Custom BaseAgent that orchestrates multi-round deep research for topics with `se
 - `query` (str) -- Original topic search query
 - `topic_name` (str) -- Topic display name
 - `max_rounds` (int) -- Maximum research rounds (from `settings.max_research_rounds`)
+- `max_searches` (int) -- Maximum search API calls per topic (from `settings.max_searches_per_topic`)
+- `min_rounds` (int) -- Minimum rounds before saturation exit is allowed (from `settings.min_research_rounds`)
 - `search_depth` (str) -- Always `"deep"` when this agent is used
 - `model` (str) -- LLM model name (e.g., `"gemini-2.5-flash"`)
 - `tools` (list) -- Search tools for sub-agents (google_search or search_perplexity)
 
 **Behavior**:
-1. When `max_rounds > 1`: invokes an internal QueryExpanderAgent (LlmAgent) to generate `max_rounds - 1` query variants
-2. Executes up to `max_rounds` search rounds (round 0 uses original query, subsequent rounds use variants)
-3. After each round, extracts URLs and tracks accumulation
-4. Exits early if 15+ unique URLs are accumulated
-5. Merges all round results (summaries and deduplicated sources) into a single output
-6. Writes merged result to `research_{idx}_{provider}` (same key as standard mode)
-7. Cleans up all intermediate state keys
+1. When `max_rounds > 1`: invokes an internal PlanningAgent (LlmAgent) to identify key aspects and an initial search query
+2. Executes up to `max_rounds` search rounds (round 0 uses planning query, subsequent rounds use AnalysisAgent-suggested queries)
+3. After each search round (except single-round mode): invokes an AnalysisAgent to evaluate findings, identify knowledge gaps, and suggest the next query
+4. **Exit criteria** (checked after each analysis):
+   - `saturated == true` AND `round_count >= min_rounds` -> exit with reason `"saturation"`
+   - `knowledge_gaps` is empty -> exit with reason `"full_coverage"`
+   - `searches_done >= max_searches` -> exit with reason `"search_budget_exhausted"`
+   - Loop completes without break -> `"max_rounds_reached"`
+5. Duplicate query detection: appends a distinguishing suffix if a query was already used
+6. Merges all round results (summaries and deduplicated sources) into a single output
+7. Writes merged result to `research_{idx}_{provider}` (same key as standard mode)
+8. Persists the reasoning chain and cleans up all intermediate state keys
 
 **State keys written** (intermediate, cleaned up after merge):
-- `deep_queries_{idx}_{provider}` -- Query expansion output
-- `deep_research_latest_{idx}_{provider}` -- Latest round output
-- `deep_query_current_{idx}_{provider}` -- Current round query
+- `adaptive_plan_{idx}_{provider}` -- PlanningAgent output
+- `adaptive_analysis_{idx}_{provider}` -- AnalysisAgent output (latest round)
+- `deep_research_latest_{idx}_{provider}` -- Latest search round output
 - `research_{idx}_{provider}_round_{N}` -- Per-round output
 - `deep_urls_accumulated_{idx}_{provider}` -- Accumulated URL list
 
-**State keys written** (final):
+**State keys written** (final, preserved):
 - `research_{idx}_{provider}` (str) -- Merged research output (same as standard mode)
+- `adaptive_reasoning_chain_{idx}_{provider}` (str) -- JSON reasoning chain with plan, per-round findings, and exit reason
 
 ### `DeepResearchRefinerAgent`
 
@@ -308,7 +316,7 @@ Builds the complete agent pipeline from a validated config. Returns the root `Se
 
 ### `build_research_phase(config: NewsletterConfig) -> ParallelAgent`
 
-Builds the research phase `ParallelAgent` with one `SequentialAgent` per topic. For topics with `search_depth: "standard"`, creates `LlmAgent` instances per provider. For topics with `search_depth: "deep"`, creates `DeepResearchOrchestrator` instances per provider that perform multi-round search with query expansion.
+Builds the research phase `ParallelAgent` with one `SequentialAgent` per topic. For topics with `search_depth: "standard"`, creates `LlmAgent` instances per provider. For topics with `search_depth: "deep"`, creates `DeepResearchOrchestrator` instances per provider that perform adaptive multi-round search with planning and analysis sub-agents.
 
 ### `build_synthesis_agent(config: NewsletterConfig) -> LlmAgent`
 

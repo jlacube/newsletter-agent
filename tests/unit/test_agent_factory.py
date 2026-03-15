@@ -216,6 +216,71 @@ class TestDeepModeResearchPhase:
         assert isinstance(agent, DeepResearchOrchestrator)
         assert agent.max_rounds == 5
 
+    def test_orchestrator_receives_max_searches(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        topics = [TopicConfig(name="AI", query="AI news", search_depth="deep", sources=["google_search"])]
+        config = NewsletterConfig(
+            newsletter=NewsletterSettings(
+                title="Test", schedule="0 0 * * 0", recipient_email="a@b.com"
+            ),
+            settings=AppSettings(max_searches_per_topic=7),
+            topics=topics,
+        )
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        assert agent.max_searches == 7
+
+    def test_orchestrator_receives_min_rounds(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        topics = [TopicConfig(name="AI", query="AI news", search_depth="deep", sources=["google_search"])]
+        config = NewsletterConfig(
+            newsletter=NewsletterSettings(
+                title="Test", schedule="0 0 * * 0", recipient_email="a@b.com"
+            ),
+            settings=AppSettings(min_research_rounds=1),
+            topics=topics,
+        )
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        assert agent.min_rounds == 1
+
+    def test_orchestrator_defaults_for_adaptive_params(self):
+        """When config omits new fields, defaults flow correctly."""
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        topics = [TopicConfig(name="AI", query="AI news", search_depth="deep", sources=["google_search"])]
+        config = NewsletterConfig(
+            newsletter=NewsletterSettings(
+                title="Test", schedule="0 0 * * 0", recipient_email="a@b.com"
+            ),
+            settings=AppSettings(),
+            topics=topics,
+        )
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        # Defaults: max_searches = max_research_rounds (3), min_rounds = 2
+        assert agent.max_searches == config.settings.max_searches_per_topic
+        assert agent.min_rounds == config.settings.min_research_rounds
+
+    def test_perplexity_orchestrator_receives_adaptive_params(self):
+        """Perplexity provider also gets max_searches and min_rounds."""
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        topics = [TopicConfig(name="AI", query="AI news", search_depth="deep", sources=["perplexity"])]
+        config = NewsletterConfig(
+            newsletter=NewsletterSettings(
+                title="Test", schedule="0 0 * * 0", recipient_email="a@b.com"
+            ),
+            settings=AppSettings(max_searches_per_topic=5, min_research_rounds=1),
+            topics=topics,
+        )
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        assert agent.max_searches == 5
+        assert agent.min_rounds == 1
+
     def test_deep_mode_both_providers(self):
         from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
         config = _make_config([

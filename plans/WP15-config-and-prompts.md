@@ -1,5 +1,6 @@
 ---
-lane: doing
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP15 - Config Fields & Prompt Templates
@@ -215,3 +216,51 @@ This work package adds the foundational building blocks that WP16 (the orchestra
 ## Activity Log
 
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
+- 2025-07-24T00:00:00Z - coder - lane=doing - Started WP15 implementation
+- 2025-07-24T01:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2025-07-25T16:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL, 0 WARNs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-25
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Changes Required. Code implementation is fully correct and validated by downstream WP16 (Approved) and WP17 (Approved). One process FAIL: per-task Spec Compliance Checklist is missing. All config fields, prompt templates, deprecation, and tests are spec-compliant. 762 tests pass.
+
+### Review Feedback
+
+- [ ] **FB-01**: Add per-task Spec Compliance Checklist (Step 2b) sections for tasks T15-01 through T15-07 in this WP file.
+
+### Findings
+
+#### FAIL - Process Compliance: Missing per-task Spec Compliance Checklist
+- **Requirement**: Coder Step 2b process requirement
+- **Status**: Missing
+- **Evidence**: No Spec Compliance Checklist subsections in WP file
+
+#### PASS - Spec Adherence: Config fields (FR-ADR-060 through FR-ADR-065)
+- `max_searches_per_topic: int | None = Field(default=None, ge=1, le=15)` present
+- `min_research_rounds: int = Field(default=2, ge=1, le=3)` present
+- Cross-field validator `resolve_adaptive_defaults` correctly defaults None to max_research_rounds
+
+#### PASS - Spec Adherence: Prompt templates (FR-ADR-070 through FR-ADR-072)
+- `get_planning_instruction` and `get_analysis_instruction` implement spec templates exactly
+- `query_expansion.py` deprecated with docstring notice
+
+#### PASS - Test Coverage
+- 13 config tests + 12 prompt tests, all pass, no stubs
+
+#### PASS - Encoding (UTF-8)
+- No non-ASCII characters in any WP15 file
+
+### Statistics
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 0 | 1 |
+| Spec Adherence | 2 | 0 | 0 |
+| Test Coverage | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |

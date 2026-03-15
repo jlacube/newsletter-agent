@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status: 
 ---
 
 # WP09 - Multi-Recipient Email Delivery
@@ -116,13 +116,26 @@ review_status: acknowledged
 - 2026-03-15T09:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
 - 2026-03-15T10:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05)
 - 2026-03-15T10:30:00Z - coder - lane=for_review - All FB items resolved, 432 tests passing, submitted for re-review
+- 2026-03-15T11:00:00Z - reviewer - lane=done - Verdict: Approved (re-review, all FB items resolved)
 
 ## Review
 
 > **Reviewed by**: Reviewer Agent
 > **Date**: 2026-03-15
-> **Verdict**: Changes Required
-> **review_status**: has_feedback
+> **Verdict**: ~~Changes Required~~ **Approved** (re-review)
+> **review_status**: (cleared)
+
+### Re-Review Summary (Round 2)
+
+All 5 feedback items resolved. 432 tests pass (19 new). No regressions.
+
+| FB | Status | Verification |
+|----|--------|-------------|
+| FB-01 | Resolved | 11 schema validation tests added in `TestRecipientEmailsList`, `TestBothFieldsPresent`, `TestSingularFieldBackwardCompat` covering list accept 1-10, empty rejection, >10 rejection, duplicate/case-insensitive rejection, invalid email, both-fields, singular compat, neither-field |
+| FB-02 | Resolved | 3 tests added in `TestSendMultiRecipient` covering per-recipient breakdown, partial failure (HttpError on 2nd), full failure |
+| FB-03 | Resolved | 3 tests added in `TestDeliveryAgentMultiRecipient` covering reads `config_recipient_emails`, partial saves fallback with status="partial", full failure saves fallback |
+| FB-04 | Resolved | `TestSuccessfulSend` mock updated to `{"status": "sent", "recipients": [...]}`, assertion now checks `recipients[0]["message_id"]` |
+| FB-05 | Resolved | `TestEmailFailureFallback` mock updated to `{"status": "failed", "recipients": [...]}` |
 
 ### Summary
 

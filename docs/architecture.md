@@ -40,6 +40,10 @@ root_agent (SequentialAgent: "NewsletterPipeline")
 |     Verifies source URLs in research data; removes broken links before
 |     synthesis when verify_links=true (no-ops otherwise)
 |
++-- DeepResearchRefiner (Custom BaseAgent)
+|     For deep-mode topics with >10 sources, uses LLM to select the
+|     5-10 most relevant per provider. No-op for standard-mode topics.
+|
 +-- Synthesizer (LlmAgent, gemini-2.5-pro)
 |     Reads all research_N_* from state (pre-verified when verify_links=true)
 |     output_key: synthesis_raw

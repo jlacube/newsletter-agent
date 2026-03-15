@@ -218,6 +218,48 @@ Custom BaseAgent that orchestrates multi-round deep research for topics with `se
 **State keys written** (final):
 - `research_{idx}_{provider}` (str) -- Merged research output (same as standard mode)
 
+### `DeepResearchRefinerAgent`
+
+Custom BaseAgent that selects the 5-10 most relevant sources per deep-mode topic-provider combination using LLM-based relevance scoring. Runs after LinkVerifier and before Synthesizer.
+
+**Module**: `newsletter_agent.tools.deep_research_refiner`
+
+**Parameters**:
+- `topic_count` (int) -- Number of topics in config
+- `providers` (list[str]) -- Provider names (e.g., `["google", "perplexity"]`)
+- `topic_configs` (list[TopicConfig]) -- Full topic configs for `search_depth` check
+
+**Behavior**:
+1. Iterates over topics and providers. Skips standard-mode topics (no-op).
+2. For deep-mode topics, extracts source URLs from `research_{idx}_{provider}`.
+3. If source count < 5: keeps all sources (no LLM call).
+4. If source count is 5-10: keeps all sources (already in target range).
+5. If source count > 10: calls `gemini-2.5-flash` with refinement prompt to select best 5-10.
+6. Filters SOURCES section in-place, preserving SUMMARY text.
+7. Logs before/after source counts.
+
+**Error handling**:
+- LLM API failure: keeps all sources, logs warning.
+- Invalid JSON response: keeps all sources, logs warning.
+- Empty selection: keeps all sources, logs warning.
+- LLM selects < 5 valid URLs: keeps all original sources.
+- LLM selects > 10 URLs: truncates to first 10.
+
+**State keys read/written**:
+- `research_{idx}_{provider}` (str) -- Updated in-place with refined sources
+
+### `get_refinement_instruction(topic_name, target_count, research_text, source_list) -> str`
+
+Returns the LLM prompt for source refinement evaluation.
+
+**Module**: `newsletter_agent.prompts.refinement`
+
+**Parameters**:
+- `topic_name` (str) -- Topic display name
+- `target_count` (int) -- Target number of sources (5-10)
+- `research_text` (str) -- SUMMARY text from research
+- `source_list` (str) -- Current sources as text list
+
 ## Tool Functions
 
 ### `search_perplexity(query: str, search_depth: str) -> dict`
@@ -262,7 +304,7 @@ Renders the Jinja2 HTML template with the provided data.
 
 ### `build_pipeline(config: NewsletterConfig) -> SequentialAgent`
 
-Builds the complete agent pipeline from a validated config. Returns the root `SequentialAgent` with 7 sub-agents.
+Builds the complete agent pipeline from a validated config. Returns the root `SequentialAgent` with 9 sub-agents: ConfigLoader, ResearchPhase, ResearchValidator, PipelineAbortCheck, LinkVerifier, DeepResearchRefiner, Synthesizer, SynthesisPostProcessor, OutputPhase.
 
 ### `build_research_phase(config: NewsletterConfig) -> ParallelAgent`
 

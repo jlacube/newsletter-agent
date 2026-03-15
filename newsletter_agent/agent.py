@@ -25,6 +25,7 @@ from newsletter_agent.prompts.research_perplexity import get_perplexity_search_i
 from newsletter_agent.prompts.synthesis import get_synthesis_instruction
 from newsletter_agent.tools.delivery import DeliveryAgent
 from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+from newsletter_agent.tools.deep_research_refiner import DeepResearchRefinerAgent
 from newsletter_agent.tools.formatter import FormatterAgent
 from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool, search_perplexity
@@ -401,6 +402,13 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
         providers=sorted(all_providers),
     )
 
+    deep_research_refiner = DeepResearchRefinerAgent(
+        name="DeepResearchRefiner",
+        topic_count=len(config.topics),
+        providers=sorted(all_providers),
+        topic_configs=list(config.topics),
+    )
+
     logger.info(
         "Pipeline built: %d topics, root=%s",
         len(config.topics),
@@ -415,6 +423,7 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
             research_validator,
             abort_check,
             link_verifier,
+            deep_research_refiner,
             synthesis_agent,
             synthesis_post_processor,
             output_phase,

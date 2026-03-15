@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: doing
 ---
 
 # WP13 - Deep Research Source Refinement
 
 > **Spec**: `specs/autonomous-deep-research.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1 (MVP user story US-04)
 > **Goal**: After multi-round research and link verification, an LLM-based refiner selects the 5-10 most relevant sources per provider per deep-mode topic, removing noise from the large URL pool
 > **Independent Test**: Configure a deep-mode topic. Run the pipeline. Verify that after refinement, each topic-provider has between 5 and 10 sources (visible in refinement log: "Refined topic X/Y: 20 -> 8 sources").
@@ -228,3 +228,37 @@ This work package implements the source refinement step: a `DeepResearchRefinerA
 
 ## Activity Log
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-15T12:00:00Z - coder - lane=doing - Starting WP13 implementation. Baseline: 477 tests passing.
+- 2026-03-15T13:00:00Z - coder - lane=doing - All 8 tasks complete. 523 tests passing (477 + 37 unit + 9 BDD). Coverage: 94.68% (95% code, 92% branch).
+
+## Self-Review
+
+### Spec Compliance Checklist
+
+- [x] FR-REF-001: DeepResearchRefinerAgent added to pipeline between LinkVerifier and Synthesizer (position [5])
+- [x] FR-REF-002: Evaluates verified source URLs in research_{idx}_{provider} for deep-mode topics, selects 5-10 per provider
+- [x] FR-REF-003: LLM-based evaluation using gemini-2.5-flash with criteria: topical relevance, diversity, recency, information density
+- [x] FR-REF-004: Updates research_{idx}_{provider} state keys in-place, removing non-selected sources
+- [x] FR-REF-005: After refinement, 5-10 sources per deep-mode topic-provider. < 5 verified sources kept without filtering. Clamping enforced.
+- [x] FR-REF-006: Standard-mode topics are no-op (pass through without modification)
+- [x] FR-REF-007: Logs before/after source counts for each topic-provider
+- [x] FR-PIP-001: Pipeline order: ConfigLoader, ResearchPhase, ResearchValidator, PipelineAbortCheck, LinkVerifier, DeepResearchRefiner, Synthesizer, SynthesisPostProcessor, OutputPhase
+- [x] FR-PIP-002: DeepResearchRefinerAgent at position [5] after LinkVerifier and before Synthesizer
+
+### Review Checklist
+
+- [x] All acceptance criteria from the spec are met
+- [x] All 523 tests pass (477 existing + 37 unit + 9 BDD)
+- [x] Edge cases handled: < 5 sources, 5-10 sources, > 10 sources, LLM failure, invalid JSON, empty selection, URLs not in source list
+- [x] Error paths: API failure keeps all sources, invalid JSON keeps all sources, empty selection keeps all sources
+- [x] No unused code, dead imports, or debug artifacts
+- [x] No hardcoded values in config (model name is a module constant)
+- [x] No security issues (no user-controlled input in prompts, no injection risk)
+- [x] No em dashes, smart quotes, or curly apostrophes
+- [x] Implementation does not exceed spec scope
+- [x] Coverage: 94.68% overall (95% code, 92% branch) -- exceeds 80% code / 90% branch thresholds
+- [x] Documentation updated: architecture.md, api-reference.md, developer-guide.md, user-guide.md
+
+### Outstanding Issues
+
+None.

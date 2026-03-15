@@ -278,12 +278,13 @@ class TestBuildPipeline:
         assert isinstance(pipeline, SequentialAgent)
         assert pipeline.name == _ROOT_AGENT_NAME
 
-    def test_root_has_eight_sub_agents(self):
+    def test_root_has_nine_sub_agents(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
-        assert len(pipeline.sub_agents) == 8
+        assert len(pipeline.sub_agents) == 9
 
     def test_sub_agent_order(self):
+        from newsletter_agent.tools.deep_research_refiner import DeepResearchRefinerAgent
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
         assert isinstance(pipeline.sub_agents[0], ConfigLoaderAgent)
@@ -296,17 +297,19 @@ class TestBuildPipeline:
         assert pipeline.sub_agents[3].name == "PipelineAbortCheck"
         assert isinstance(pipeline.sub_agents[4], LinkVerifierAgent)
         assert pipeline.sub_agents[4].name == "LinkVerifier"
-        assert isinstance(pipeline.sub_agents[5], LlmAgent)
-        assert pipeline.sub_agents[5].name == "Synthesizer"
-        assert isinstance(pipeline.sub_agents[6], SynthesisPostProcessorAgent)
-        assert pipeline.sub_agents[6].name == "SynthesisPostProcessor"
-        assert isinstance(pipeline.sub_agents[7], SequentialAgent)
-        assert pipeline.sub_agents[7].name == "OutputPhase"
+        assert isinstance(pipeline.sub_agents[5], DeepResearchRefinerAgent)
+        assert pipeline.sub_agents[5].name == "DeepResearchRefiner"
+        assert isinstance(pipeline.sub_agents[6], LlmAgent)
+        assert pipeline.sub_agents[6].name == "Synthesizer"
+        assert isinstance(pipeline.sub_agents[7], SynthesisPostProcessorAgent)
+        assert pipeline.sub_agents[7].name == "SynthesisPostProcessor"
+        assert isinstance(pipeline.sub_agents[8], SequentialAgent)
+        assert pipeline.sub_agents[8].name == "OutputPhase"
 
     def test_output_phase_wraps_formatter_and_delivery(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
         pipeline = build_pipeline(config)
-        output_phase = pipeline.sub_agents[7]
+        output_phase = pipeline.sub_agents[8]
         assert len(output_phase.sub_agents) == 2
         assert output_phase.sub_agents[0].name == "FormatterAgent"
         assert output_phase.sub_agents[1].name == "DeliveryAgent"

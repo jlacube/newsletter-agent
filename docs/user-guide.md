@@ -92,7 +92,7 @@ compatibility but is deprecated. Use `recipient_emails` for new configurations.
 
 - Between 1 and 20 topics are allowed
 - Topic names must be unique
-- `search_depth: "deep"` performs multi-round research: the system generates alternative query angles, runs multiple search rounds per provider (up to `max_research_rounds` in settings), and combines all results for richer analysis. It also uses the Perplexity `sonar-pro` model and more detailed Google Search prompts
+- `search_depth: "deep"` performs multi-round research: the system generates alternative query angles, runs multiple search rounds per provider (up to `max_research_rounds` in settings), and combines all results for richer analysis. After link verification, a refinement step selects the 5-10 most relevant sources per provider using LLM-based evaluation. It also uses the Perplexity `sonar-pro` model and more detailed Google Search prompts
 - If `sources` is omitted, both Google Search and Perplexity are used
 
 ## Running the Newsletter

@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP18 - Quality, Performance & Documentation
@@ -200,6 +200,7 @@ This post-MVP work package adds performance benchmarks to verify the adaptive lo
 - 2026-03-15T14:05:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02)
 - 2026-03-15T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (2 FAILs) -- awaiting remediation
 - 2026-03-15T14:10:00Z - coder - lane=for_review - Fixed FB-01 and FB-02 doc range inaccuracies, re-submitted for review
+- 2026-03-15T14:30:00Z - reviewer - lane=done - Verdict: Approved with Findings (1 WARN: batched commits)
 
 ## Review
 
@@ -316,3 +317,43 @@ Changes Required. Two documentation accuracy FAILs found: `max_searches_per_topi
 
 1. **FB-01**: In `docs/configuration-guide.md` (L65, L100), `README.md` (L127), and `docs/user-guide.md` (L66), change `max_searches_per_topic` range from "1-10" to "1-15" to match spec FR-ADR-061 and schema.
 2. **FB-02**: In `docs/configuration-guide.md` (L66), change `min_research_rounds` range from "1-5" to "1-3" to match spec FR-ADR-064 and schema.
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-15
+> **Verdict**: Approved with Findings
+> **review_status**: (cleared)
+
+### Summary
+
+Approved with Findings. Both FAILs from Round 1 are resolved. FB-01 (`max_searches_per_topic` range 1-15) verified correct in all four locations. FB-02 (`min_research_rounds` range 1-3) verified correct in the settings table. No regressions introduced. The previous WARN (batched commits) persists as a process note.
+
+### Findings
+
+#### PASS - FB-01 Resolution: `max_searches_per_topic` range
+- **Requirement**: FR-ADR-061 (max 15), Section 7.1 (1 <= x <= 15)
+- **Status**: Compliant
+- **Detail**: All four locations now correctly state "1-15": `docs/configuration-guide.md` L65, L100; `README.md` L127; `docs/user-guide.md` L66. Consistent with `docs/api-reference.md` and `newsletter_agent/config/schema.py` (`le=15`).
+
+#### PASS - FB-02 Resolution: `min_research_rounds` range
+- **Requirement**: FR-ADR-064 (minimum 1, maximum 3)
+- **Status**: Compliant
+- **Detail**: Settings table in `docs/configuration-guide.md` L66 now correctly states "1-3". Consistent with the adaptive research settings table at L101 and `newsletter_agent/config/schema.py` (`le=3`). Internal inconsistency eliminated.
+
+#### WARN - Process Compliance: Batched commits (carried forward)
+- **Requirement**: Process requirement (one commit per task)
+- **Status**: Deviating
+- **Detail**: Original 5 tasks committed in a single commit. Fix commit is separate and correctly scoped. This is a process note, not a correctness issue.
+
+### Statistics (Re-Review)
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Documentation (FB-01) | 1 | 0 | 0 |
+| Documentation (FB-02) | 1 | 0 | 0 |
+| Process Compliance | 0 | 1 | 0 |
+
+### Verdict: Approved with Findings
+
+Zero FAILs. One carried-forward WARN (batched commits). All documentation now matches the spec and schema. WP18 is complete.

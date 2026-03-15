@@ -635,10 +635,12 @@ class TestPlanningFailureFallback:
         call_count = [0]
         captured_queries = []
 
-        # Planning returns fallback (original query + default aspects)
+        # Exercise the real _parse_planning_output fallback path
+        # by feeding invalid JSON through it (not hand-crafting the result)
         async def mock_planning(inner_ctx):
-            # Simulate what _run_planning does when parsing fails
-            return (orch.query, ["recent developments", "expert opinions", "data and statistics", "industry implications", "emerging trends"], [])
+            # Call the real parser with invalid JSON to trigger fallback + warning log
+            query, aspects = orch._parse_planning_output("not valid json {{")
+            return (query, aspects, [])
 
         async def mock_analysis(*args, **kwargs):
             return _analysis_result(saturated=True, gaps=[])
@@ -648,7 +650,7 @@ class TestPlanningFailureFallback:
             agent = MagicMock()
 
             async def fake_run(run_ctx):
-                run_ctx.session.state[f"deep_research_latest_0_google"] = _research_text(
+                run_ctx.session.state["deep_research_latest_0_google"] = _research_text(
                     [("S", f"https://r{round_idx}.com")], f"Round {round_idx}"
                 )
                 call_count[0] += 1
@@ -660,12 +662,18 @@ class TestPlanningFailureFallback:
 
         with patch.object(orch, "_run_planning", side_effect=mock_planning), \
              patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
-             patch.object(orch, "_make_search_agent", side_effect=capture_make):
+             patch.object(orch, "_make_search_agent", side_effect=capture_make), \
+             caplog.at_level(logging.WARNING):
             async for _ in orch._run_async_impl(ctx):
                 pass
 
-        # Original query used for round 0
+        # Original query used for round 0 (fallback uses self.query)
         assert captured_queries[0] == "AI news"
+        # Verify WARNING log about planning failure
+        assert any(
+            "[AdaptiveResearch]" in m and "Planning failed" in m
+            for m in caplog.messages
+        ), f"Expected planning failure warning log, got: {caplog.messages}"
 
 
 # ---------------------------------------------------------------------------
@@ -693,7 +701,8 @@ class TestAnalysisFailureFallback:
         async def mock_planning(inner_ctx):
             return _planning_result("AI initial")
 
-        # Round 0: normal analysis, Round 1: fallback (simulating parse failure result)
+        # Round 0: normal analysis, Round 1: exercise real _parse_analysis_output
+        # with invalid JSON to trigger fallback path + warning log
         analysis_idx = [0]
 
         async def mock_analysis(*args, **kwargs):
@@ -702,18 +711,9 @@ class TestAnalysisFailureFallback:
             if idx == 0:
                 return _analysis_result(saturated=False, next_query="follow-up", gaps=["gap"])
             elif idx == 1:
-                # Fallback result from _parse_analysis_output when JSON is invalid
-                return (
-                    {
-                        "findings_summary": "Analysis unavailable",
-                        "knowledge_gaps": ["continued exploration needed"],
-                        "coverage_assessment": "incomplete",
-                        "saturated": False,
-                        "next_query": f"AI news trends and developments",
-                        "next_query_rationale": "fallback",
-                    },
-                    [],
-                )
+                # Call real parser with invalid JSON to trigger fallback + warning
+                result = orch._parse_analysis_output("not valid json {{", round_idx=1)
+                return (result, [])
             else:
                 return _analysis_result(saturated=True, gaps=[])
 
@@ -724,12 +724,18 @@ class TestAnalysisFailureFallback:
 
         with patch.object(orch, "_run_planning", side_effect=mock_planning), \
              patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
-             patch.object(orch, "_make_search_agent", side_effect=_mock_search_agent(orch, call_count, rounds_content)):
+             patch.object(orch, "_make_search_agent", side_effect=_mock_search_agent(orch, call_count, rounds_content)), \
+             caplog.at_level(logging.WARNING):
             async for _ in orch._run_async_impl(ctx):
                 pass
 
         # Loop continued past the fallback round
         assert call_count[0] == 3, f"Expected 3 rounds, got {call_count[0]}"
+        # Verify WARNING log about analysis failure
+        assert any(
+            "[AdaptiveResearch]" in m and "Analysis failed" in m
+            for m in caplog.messages
+        ), f"Expected analysis failure warning log, got: {caplog.messages}"
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP15 - Config Fields & Prompt Templates
@@ -66,6 +66,15 @@ This work package adds the foundational building blocks that WP16 (the orchestra
     ```
   - Known pitfall: Pydantic v2 `Field(ge=1, le=15)` with `default=None` requires the type hint to be `int | None` (or `Optional[int]`), not just `int`. Otherwise Pydantic will reject `None` at validation time before the model_validator runs.
 
+#### Spec Compliance Checklist (T15-01)
+- [x] FR-ADR-060: max_searches_per_topic field added as int | None = Field(default=None, ge=1, le=15)
+- [x] FR-ADR-061: Field accepts None and integers 1-15; None resolved by validator
+- [x] FR-ADR-064: min_research_rounds field added as int = Field(default=2, ge=1, le=3)
+- [x] FR-ADR-065: model_validator resolve_adaptive_defaults resolves None default and validates min <= max cross-field constraint
+- [x] Section 7.1: Config schema changes match spec contract exactly
+- [x] Section 8.2: Backward compat preserved - AppSettings() without new fields yields correct defaults (max_research_rounds=3, max_searches_per_topic=3, min_research_rounds=2)
+- [x] ConfigDict(extra="forbid") still rejects unknown fields
+
 ### T15-02 - Unit tests for new config fields
 
 - **Description**: Extend the existing `tests/unit/test_config.py` with test cases covering the new `max_searches_per_topic` and `min_research_rounds` fields, including valid values, defaults, boundary values, and error cases.
@@ -93,6 +102,14 @@ This work package adds the foundational building blocks that WP16 (the orchestra
   - The model_validator raises `ValueError` which Pydantic wraps into `ValidationError` -- test for `ValidationError` at the outer layer when constructing via Pydantic, or `ValueError` if testing the validator method directly
   - Group new tests in a dedicated class: `TestAdaptiveConfigFields`
 
+#### Spec Compliance Checklist (T15-02)
+- [x] FR-ADR-061: Tests cover max_searches_per_topic default resolution, boundary values (1, 5, 10, 15), and rejection of out-of-range values (0, 16)
+- [x] FR-ADR-064: Tests cover min_research_rounds default (2), boundary values (1, 2, 3), and rejection of out-of-range values (0, 4)
+- [x] FR-ADR-065: Tests cover cross-field validation: min > max raises ValueError; min == max succeeds
+- [x] Section 11.1: All config field test scenarios from spec implemented
+- [x] Backward compat: Test confirms existing config YAML without new fields loads successfully
+- [x] All existing config tests continue to pass unchanged
+
 ### T15-03 - Create `reasoning.py` with `get_planning_instruction`
 
 - **Description**: Create the new prompt module `newsletter_agent/prompts/reasoning.py` with the `get_planning_instruction` function that generates the PlanningAgent's instruction prompt.
@@ -112,6 +129,13 @@ This work package adds the foundational building blocks that WP16 (the orchestra
   - The prompt asks the LLM to output ONLY a JSON object with exactly 4 fields
   - Pattern: follow the same style as `newsletter_agent/prompts/query_expansion.py` (a single function returning a formatted instruction string)
   - Ensure the prompt includes: (1) role definition, (2) topic/query context, (3) numbered task steps, (4) JSON schema description, (5) "Output ONLY the JSON object" constraint
+
+#### Spec Compliance Checklist (T15-03)
+- [x] FR-ADR-070: reasoning.py module created with get_planning_instruction function
+- [x] Section 4.2: PlanningAgent instruction contract implemented - contains topic name, query, JSON output instructions with 4 required fields (query_intent, key_aspects, initial_search_query, search_rationale)
+- [x] Function signature matches spec: get_planning_instruction(query: str, topic_name: str) -> str
+- [x] Parameters interpolated into returned string (not left as template placeholders)
+- [x] Function importable: from newsletter_agent.prompts.reasoning import get_planning_instruction
 
 ### T15-04 - Add `get_analysis_instruction` to `reasoning.py`
 
@@ -136,6 +160,16 @@ This work package adds the foundational building blocks that WP16 (the orchestra
   - Include the saturation guidelines verbatim from the spec (3 bullet points for true, 3 for false)
   - The `remaining_searches` parameter gives the LLM awareness of budget constraints to inform its saturation decision
 
+#### Spec Compliance Checklist (T15-04)
+- [x] FR-ADR-070: get_analysis_instruction added to reasoning.py
+- [x] Section 4.4: AnalysisAgent instruction contract implemented with all 8 parameters
+- [x] Function signature matches spec: get_analysis_instruction(topic_name, query, key_aspects, prior_rounds_summary, latest_results, round_idx, current_query, remaining_searches) -> str
+- [x] key_aspects formatted as bulleted list ("- " prefix per item)
+- [x] JSON output schema includes all 6 required fields: findings_summary, knowledge_gaps, coverage_assessment, saturated, next_query, next_query_rationale
+- [x] Saturation guidelines section from spec included verbatim
+- [x] Prompt ends with "Output ONLY the JSON object. No other text."
+- [x] Function importable: from newsletter_agent.prompts.reasoning import get_analysis_instruction
+
 ### T15-05 - Deprecate `query_expansion.py`
 
 - **Description**: Add a module-level deprecation comment to `newsletter_agent/prompts/query_expansion.py`. The function remains importable but is no longer called by the orchestrator.
@@ -152,6 +186,11 @@ This work package adds the foundational building blocks that WP16 (the orchestra
   - Add a deprecation notice at the top of the module docstring, e.g.: `"DEPRECATED: This module is superseded by newsletter_agent.prompts.reasoning. The adaptive research loop (spec 002) generates queries per-round via the AnalysisAgent instead of upfront expansion. This module is retained for backward compatibility."`
   - Do NOT delete the file or the function -- it must remain importable per FR-ADR-071
   - Do NOT add Python `warnings.warn()` calls -- a comment/docstring is sufficient per spec
+
+#### Spec Compliance Checklist (T15-05)
+- [x] FR-ADR-071: query_expansion.py has module-level deprecation docstring stating it is superseded by reasoning.py
+- [x] get_query_expansion_instruction function remains importable and functional (no code changes to function body)
+- [x] No other files modified in this task
 
 ### T15-06 - Unit tests for prompt template functions
 
@@ -176,6 +215,13 @@ This work package adds the foundational building blocks that WP16 (the orchestra
   - For the bullet list test: pass `["aspect1", "aspect2", "aspect3"]` and verify `"- aspect1\n- aspect2\n- aspect3"` appears in the output
   - For the prior_rounds_summary tests: pass pre-formatted strings (the orchestrator formats these, not the prompt function) and verify they appear in the output
 
+#### Spec Compliance Checklist (T15-06)
+- [x] Section 11.1: Unit tests for get_planning_instruction verify returned string contains query, topic_name, and all 4 JSON field names
+- [x] Section 11.1: Unit tests for get_analysis_instruction verify all 8 parameter values appear in returned string
+- [x] Section 11.1: key_aspects bullet formatting verified in tests
+- [x] Section 11.1: prior_rounds_summary tested for 0, 1, and 3 prior rounds
+- [x] Section 11.1: All 6 AnalysisOutput JSON field names verified in returned string
+
 ### T15-07 - Coverage verification for WP15
 
 - **Description**: Run the full test suite and verify that the new config and prompt code meets coverage thresholds.
@@ -192,6 +238,11 @@ This work package adds the foundational building blocks that WP16 (the orchestra
   - If coverage is below threshold, add targeted tests for uncovered branches
   - Then run full suite: `pytest tests/ -v` to confirm no regressions
   - The project's pytest config in `pyproject.toml` already sets `fail_under = 80` for overall coverage
+
+#### Spec Compliance Checklist (T15-07)
+- [x] Section 11.1: Coverage >= 80% line and >= 90% branch for schema.py and reasoning.py
+- [x] All existing tests continue to pass (full suite exits with code 0)
+- [x] No regressions in any test file
 
 ## Implementation Notes
 
@@ -219,6 +270,8 @@ This work package adds the foundational building blocks that WP16 (the orchestra
 - 2025-07-24T00:00:00Z - coder - lane=doing - Started WP15 implementation
 - 2025-07-24T01:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
 - 2025-07-25T16:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL, 0 WARNs) -- awaiting remediation
+- 2026-03-15T12:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01)
+- 2026-03-15T12:05:00Z - coder - lane=for_review - FB-01 remediated, resubmitted for review
 
 ## Review
 

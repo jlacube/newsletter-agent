@@ -1,5 +1,5 @@
 ---
-lane: doing
+lane: for_review
 ---
 
 # WP13 - Deep Research Source Refinement
@@ -230,6 +230,7 @@ This work package implements the source refinement step: a `DeepResearchRefinerA
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-15T12:00:00Z - coder - lane=doing - Starting WP13 implementation. Baseline: 477 tests passing.
 - 2026-03-15T13:00:00Z - coder - lane=doing - All 8 tasks complete. 523 tests passing (477 + 37 unit + 9 BDD). Coverage: 94.68% (95% code, 92% branch).
+- 2026-03-15T13:30:00Z - coder - lane=for_review - All tasks complete, submitted for review
 
 ## Self-Review
 

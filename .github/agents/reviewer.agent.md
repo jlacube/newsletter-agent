@@ -309,7 +309,7 @@ Present the verdict and full report to the user.
 
 This step runs **only when verdict is Changes Required**.
 
-After setting `lane: to_do` and presenting the report, immediately invoke the Coder agent via `#agent:Coder` with the following structured handoff message:
+After setting `lane: to_do` and presenting the report, immediately invoke the Coder agent via `#agent:4. Coder` with the following structured handoff message:
 
 ```
 WP<NN> has been returned with verdict: Changes Required.
@@ -368,7 +368,7 @@ Read `plans/README.md` and scan ALL `plans/WP*.md` frontmatter to determine:
 
 ### 8c. Handoff to Coder for Next WP
 
-When handing off to the Coder for the next planned WP, invoke `#agent:Coder` with:
+When handing off to the Coder for the next planned WP, invoke `#agent:4. Coder` with:
 
 > The previous WP<NN> has been reviewed and approved.
 > Next work package ready for implementation: WP<XX> - <title>

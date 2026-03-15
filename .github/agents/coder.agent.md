@@ -324,7 +324,7 @@ Do NOT set `lane: done` — only the Reviewer agent sets `done`. The coder's fin
 
 After marking a work package complete, **immediately invoke the Reviewer agent** to begin review. Do not wait for the user to manually trigger a review.
 
-Invoke `#agent:Reviewer` with the following structured handoff message:
+Invoke `#agent:5. Reviewer` with the following structured handoff message:
 
 > WP<NN> implementation is complete and ready for review.
 > The work package is at lane=for_review.

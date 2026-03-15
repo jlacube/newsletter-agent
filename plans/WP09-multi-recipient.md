@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP09 - Multi-Recipient Email Delivery
@@ -114,6 +114,8 @@ review_status: has_feedback
 - 2026-03-15T08:00:00Z - coder - lane=doing - Fixed schema re-validation bug (before/after validator split), fixed BDD test
 - 2026-03-15T08:30:00Z - coder - lane=for_review - All tasks complete, 413 tests passing, documentation updated
 - 2026-03-15T09:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
+- 2026-03-15T10:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05)
+- 2026-03-15T10:30:00Z - coder - lane=for_review - All FB items resolved, 432 tests passing, submitted for re-review
 
 ## Review
 
@@ -130,11 +132,11 @@ Changes Required. The core production code (schema, agent, delivery, gmail_send)
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Add multi-recipient unit tests for schema validation: list acceptance (1-10), empty list rejection, >10 rejection, duplicate rejection, both-fields-present rejection, singular-field backward compat. Spec Section 5 requires these. No test file contains `recipient_emails` (plural) anywhere.
-- [ ] **FB-02**: Add multi-recipient unit tests for `send_newsletter_email`: verify list input returns per-recipient breakdown, verify partial failure (some succeed, some fail), verify full failure. Spec Section 5 requires these.
-- [ ] **FB-03**: Add multi-recipient unit tests for `DeliveryAgent`: verify it reads `config_recipient_emails`, verify partial delivery saves fallback and sets status="partial", verify full failure saves fallback. Spec Section 5 requires these.
-- [ ] **FB-04**: Update existing `tests/unit/test_delivery_agent.py::TestSuccessfulSend` mock return values to use the multi-recipient response shape (`{"status": "sent", "recipients": [...]}`) since `DeliveryAgent` now always passes a list. The current mock (`{"status": "sent", "message_id": "..."}`) represents a response shape that `send_newsletter_email` will never produce when called with a list. The test passes vacuously.
-- [ ] **FB-05**: Update existing `tests/unit/test_delivery_agent.py::TestEmailFailureFallback` mock return value from `{"status": "error", "error_message": "..."}` (single-mode shape) to `{"status": "failed", "recipients": [...]}` (multi-mode shape).
+- [x] **FB-01**: Add multi-recipient unit tests for schema validation: list acceptance (1-10), empty list rejection, >10 rejection, duplicate rejection, both-fields-present rejection, singular-field backward compat. Spec Section 5 requires these. -- Added `tests/unit/test_multi_recipient.py` with 11 schema tests.
+- [x] **FB-02**: Add multi-recipient unit tests for `send_newsletter_email`: verify list input returns per-recipient breakdown, verify partial failure (some succeed, some fail), verify full failure. Spec Section 5 requires these. -- Added 3 tests in `TestSendMultiRecipient`.
+- [x] **FB-03**: Add multi-recipient unit tests for `DeliveryAgent`: verify it reads `config_recipient_emails`, verify partial delivery saves fallback and sets status="partial", verify full failure saves fallback. Spec Section 5 requires these. -- Added 3 tests in `TestDeliveryAgentMultiRecipient`.
+- [x] **FB-04**: Update existing `tests/unit/test_delivery_agent.py::TestSuccessfulSend` mock return values to use the multi-recipient response shape (`{"status": "sent", "recipients": [...]}`) since `DeliveryAgent` now always passes a list. -- Updated mock and assertions.
+- [x] **FB-05**: Update existing `tests/unit/test_delivery_agent.py::TestEmailFailureFallback` mock return value from `{"status": "error", "error_message": "..."}` (single-mode shape) to `{"status": "failed", "recipients": [...]}` (multi-mode shape). -- Updated mock.
 
 ### Findings
 

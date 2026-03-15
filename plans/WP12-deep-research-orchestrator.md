@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP12 - Multi-Round Deep Research Orchestrator
 
 > **Spec**: `specs/autonomous-deep-research.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1 (MVP user story US-02)
 > **Goal**: Deep-mode topics perform multiple search rounds with varied query angles, accumulating 15+ URLs per provider before combining into the standard research state key
 > **Independent Test**: Configure a topic with `search_depth: "deep"` and `max_research_rounds: 3`. Run the pipeline. Verify logs show 3 search rounds per provider with different queries, and the research state key contains sources from multiple rounds.
@@ -316,3 +316,50 @@ This work package implements the core multi-round deep research capability: a cu
 
 ## Activity Log
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-15T12:00:00Z - coder - lane=doing - Started implementation of WP12
+- 2026-03-15T18:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+
+## Self-Review (T12-01 through T12-11)
+
+### Spec Compliance
+- [x] FR-MRR-001: DeepResearchOrchestrator extends BaseAgent
+- [x] FR-MRR-002: Round 0 uses original topic query
+- [x] FR-MRR-003: Query expansion generates varied-angle alternatives
+- [x] FR-MRR-004: JSON array output format with fallback
+- [x] FR-MRR-005: Per-round state keys written
+- [x] FR-MRR-006: Round merging with deduplicated sources
+- [x] FR-MRR-007: Early exit at 15+ unique URLs
+- [x] FR-MRR-009: Google rounds use google_search tool
+- [x] FR-MRR-010: Perplexity rounds use search_perplexity tool
+- [x] FR-MRR-011: Fallback query expansion on invalid JSON
+- [x] FR-PIP-003: build_research_phase conditionally creates orchestrator
+- [x] FR-BC-001: Standard-mode topics unchanged (LlmAgent)
+- [x] FR-BC-002: max_rounds=1 skips query expansion, single round
+- [x] FR-BC-004: Output state key research_N_provider produced regardless of mode
+
+### Correctness
+- [x] 524 tests pass (full suite)
+- [x] 96.41% code coverage for deep_research.py (target: 80%)
+- [x] 100% coverage for query_expansion.py
+- [x] All 4 BDD scenarios from spec Section 11.2 implemented and passing
+
+### Code Quality
+- [x] No unused imports or dead code
+- [x] No hardcoded values except spec-defined thresholds (15 URL threshold)
+- [x] No security issues (no direct user input, no injection vectors)
+- [x] Logging follows project conventions
+
+### Scope Discipline
+- [x] No unasked-for abstractions or optimizations
+- [x] Only files required by spec were created/modified
+
+### Encoding
+- [x] No em dashes, smart quotes, or curly apostrophes
+
+### Documentation
+- [x] architecture.md updated (pipeline tree, state keys, phases, dynamic construction)
+- [x] api-reference.md updated (new DeepResearchOrchestrator agent, factory function)
+- [x] configuration-guide.md updated (search depth behavior table, multi-round explanation)
+- [x] deployment-guide.md updated (timeout guidance, log messages)
+- [x] developer-guide.md updated (project structure, agent types, naming, provider guide)
+- [x] user-guide.md updated (topic options, configuration rules)

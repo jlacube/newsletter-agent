@@ -84,14 +84,14 @@ compatibility but is deprecated. Use `recipient_emails` for new configurations.
 |-------|----------|---------|-------------|
 | `name` | Yes | -- | Display name for the topic section (1-100 chars, must be unique) |
 | `query` | Yes | -- | Natural language search query (1-500 chars) |
-| `search_depth` | No | `"standard"` | `"standard"` for quick research, `"deep"` for comprehensive analysis |
+| `search_depth` | No | `"standard"` | `"standard"` for quick research, `"deep"` for multi-round comprehensive analysis |
 | `sources` | No | Both | List of `"google_search"` and/or `"perplexity"` |
 
 ### Configuration Rules
 
 - Between 1 and 20 topics are allowed
 - Topic names must be unique
-- `search_depth: "deep"` uses the Perplexity `sonar-pro` model and more detailed Google Search prompts
+- `search_depth: "deep"` performs multi-round research: the system generates alternative query angles, runs multiple search rounds per provider (up to `max_research_rounds` in settings), and combines all results for richer analysis. It also uses the Perplexity `sonar-pro` model and more detailed Google Search prompts
 - If `sources` is omitted, both Google Search and Perplexity are used
 
 ## Running the Newsletter

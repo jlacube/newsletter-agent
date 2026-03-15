@@ -2,7 +2,7 @@
 
 ## System Overview
 
-Newsletter Agent is a multi-agent pipeline built with Google Agent Development Kit (ADK). The system uses a `SequentialAgent` as its root, orchestrating research, synthesis, formatting, and delivery phases.
+Newsletter Agent is a multi-agent pipeline built with Google Agent Development Kit (ADK). The system uses a `SequentialAgent` as its root, orchestrating research, synthesis, formatting, and delivery phases. Topics configured with `search_depth: "deep"` use a multi-round research orchestrator that generates query variants, executes multiple search rounds per provider, and merges results before synthesis.
 
 ## Agent Pipeline
 
@@ -15,12 +15,20 @@ root_agent (SequentialAgent: "NewsletterPipeline")
 +-- ResearchPhase (ParallelAgent)
 |     For each topic, runs in parallel:
 |     +-- TopicNResearch (SequentialAgent)
+|           For standard-mode topics:
 |           +-- GoogleSearcher_N (LlmAgent, gemini-2.5-flash)
 |           |     tools: [google_search]
 |           |     output_key: research_N_google
 |           +-- PerplexitySearcher_N (LlmAgent, gemini-2.5-flash)
 |                 tools: [search_perplexity FunctionTool]
 |                 output_key: research_N_perplexity
+|           For deep-mode topics (search_depth: "deep"):
+|           +-- DeepResearch_N_google (DeepResearchOrchestrator)
+|           |     Runs multi-round search: query expansion -> N rounds
+|           |     output_key: research_N_google (merged)
+|           +-- DeepResearch_N_perplexity (DeepResearchOrchestrator)
+|                 Runs multi-round search: query expansion -> N rounds
+|                 output_key: research_N_perplexity (merged)
 |
 +-- ResearchValidator (Custom BaseAgent)
 |     Checks all research state keys; sets research_all_failed if none succeeded
@@ -81,8 +89,8 @@ The pipeline communicates between agents exclusively through ADK session state. 
 | `config_verify_links` | ConfigLoader | LinkVerifier | bool |
 | `config_topic_count` | SynthesisPostProcessor | Formatter | int |
 | `pipeline_start_time` | before_agent_callback | Formatter | str (ISO 8601) |
-| `research_N_google` | GoogleSearcher_N | LinkVerifier, Synthesizer | str (raw LLM output) |
-| `research_N_perplexity` | PerplexitySearcher_N | LinkVerifier, Synthesizer | str (raw LLM output) |
+| `research_N_google` | GoogleSearcher_N or DeepResearchOrchestrator | LinkVerifier, Synthesizer | str (raw LLM output) |
+| `research_N_perplexity` | PerplexitySearcher_N or DeepResearchOrchestrator | LinkVerifier, Synthesizer | str (raw LLM output) |
 | `research_all_failed` | ResearchValidator | PipelineAbortCheck | bool |
 | `synthesis_raw` | Synthesizer | SynthesisPostProcessor | str (JSON) |
 | `synthesis_N` | SynthesisPostProcessor | Formatter | dict |
@@ -95,7 +103,7 @@ The pipeline communicates between agents exclusively through ADK session state. 
 
 1. **Config Loading**: `ConfigLoaderAgent` reads the validated `NewsletterConfig` and writes config values into session state so all downstream agents can access them.
 
-2. **Research Phase**: A `ParallelAgent` runs one `SequentialAgent` per topic. Within each topic, Google Search and Perplexity run sequentially. All topics execute in parallel.
+2. **Research Phase**: A `ParallelAgent` runs one `SequentialAgent` per topic. All topics execute in parallel. For standard-mode topics, Google Search and Perplexity LlmAgents run sequentially. For deep-mode topics (`search_depth: "deep"`), a `DeepResearchOrchestrator` (custom BaseAgent) replaces each LlmAgent. The orchestrator generates query variants via an internal LLM call, executes up to `max_research_rounds` search rounds with varied queries, tracks URL accumulation (early exit at 15+ unique URLs), and merges all round results into the standard `research_N_{provider}` state key.
 
 3. **Research Validation**: Checks all research state keys. If every provider failed for every topic, sets `research_all_failed = True`.
 
@@ -113,7 +121,7 @@ The pipeline communicates between agents exclusively through ADK session state. 
 
 ## Dynamic Agent Construction
 
-The number of research agents is determined at startup by the topic count in `config/topics.yaml`. A factory function (`build_research_phase()`) reads the config and constructs the `ParallelAgent` sub-tree dynamically. This supports 1 to 20 topics.
+The number of research agents is determined at startup by the topic count in `config/topics.yaml`. A factory function (`build_research_phase()`) reads the config and constructs the `ParallelAgent` sub-tree dynamically. This supports 1 to 20 topics. For each topic, the factory conditionally creates either standard `LlmAgent` instances (for `search_depth: "standard"`) or `DeepResearchOrchestrator` instances (for `search_depth: "deep"`). Both produce the same `research_N_{provider}` state keys, making the deep/standard distinction transparent to downstream agents.
 
 ## Security Design
 
@@ -129,6 +137,7 @@ The number of research agents is determined at startup by the topic count in `co
 | Scenario | Behavior |
 |----------|----------|
 | Single provider fails for a topic | Logged; pipeline continues with other provider's results |
+| Deep research round produces no results | Logged; orchestrator continues to next round |
 | All providers fail for one topic | Topic section shows "Research unavailable" placeholder |
 | All providers fail for all topics | Pipeline aborts with RuntimeError; error HTML saved |
 | Synthesis produces invalid JSON | Fallback output with error message per topic |

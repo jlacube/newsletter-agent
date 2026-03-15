@@ -107,7 +107,7 @@ gcloud run services update newsletter-agent \
 | Max instances | 1 | Newsletter generation is a single-execution job |
 | Concurrency | 1 | Only one pipeline run at a time |
 
-For newsletters with many topics (10+) using `search_depth: "deep"`, consider increasing the timeout to 900s.
+For newsletters with many topics (10+) using `search_depth: "deep"`, consider increasing the timeout to 900s. Deep-mode topics perform multiple research rounds (up to `max_research_rounds` per provider), which increases total pipeline time.
 
 ### Step 4: Set Up Cloud Scheduler
 
@@ -235,6 +235,9 @@ Pipeline logs are written to stdout/stderr and captured by Cloud Logging:
 | `Pipeline started` | Pipeline run began |
 | `Pipeline completed in Xs` | Total pipeline execution time |
 | `Built research phase: N topics` | Agent tree constructed successfully |
+| `[DeepResearch] Topic X/provider round N: Y new URLs, Z total accumulated` | Deep research round progress |
+| `[DeepResearch] Topic X/provider: early exit at round N with Z URLs` | Early exit from deep research (15+ URLs) |
+| `[DeepResearch] Topic X/provider: completed N rounds, Z unique URLs` | Deep research orchestration complete |
 | `Config loaded into state` | Config values written to session state |
 | `Email sent: message_id=X` | Newsletter delivered successfully |
 | `Dry run: newsletter saved to X` | HTML saved (dry-run mode) |

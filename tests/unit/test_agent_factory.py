@@ -132,7 +132,7 @@ class TestBuildResearchPhase:
 
         assert actual_keys == expected_keys
 
-    def test_deep_search_depth_reflected_in_instruction(self):
+    def test_deep_search_depth_produces_orchestrator(self):
         config = _make_config([
             {"name": "AI", "query": "AI news", "search_depth": "deep"}
         ])
@@ -140,8 +140,9 @@ class TestBuildResearchPhase:
 
         topic_agent = phase.sub_agents[0]
         google_agent = topic_agent.sub_agents[0]
-        instruction_lower = google_agent.instruction.lower()
-        assert "comprehensive" in instruction_lower or "deep" in instruction_lower
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        assert isinstance(google_agent, DeepResearchOrchestrator)
+        assert google_agent.search_depth == "deep"
 
     def test_mixed_sources_across_topics(self):
         config = _make_config([
@@ -155,6 +156,78 @@ class TestBuildResearchPhase:
         assert len(phase.sub_agents[0].sub_agents) == 1  # google only
         assert len(phase.sub_agents[1].sub_agents) == 1  # perplexity only
         assert len(phase.sub_agents[2].sub_agents) == 2  # both
+
+
+class TestDeepModeResearchPhase:
+    """Verify deep-mode topics produce DeepResearchOrchestrator. T12-10."""
+
+    def test_deep_mode_google_produces_orchestrator(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        config = _make_config([
+            {"name": "AI", "query": "AI news", "search_depth": "deep", "sources": ["google_search"]}
+        ])
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        assert agent.provider == "google"
+
+    def test_deep_mode_perplexity_produces_orchestrator(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        config = _make_config([
+            {"name": "AI", "query": "AI news", "search_depth": "deep", "sources": ["perplexity"]}
+        ])
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        assert agent.provider == "perplexity"
+
+    def test_standard_mode_still_produces_llm_agent(self):
+        config = _make_config([
+            {"name": "AI", "query": "AI news", "search_depth": "standard"}
+        ])
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, LlmAgent)
+
+    def test_mixed_deep_and_standard_topics(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        config = _make_config([
+            {"name": "Deep Topic", "query": "deep q", "search_depth": "deep", "sources": ["google_search"]},
+            {"name": "Standard Topic", "query": "std q", "search_depth": "standard", "sources": ["google_search"]},
+        ])
+        phase = build_research_phase(config)
+        deep_agent = phase.sub_agents[0].sub_agents[0]
+        std_agent = phase.sub_agents[1].sub_agents[0]
+        assert isinstance(deep_agent, DeepResearchOrchestrator)
+        assert isinstance(std_agent, LlmAgent)
+
+    def test_orchestrator_receives_max_research_rounds(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        topics = [TopicConfig(name="AI", query="AI news", search_depth="deep", sources=["google_search"])]
+        config = NewsletterConfig(
+            newsletter=NewsletterSettings(
+                title="Test", schedule="0 0 * * 0", recipient_email="a@b.com"
+            ),
+            settings=AppSettings(max_research_rounds=5),
+            topics=topics,
+        )
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        assert agent.max_rounds == 5
+
+    def test_deep_mode_both_providers(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        config = _make_config([
+            {"name": "AI", "query": "AI news", "search_depth": "deep"}
+        ])
+        phase = build_research_phase(config)
+        topic_agent = phase.sub_agents[0]
+        assert len(topic_agent.sub_agents) == 2
+        assert isinstance(topic_agent.sub_agents[0], DeepResearchOrchestrator)
+        assert topic_agent.sub_agents[0].provider == "google"
+        assert isinstance(topic_agent.sub_agents[1], DeepResearchOrchestrator)
+        assert topic_agent.sub_agents[1].provider == "perplexity"
 
 
 class TestAgentTools:

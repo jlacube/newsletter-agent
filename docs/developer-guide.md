@@ -18,9 +18,11 @@ NewsletterAgent/
     prompts/
       research_google.py     # Google Search agent instruction builder
       research_perplexity.py # Perplexity agent instruction builder
+      query_expansion.py     # Query expansion prompt for deep research
       synthesis.py           # Synthesis agent instruction builder
     tools/
       perplexity_search.py   # Perplexity Sonar API FunctionTool
+      deep_research.py       # DeepResearchOrchestrator (multi-round deep search)
       research_utils.py      # Research output parsing utilities
       synthesis_utils.py     # Synthesis JSON parsing utilities
       sanitizer.py           # HTML sanitization (markdown + nh3)
@@ -74,7 +76,7 @@ cp .env.example .env
 | `SequentialAgent` | Workflow | Runs sub-agents in order (pipeline root, per-topic research, output phase) |
 | `ParallelAgent` | Workflow | Runs sub-agents concurrently (research phase across topics) |
 | `LlmAgent` | Model | Calls Gemini with instructions and tools (search agents, synthesizer) |
-| `BaseAgent` | Custom | Programmatic logic without LLM calls (ConfigLoader, Formatter, Delivery, etc.) |
+| `BaseAgent` | Custom | Programmatic logic without LLM calls (ConfigLoader, Formatter, Delivery, DeepResearchOrchestrator, etc.) |
 
 ### Session State
 
@@ -207,7 +209,7 @@ Shared fixtures are defined in `tests/conftest.py`:
 ### Naming
 
 - Agent classes: `{Name}Agent` (e.g., `FormatterAgent`, `DeliveryAgent`)
-- State keys: `snake_case` with namespace prefix (e.g., `config_dry_run`, `research_0_google`)
+- State keys: `snake_case` with namespace prefix (e.g., `config_dry_run`, `research_0_google`, `deep_queries_0_google`)
 - Factory functions: `build_{thing}` (e.g., `build_pipeline`, `build_research_phase`)
 - Private helpers: `_{name}` (e.g., `_normalize_sources`, `_strip_html`)
 
@@ -245,7 +247,8 @@ To add a new search provider (e.g., Tavily, Brave Search):
 1. Create `newsletter_agent/tools/{provider}_search.py` with a function matching the `FunctionTool` pattern
 2. Create `newsletter_agent/prompts/research_{provider}.py` with an instruction builder
 3. Add the provider name to `TopicConfig.sources` in `config/schema.py`
-4. Update `build_research_phase()` in `agent.py` to create agents for the new provider
+4. Update `build_research_phase()` in `agent.py` to create agents for the new provider (both standard and deep modes)
+5. Update `DeepResearchOrchestrator._make_search_agent()` in `tools/deep_research.py` to support the new provider
 5. Update `ResearchValidatorAgent` provider list construction
 6. Add unit tests in `tests/unit/test_{provider}_search.py`
 

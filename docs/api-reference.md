@@ -183,6 +183,41 @@ Delivers the newsletter via email or saves to disk.
 - `{"status": "failed", "fallback_file": "...", "error": "..."}` -- All failed, saved as fallback
 - `{"status": "aborted", "error": "...", "fallback_file": "..."}` -- Pipeline aborted
 
+### `DeepResearchOrchestrator`
+
+Custom BaseAgent that orchestrates multi-round deep research for topics with `search_depth: "deep"`. Replaces the single LlmAgent in the research phase.
+
+**Module**: `newsletter_agent.tools.deep_research`
+
+**Parameters**:
+- `topic_idx` (int) -- Topic index in config
+- `provider` (str) -- `"google"` or `"perplexity"`
+- `query` (str) -- Original topic search query
+- `topic_name` (str) -- Topic display name
+- `max_rounds` (int) -- Maximum research rounds (from `settings.max_research_rounds`)
+- `search_depth` (str) -- Always `"deep"` when this agent is used
+- `model` (str) -- LLM model name (e.g., `"gemini-2.5-flash"`)
+- `tools` (list) -- Search tools for sub-agents (google_search or search_perplexity)
+
+**Behavior**:
+1. When `max_rounds > 1`: invokes an internal QueryExpanderAgent (LlmAgent) to generate `max_rounds - 1` query variants
+2. Executes up to `max_rounds` search rounds (round 0 uses original query, subsequent rounds use variants)
+3. After each round, extracts URLs and tracks accumulation
+4. Exits early if 15+ unique URLs are accumulated
+5. Merges all round results (summaries and deduplicated sources) into a single output
+6. Writes merged result to `research_{idx}_{provider}` (same key as standard mode)
+7. Cleans up all intermediate state keys
+
+**State keys written** (intermediate, cleaned up after merge):
+- `deep_queries_{idx}_{provider}` -- Query expansion output
+- `deep_research_latest_{idx}_{provider}` -- Latest round output
+- `deep_query_current_{idx}_{provider}` -- Current round query
+- `research_{idx}_{provider}_round_{N}` -- Per-round output
+- `deep_urls_accumulated_{idx}_{provider}` -- Accumulated URL list
+
+**State keys written** (final):
+- `research_{idx}_{provider}` (str) -- Merged research output (same as standard mode)
+
 ## Tool Functions
 
 ### `search_perplexity(query: str, search_depth: str) -> dict`
@@ -231,7 +266,7 @@ Builds the complete agent pipeline from a validated config. Returns the root `Se
 
 ### `build_research_phase(config: NewsletterConfig) -> ParallelAgent`
 
-Builds the research phase `ParallelAgent` with one `SequentialAgent` per topic.
+Builds the research phase `ParallelAgent` with one `SequentialAgent` per topic. For topics with `search_depth: "standard"`, creates `LlmAgent` instances per provider. For topics with `search_depth: "deep"`, creates `DeepResearchOrchestrator` instances per provider that perform multi-round search with query expansion.
 
 ### `build_synthesis_agent(config: NewsletterConfig) -> LlmAgent`
 

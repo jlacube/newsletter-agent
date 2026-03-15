@@ -71,16 +71,22 @@ Each topic is a mapping with these fields:
 |-------|------|----------|---------|-------------|-------------|
 | `name` | string | Yes | -- | 1-100 chars, unique | Display name for the topic section |
 | `query` | string | Yes | -- | 1-500 chars | Natural language search query |
-| `search_depth` | string | No | `"standard"` | `"standard"` or `"deep"` | Controls model selection and prompt detail |
+| `search_depth` | string | No | `"standard"` | `"standard"` or `"deep"` | Controls research mode: standard uses single-round search, deep uses multi-round search with query expansion |
 | `sources` | list | No | Both providers | `"google_search"`, `"perplexity"` | Which search providers to use |
 | `timeframe` | string | No | Inherits from settings | See Timeframe Values | Per-topic timeframe override |
 
 ### Search Depth Behavior
 
-| Depth | Google Search | Perplexity Model | Use Case |
-|-------|--------------|-----------------|----------|
-| `standard` | Standard instruction prompt | `sonar` | Quick research, news summaries |
-| `deep` | Detailed multi-faceted prompt | `sonar-pro` | Comprehensive analysis, trend reports |
+| Depth | Google Search | Perplexity Model | Research Rounds | Query Expansion | Use Case |
+|-------|--------------|-----------------|----------------|----------------|----------|
+| `standard` | Standard instruction prompt | `sonar` | 1 (single round) | No | Quick research, news summaries |
+| `deep` | Detailed multi-faceted prompt | `sonar-pro` | Up to `max_research_rounds` | Yes (LLM-generated variants) | Comprehensive analysis, trend reports |
+
+When `search_depth: "deep"`, each provider runs a `DeepResearchOrchestrator` that:
+1. Generates `max_research_rounds - 1` alternative query angles via LLM
+2. Executes multiple search rounds with varied queries
+3. Tracks unique URLs across rounds and exits early when 15+ are collected
+4. Merges all round results into a single research output for synthesis
 
 ### Timeframe Values
 

@@ -24,6 +24,7 @@ from newsletter_agent.prompts.research_google import get_google_search_instructi
 from newsletter_agent.prompts.research_perplexity import get_perplexity_search_instruction
 from newsletter_agent.prompts.synthesis import get_synthesis_instruction
 from newsletter_agent.tools.delivery import DeliveryAgent
+from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
 from newsletter_agent.tools.formatter import FormatterAgent
 from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool, search_perplexity
@@ -75,29 +76,55 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
             )
 
         if "google_search" in topic.sources:
-            google_agent = LlmAgent(
-                name=f"GoogleSearcher_{idx}",
-                model=_RESEARCH_MODEL,
-                instruction=get_google_search_instruction(
-                    topic.name, topic.query, topic.search_depth,
-                    timeframe_instruction=tf_instruction,
-                ),
-                tools=[google_search],
-                output_key=f"research_{idx}_google",
-            )
+            if topic.search_depth == "deep":
+                google_agent = DeepResearchOrchestrator(
+                    name=f"DeepResearch_{idx}_google",
+                    topic_idx=idx,
+                    provider="google",
+                    query=topic.query,
+                    topic_name=topic.name,
+                    max_rounds=config.settings.max_research_rounds,
+                    search_depth=topic.search_depth,
+                    model=_RESEARCH_MODEL,
+                    tools=[google_search],
+                )
+            else:
+                google_agent = LlmAgent(
+                    name=f"GoogleSearcher_{idx}",
+                    model=_RESEARCH_MODEL,
+                    instruction=get_google_search_instruction(
+                        topic.name, topic.query, topic.search_depth,
+                        timeframe_instruction=tf_instruction,
+                    ),
+                    tools=[google_search],
+                    output_key=f"research_{idx}_google",
+                )
             sub_agents.append(google_agent)
 
         if "perplexity" in topic.sources:
-            perplexity_agent = LlmAgent(
-                name=f"PerplexitySearcher_{idx}",
-                model=_RESEARCH_MODEL,
-                instruction=get_perplexity_search_instruction(
-                    topic.name, topic.query, topic.search_depth,
-                    timeframe_instruction=tf_instruction,
-                ),
-                tools=[_make_perplexity_tool(pf)],
-                output_key=f"research_{idx}_perplexity",
-            )
+            if topic.search_depth == "deep":
+                perplexity_agent = DeepResearchOrchestrator(
+                    name=f"DeepResearch_{idx}_perplexity",
+                    topic_idx=idx,
+                    provider="perplexity",
+                    query=topic.query,
+                    topic_name=topic.name,
+                    max_rounds=config.settings.max_research_rounds,
+                    search_depth=topic.search_depth,
+                    model=_RESEARCH_MODEL,
+                    tools=[_make_perplexity_tool(pf)],
+                )
+            else:
+                perplexity_agent = LlmAgent(
+                    name=f"PerplexitySearcher_{idx}",
+                    model=_RESEARCH_MODEL,
+                    instruction=get_perplexity_search_instruction(
+                        topic.name, topic.query, topic.search_depth,
+                        timeframe_instruction=tf_instruction,
+                    ),
+                    tools=[_make_perplexity_tool(pf)],
+                    output_key=f"research_{idx}_perplexity",
+                )
             sub_agents.append(perplexity_agent)
 
         if sub_agents:

@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP15 - Config Fields & Prompt Templates
@@ -272,6 +272,7 @@ This work package adds the foundational building blocks that WP16 (the orchestra
 - 2025-07-25T16:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL, 0 WARNs) -- awaiting remediation
 - 2026-03-15T12:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01)
 - 2026-03-15T12:05:00Z - coder - lane=for_review - FB-01 remediated, resubmitted for review
+- 2025-07-25T17:00:00Z - reviewer - lane=done - Verdict: Approved (0 FAILs, 0 WARNs) — re-review passed
 
 ## Review
 
@@ -317,3 +318,27 @@ Changes Required. Code implementation is fully correct and validated by downstre
 | Spec Adherence | 2 | 0 | 0 |
 | Test Coverage | 1 | 0 | 0 |
 | Encoding (UTF-8) | 1 | 0 | 0 |
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-25
+> **Verdict**: Approved
+> **Scope**: FB-01 only (process compliance checklist)
+
+### Summary
+
+Approved. FB-01 resolved: per-task Spec Compliance Checklists added for all 7 tasks (T15-01 through T15-07), each with all items checked off. No regressions — code and tests were already fully compliant in Round 1. Zero FAILs, zero WARNs.
+
+### Findings
+
+#### PASS - Process Compliance (FB-01 re-check)
+- **Requirement**: Coder Step 2b — per-task Spec Compliance Checklist
+- **Status**: Compliant
+- **Detail**: All 7 tasks have Spec Compliance Checklist subsections with every item checked
+- **Evidence**: [WP15-config-and-prompts.md](plans/WP15-config-and-prompts.md) lines 69–248
+
+### Statistics (Re-Review)
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 1 | 0 | 0 |

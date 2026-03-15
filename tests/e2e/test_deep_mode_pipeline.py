@@ -7,6 +7,7 @@ accumulation, source refinement, and HTML output generation.
 Spec refs: Section 11.4, SC-002, SC-003, SC-004 (WP14 T14-04).
 """
 
+import logging
 import re
 import pytest
 from unittest.mock import MagicMock, patch
@@ -263,3 +264,68 @@ class TestE2EDeepModePipeline:
         assert 5 <= len(final_urls) <= 10, (
             f"Expected 5-10 sources after refinement, got {len(final_urls)}"
         )
+
+    @pytest.mark.asyncio
+    async def test_adaptive_research_logs_contain_entries(self, tmp_path, caplog):
+        """Section 11.4: Log output contains [AdaptiveResearch] entries for
+        planning, per-round analysis, and completion."""
+        config = _deep_pipeline_config(tmp_path, max_rounds=2)
+        phase = build_research_phase(config)
+        topic0 = phase.sub_agents[0]
+        orch = topic0.sub_agents[0]  # DeepResearchOrchestrator
+
+        ctx = MagicMock()
+        ctx.session.state = {}
+        call_count = 0
+
+        async def mock_run_async(inner_ctx):
+            nonlocal call_count
+            key = f"deep_research_latest_{orch.topic_idx}_{orch.provider}"
+            inner_ctx.session.state[key] = _research_text_with_n_urls(
+                call_count, "https://example.com", count=3
+            )
+            call_count += 1
+            return
+            yield
+
+        def patched_make(round_idx, query):
+            agent = MagicMock()
+            agent.run_async = mock_run_async
+            return agent
+
+        async def mock_planning(inner_ctx):
+            return ("AI breakthroughs query", ["recent developments"], [])
+
+        analysis_idx = [0]
+
+        async def mock_analysis(*args, **kwargs):
+            idx = analysis_idx[0]
+            analysis_idx[0] += 1
+            if idx == 0:
+                return (
+                    {"findings_summary": "Round 0 findings", "knowledge_gaps": ["gap"],
+                     "coverage_assessment": "partial", "saturated": False,
+                     "next_query": "follow-up", "next_query_rationale": "more"},
+                    [],
+                )
+            return (
+                {"findings_summary": "Final", "knowledge_gaps": [],
+                 "coverage_assessment": "comprehensive", "saturated": True,
+                 "next_query": "", "next_query_rationale": "done"},
+                [],
+            )
+
+        with patch.object(orch, "_make_search_agent", side_effect=patched_make), \
+             patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
+             caplog.at_level(logging.INFO):
+            async for _ in orch._run_async_impl(ctx):
+                pass
+
+        log_text = " ".join(caplog.messages)
+        # Verify [AdaptiveResearch] entries for per-round info and completion
+        assert "[AdaptiveResearch]" in log_text, (
+            f"Expected [AdaptiveResearch] log entries, got: {caplog.messages}"
+        )
+        assert "round 0" in log_text, "Expected round 0 log entry"
+        assert "saturated" in log_text.lower(), "Expected saturation/completion log entry"

@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP12 - Multi-Round Deep Research Orchestrator
@@ -320,6 +320,8 @@ This work package implements the core multi-round deep research capability: a cu
 - 2026-03-15T12:00:00Z - coder - lane=doing - Started implementation of WP12
 - 2026-03-15T18:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
 - 2026-03-15T19:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL) -- awaiting remediation
+- 2026-03-15T20:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03)
+- 2026-03-15T21:00:00Z - coder - lane=for_review - All FB items resolved, re-submitted for review
 
 ## Self-Review (T12-01 through T12-11)
 
@@ -380,9 +382,9 @@ Changes Required. One FAIL: query expansion events are swallowed instead of yiel
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: `_expand_queries()` in `newsletter_agent/tools/deep_research.py` (lines 170-183) swallows all events from the QueryExpanderAgent with `async for event in expander.run_async(ctx): pass`. The T12-04 acceptance criteria states: "Orchestrator invokes QueryExpanderAgent via `async for event in self._query_expander.run_async(ctx)` and yields all events". The spec Section 4.3 step 2 also specifies the `async for event in query_expander.run_async(ctx)` invocation pattern. Refactor so that query expansion events are yielded from `_run_async_impl`. Either inline the expansion logic into `_run_async_impl` or convert `_expand_queries` into an async generator that yields events and have the caller yield from it.
-- [ ] **FB-02**: Add a test in `tests/unit/test_deep_research.py` that verifies query expansion events are yielded (not just search round events). Currently no test checks for expansion event propagation.
-- [ ] **FB-03**: `docs/user-guide.md` does not document `max_research_rounds` in its settings section or configuration examples. Add it so users know how to configure the number of research rounds.
+- [x] **FB-01**: `_expand_queries()` in `newsletter_agent/tools/deep_research.py` (lines 170-183) swallows all events from the QueryExpanderAgent with `async for event in expander.run_async(ctx): pass`. The T12-04 acceptance criteria states: "Orchestrator invokes QueryExpanderAgent via `async for event in self._query_expander.run_async(ctx)` and yields all events". The spec Section 4.3 step 2 also specifies the `async for event in query_expander.run_async(ctx)` invocation pattern. Refactor so that query expansion events are yielded from `_run_async_impl`. Either inline the expansion logic into `_run_async_impl` or convert `_expand_queries` into an async generator that yields events and have the caller yield from it.
+- [x] **FB-02**: Add a test in `tests/unit/test_deep_research.py` that verifies query expansion events are yielded (not just search round events). Currently no test checks for expansion event propagation.
+- [x] **FB-03**: `docs/user-guide.md` does not document `max_research_rounds` in its settings section or configuration examples. Add it so users know how to configure the number of research rounds.
 
 ### Findings
 

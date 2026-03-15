@@ -294,3 +294,114 @@ Cross-WP consistency audit performed. No inconsistencies found. Key validations:
 | T14-08 | Performance benchmark for deep research | WP14 | No |
 | T14-09 | Security verification | WP14 | Yes |
 | T14-10 | Verify existing entry points remain functional | WP14 | Yes |
+
+---
+
+## Enhancement: Adaptive Deep Research
+
+> **Spec**: `specs/002-adaptive-deep-research.spec.md` (v1.0)
+> **Added**: 2026-03-15
+
+### Enhancement Work Packages
+
+| ID | Title | Priority | Status | Depends On | Parallelisable |
+|----|-------|----------|--------|-----------|----------------|
+| [WP15](WP15-config-and-prompts.md) | Config Fields & Prompt Templates | P0 | Not Started | WP11-WP14 (base system) | No |
+| [WP16](WP16-adaptive-orchestrator.md) | Adaptive Research Orchestrator | P1 | Not Started | WP15 | No |
+| [WP17](WP17-acceptance-integration-testing.md) | Acceptance & Integration Testing | P1 | Not Started | WP16 | No |
+| [WP18](WP18-quality-and-docs.md) | Quality, Performance & Documentation | P2 | Not Started | WP17 | No |
+
+### Enhancement MVP Scope
+
+Three work packages constitute the minimum releasable increment: **WP15, WP16, WP17**.
+
+- **WP15** (P0) delivers the foundational config fields (`max_searches_per_topic`, `min_research_rounds`) and prompt templates (`reasoning.py`) that the adaptive orchestrator depends on.
+- **WP16** (P1) delivers the core adaptive research loop (US-ADR-01, US-ADR-02): replaces fan-out query expansion with Plan-Search-Analyze-Decide cycle featuring PlanningAgent, AnalysisAgent, saturation detection, and configurable exit criteria.
+- **WP17** (P1) delivers the quality gate: 10 BDD acceptance scenarios, integration tests, backward compatibility verification, and coverage thresholds.
+
+**WP18** (P2) is post-MVP: performance benchmarks, security tests, and documentation updates. Can be deferred without affecting functionality.
+
+### Enhancement Dependency & Execution Summary
+
+- **Prerequisite**: WP01-WP14 must all be complete (base system + prior enhancements including the deep research orchestrator being replaced).
+- **Sequence**: WP15 -> WP16 -> WP17 -> WP18
+- **Parallelization**: Strictly sequential. Each WP depends on the prior. Within WPs, some tasks are parallelizable (marked in WP files).
+- **Critical path**: WP15 (T15-01) -> WP16 (T16-04, T16-05, T16-06) -> WP17 (T17-01) -> WP18
+
+### Enhancement Sequencing Notes
+
+**WP15 (Config & Prompts)** must be completed first. It provides:
+1. `max_searches_per_topic` and `min_research_rounds` config fields needed by WP16
+2. `get_planning_instruction` and `get_analysis_instruction` prompt functions needed by WP16
+3. Deprecation of `query_expansion.py` (still importable but no longer called)
+
+Within WP15, the config tasks (T15-01/T15-02) and prompt tasks (T15-03/T15-04) are independent and can be worked in parallel.
+
+**WP16 (Adaptive Orchestrator)** is the largest WP with 11 tasks. It rewrites `DeepResearchOrchestrator._run_async_impl` from a fan-out approach to an adaptive reasoning loop. Key changes:
+- Removes `_expand_queries` and `_parse_variants` methods
+- Removes 15-URL threshold early exit
+- Adds PlanningAgent and AnalysisAgent LlmAgent sub-agents (created dynamically per invocation)
+- Adds AdaptiveContext reasoning chain with persistence
+- Adds configurable saturation detection with `min_research_rounds` safety minimum
+
+Within WP16, T16-02 (PlanningAgent) and T16-03 (AnalysisAgent) can be developed in parallel. T16-04 integrates them into the main loop.
+
+**WP17 (Testing)** validates the MVP. It implements all 10 BDD scenarios from the spec, integration tests with mocked tools, backward compatibility checks, and coverage verification.
+
+**WP18 (Quality & Docs)** is post-MVP polish. All 5 tasks are independent and can be worked in parallel.
+
+### OQ Resolutions (Spec v1.0)
+
+All three open questions were resolved before planning:
+
+- **OQ-ADR-1 (Full vs. condensed search results)**: Full text. The latest round's full search results are passed to the AnalysisAgent. Prior rounds use condensed summaries. Token cost is acceptable with gemini-2.5-flash's 1M context window.
+- **OQ-ADR-2 (Reasoning chain persistence)**: Persisted. The AdaptiveContext reasoning chain is preserved at `adaptive_reasoning_chain_{idx}_{provider}` state key after merge (not cleaned up). Enables post-run quality analysis.
+- **OQ-ADR-3 (Configurable safety minimum)**: Configurable. New `min_research_rounds` field (default: 2, range: 1-3) replaces the hard-coded safety minimum of 2 rounds before saturation can trigger early exit.
+
+### Consistency Notes
+
+Cross-WP consistency audit performed on 2026-03-15. No inconsistencies found. Key validations:
+- `max_searches_per_topic` type and constraints: `int | None = Field(default=None, ge=1, le=15)` in WP15 T15-01, consumed as `max_searches: int = 3` in WP16 T16-01, passed from config in WP16 T16-09
+- `min_research_rounds` type and constraints: `int = Field(default=2, ge=1, le=3)` in WP15 T15-01, consumed as `min_rounds: int = 2` in WP16 T16-01, passed from config in WP16 T16-09
+- PlanningOutput JSON fields (`query_intent`, `key_aspects`, `initial_search_query`, `search_rationale`): prompt defines them in WP15 T15-03, parser validates them in WP16 T16-02
+- AnalysisOutput JSON fields (`findings_summary`, `knowledge_gaps`, `coverage_assessment`, `saturated`, `next_query`, `next_query_rationale`): prompt defines them in WP15 T15-04, parser validates them in WP16 T16-03
+- `get_planning_instruction` and `get_analysis_instruction` function signatures: created in WP15, called in WP16 -- signatures match
+- Coverage thresholds: 80% code, 90% branch consistently stated across WP15 T15-07, WP17 T17-07
+- State key `research_{idx}_{provider}` final output format (SUMMARY + SOURCES) preserved unchanged across WP16 merge logic
+- All FRs from spec traceability matrix (Section 16) assigned to exactly one task, no orphans, no duplicates
+- Dependency graph: WP15 -> WP16 -> WP17 -> WP18, strictly linear, no circular dependencies
+
+### Enhancement Task Index
+
+| Task ID | Summary | Work Package | Parallel? |
+|---------|---------|--------------|----------|
+| T15-01 | Add max_searches_per_topic and min_research_rounds to AppSettings | WP15 | No |
+| T15-02 | Unit tests for new config fields | WP15 | No |
+| T15-03 | Create reasoning.py with get_planning_instruction | WP15 | Yes |
+| T15-04 | Add get_analysis_instruction to reasoning.py | WP15 | No |
+| T15-05 | Deprecate query_expansion.py | WP15 | Yes |
+| T15-06 | Unit tests for prompt template functions | WP15 | No |
+| T15-07 | Coverage verification for WP15 | WP15 | No |
+| T16-01 | Update orchestrator constructor and remove URL threshold | WP16 | No |
+| T16-02 | Implement PlanningAgent creation and invocation | WP16 | Yes |
+| T16-03 | Implement AnalysisAgent creation and invocation | WP16 | Yes |
+| T16-04 | Rewrite _run_async_impl with adaptive loop | WP16 | No |
+| T16-05 | Implement exit criteria and saturation logic | WP16 | No |
+| T16-06 | Implement AdaptiveContext and reasoning chain persistence | WP16 | No |
+| T16-07 | Implement duplicate query detection | WP16 | No |
+| T16-08 | Update merge and cleanup for new state keys | WP16 | No |
+| T16-09 | Update agent.py factory to pass new params | WP16 | No |
+| T16-10 | Unit tests for adaptive orchestrator | WP16 | No |
+| T16-11 | Update existing unit tests for API changes | WP16 | No |
+| T17-01 | Update existing BDD tests for adaptive behavior | WP17 | No |
+| T17-02 | Add BDD scenarios: saturation and early exit paths | WP17 | Yes |
+| T17-03 | Add BDD scenarios: single-round, standard mode, fallbacks | WP17 | Yes |
+| T17-04 | Integration tests: full adaptive flow with mocked tools | WP17 | No |
+| T17-05 | Update backward compatibility tests | WP17 | No |
+| T17-06 | End-to-end test with dry_run mode | WP17 | No |
+| T17-07 | Coverage threshold verification | WP17 | No |
+| T18-01 | Performance benchmarks: per-round latency | WP18 | Yes |
+| T18-02 | Security tests: prompt injection resistance | WP18 | Yes |
+| T18-03 | Update configuration-guide.md | WP18 | Yes |
+| T18-04 | Update deployment-guide.md and .env.example | WP18 | Yes |
+| T18-05 | Update README.md with adaptive research overview | WP18 | Yes |

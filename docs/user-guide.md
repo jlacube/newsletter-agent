@@ -62,6 +62,7 @@ newsletter:
 settings:
   dry_run: true                             # true = save HTML only, false = send email
   output_dir: "output/"
+  max_research_rounds: 3                    # 1-5, rounds per provider for deep topics
 
 topics:
   - name: "AI Frameworks"

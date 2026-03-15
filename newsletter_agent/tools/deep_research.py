@@ -83,6 +83,11 @@ class DeepResearchOrchestrator(BaseAgent):
             for ev in plan_events:
                 yield ev
             plan_intent = initial_query  # reuse for context
+            logger.info(
+                "[AdaptiveResearch] Topic %s/%s: Plan - intent: '%s', aspects: [%s], initial query: '%s'",
+                self.topic_name, prov, plan_intent,
+                ", ".join(key_aspects), initial_query,
+            )
         else:
             initial_query = self.query
             key_aspects = []
@@ -133,8 +138,8 @@ class DeepResearchOrchestrator(BaseAgent):
             accumulated_urls.update(new_urls)
 
             logger.info(
-                "[AdaptiveResearch] Topic %s/%s round %d: %d new URLs, %d total",
-                self.topic_name, prov, round_idx,
+                "[AdaptiveResearch] Topic %s/%s round %d: searched '%s', %d new URLs, %d total",
+                self.topic_name, prov, round_idx, current_query,
                 len(accumulated_urls) - prev_total, len(accumulated_urls),
             )
 
@@ -180,6 +185,17 @@ class DeepResearchOrchestrator(BaseAgent):
                 "coverage_assessment": analysis["coverage_assessment"],
                 "saturated": analysis["saturated"],
             })
+
+            logger.info(
+                "[AdaptiveResearch] Topic %s/%s round %d: %s. Gaps: [%s]. Saturated: %s",
+                self.topic_name, prov, round_idx,
+                analysis["findings_summary"],
+                ", ".join(analysis["knowledge_gaps"]),
+                analysis["saturated"],
+            )
+
+            # Persist adaptive_context to session state (FR-ADR-050)
+            state[f"adaptive_context_{idx}_{prov}"] = adaptive_context
 
             # --- Exit criteria ---
             if analysis["saturated"] and round_count >= self.min_rounds:
@@ -238,13 +254,20 @@ class DeepResearchOrchestrator(BaseAgent):
         # --- Cleanup intermediate keys ---
         self._cleanup_state(state, round_count)
 
+        logger.info(
+            "[AdaptiveResearch] Topic %s/%s: completed %d rounds, %d unique URLs, exit reason: %s",
+            self.topic_name, prov, round_count,
+            len(accumulated_urls), exit_reason,
+        )
+
         yield Event(
             author=self.name,
             content=types.Content(
                 parts=[types.Part(text=(
                     f"[AdaptiveResearch] Topic {self.topic_name}/{prov}: "
-                    f"completed {round_count} rounds ({exit_reason}), "
-                    f"{len(accumulated_urls)} unique URLs"
+                    f"completed {round_count} rounds, "
+                    f"{len(accumulated_urls)} unique URLs, "
+                    f"exit reason: {exit_reason}"
                 ))],
             ),
         )

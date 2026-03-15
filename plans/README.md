@@ -190,3 +190,107 @@ WP08 must wait for both WP06 and WP07 because it tests combined behavior, backwa
 | T08-09 | Security test: SSRF prevention in pipeline context | WP08 | Yes |
 | T08-10 | Documentation: README and configuration examples | WP08 | Yes |
 | T08-11 | Test configuration and CI integration | WP08 | Yes |
+
+---
+
+## Enhancement: Autonomous Execution & Multi-Round Deep Research
+
+> **Spec**: `specs/autonomous-deep-research.spec.md` (v1.1)
+> **Added**: 2026-03-15
+
+### Enhancement Work Packages
+
+| ID | Title | Priority | Status | Depends On | Parallelisable |
+|----|-------|----------|--------|-----------|----------------|
+| [WP11](WP11-config-and-cli-runner.md) | Config Extension & Autonomous CLI Runner | P0/P1 | Not Started | WP01-WP10 (base system) | Yes |
+| [WP12](WP12-deep-research-orchestrator.md) | Multi-Round Deep Research Orchestrator | P1 | Not Started | WP11 | No |
+| [WP13](WP13-source-refinement.md) | Deep Research Source Refinement | P1 | Not Started | WP12 | No |
+| [WP14](WP14-integration-testing.md) | Integration Testing & Backward Compatibility | P1 | Not Started | WP11, WP12, WP13 | No |
+
+### Enhancement MVP Scope
+
+All four enhancement work packages constitute the minimum releasable increment: **WP11, WP12, WP13, WP14**.
+
+- **WP11** (P0/P1) delivers the foundation config field (`max_research_rounds`) and the autonomous CLI runner (US-01). The CLI runner is independently demonstrable.
+- **WP12** (P1) delivers the core multi-round deep research capability (US-02): `DeepResearchOrchestrator` custom BaseAgent with query expansion, multiple search rounds, URL tracking, early exit, and round merging.
+- **WP13** (P1) delivers LLM-based source refinement (US-04): `DeepResearchRefinerAgent` selects 5-10 best sources per provider per deep-mode topic after link verification.
+- **WP14** (P1) delivers the quality gate: integration tests, E2E tests, backward compatibility verification (SC-005, SC-006), performance benchmarks, and security checks.
+
+### Enhancement Dependency & Execution Summary
+
+- **Prerequisite**: WP01-WP10 must all be complete (base system + prior enhancements).
+- **Sequence**: WP11 -> WP12 -> WP13 -> WP14
+- **Parallelization**: Limited. WP11's CLI runner (T11-03 to T11-07) is independent of WP12's deep research, but WP12 depends on WP11's config field (T11-01). Within WPs, some tasks are parallelizable (marked [P]).
+- **Critical path**: WP11 (T11-01) -> WP12 (T12-01 through T12-11) -> WP13 -> WP14
+
+### Enhancement Sequencing Notes
+
+**WP11 (Config & CLI Runner)** must be completed first. It provides:
+1. `max_research_rounds` config field needed by WP12
+2. The `__main__.py` CLI runner needed by WP14 E2E tests
+
+Within WP11, the config field (T11-01/T11-02) and CLI runner (T11-03 to T11-07) are independent tracks that can be worked in parallel.
+
+**WP12 (Deep Research Orchestrator)** is the largest WP with 11 tasks. It modifies `build_research_phase()` in `agent.py` to produce `DeepResearchOrchestrator` agents for deep-mode topics. Key architectural decision: uses ADK custom BaseAgent pattern (not LoopAgent) per OQ-1/OQ-2 resolution in spec v1.1.
+
+**WP13 (Source Refinement)** depends on WP12 because it refines the multi-round output. It modifies `build_pipeline()` in `agent.py` -- a different function from WP12's changes, but logically sequential since the refiner processes multi-round results.
+
+**WP14 (Integration & Testing)** is the final quality gate. It cannot start until all features are implemented. It also verifies backward compatibility (SC-005: standard mode unchanged, SC-006: all existing tests pass).
+
+### OQ Resolutions (Spec v1.1)
+
+Both open questions from the original spec were resolved before planning:
+
+- **OQ-1 (output_key)**: Confirmed ADK `output_key` is fixed per LlmAgent at construction time. Resolved by using DeepResearchOrchestrator which reads state directly after sub-agent invocation -- no output_key workaround needed.
+- **OQ-2 (escalation)**: Confirmed `tool_context.actions.escalate` is only available in LlmAgent tool functions, not from BaseAgent. Resolved by replacing LoopAgent + RoundAccumulator + ResearchCombiner with a single DeepResearchOrchestrator custom BaseAgent that uses Python `break` for early exit.
+
+### Consistency Notes
+
+Cross-WP consistency audit performed. No inconsistencies found. Key validations:
+- State key `research_{idx}_{provider}` format consistent between WP12 (producer) and WP13 (consumer)
+- URL extraction regex (`\[...\]\(https?://...\)`) used in both WP12 T12-06 and WP13 T13-03 -- WP13 notes it should be extracted to a shared utility in `research_utils.py`
+- `max_research_rounds` config field consistently defined in WP11 and consumed in WP12/WP14
+- All FRs from spec traceability matrix (Section 16) assigned to exactly one task across WPs
+- Coverage thresholds: 80% code, 90% branch specified in WP11 T11-08; also applies to WP12 and WP13
+
+### Enhancement Task Index
+
+| Task ID | Summary | Work Package | Parallel? |
+|---------|---------|--------------|----------|
+| T11-01 | Add max_research_rounds config field | WP11 | Yes |
+| T11-02 | Unit tests for max_research_rounds config | WP11 | No |
+| T11-03 | Create __main__.py CLI entry point module | WP11 | Yes |
+| T11-04 | Implement CLI runner main() function | WP11 | No |
+| T11-05 | Preserve existing entry points | WP11 | No |
+| T11-06 | Unit tests for CLI runner | WP11 | No |
+| T11-07 | BDD tests for CLI execution | WP11 | No |
+| T11-08 | Configure coverage thresholds for new modules | WP11 | No |
+| T12-01 | Create query expansion prompt template | WP12 | Yes |
+| T12-02 | Create deep search round prompt variants | WP12 | Yes |
+| T12-03 | Implement DeepResearchOrchestrator BaseAgent | WP12 | No |
+| T12-04 | Implement query expansion invocation | WP12 | No |
+| T12-05 | Implement multi-round search loop | WP12 | No |
+| T12-06 | Implement URL tracking and early exit | WP12 | No |
+| T12-07 | Implement round merging and state cleanup | WP12 | No |
+| T12-08 | Update build_research_phase() for conditional deep/standard | WP12 | No |
+| T12-09 | Unit tests for DeepResearchOrchestrator | WP12 | Yes |
+| T12-10 | Unit tests for pipeline structure with deep mode | WP12 | Yes |
+| T12-11 | BDD tests for multi-round deep research | WP12 | No |
+| T13-01 | Create refinement prompt template | WP13 | Yes |
+| T13-02 | Create DeepResearchRefinerAgent BaseAgent | WP13 | Yes |
+| T13-03 | Implement source extraction and count check | WP13 | No |
+| T13-04 | Implement LLM-based source evaluation | WP13 | No |
+| T13-05 | Implement in-place state update | WP13 | No |
+| T13-06 | Add DeepResearchRefinerAgent to pipeline | WP13 | No |
+| T13-07 | Unit tests for DeepResearchRefinerAgent | WP13 | No |
+| T13-08 | BDD tests for source refinement | WP13 | No |
+| T14-01 | Integration test: multi-round research with mocked tools | WP14 | Yes |
+| T14-02 | Integration test: mixed standard and deep topics | WP14 | Yes |
+| T14-03 | Integration test: CLI runner end-to-end with mocks | WP14 | Yes |
+| T14-04 | E2E test: full pipeline with deep-mode topics | WP14 | No |
+| T14-05 | E2E test: CLI subprocess execution | WP14 | No |
+| T14-06 | Backward compatibility: standard mode unchanged | WP14 | Yes |
+| T14-07 | Backward compatibility: max_research_rounds=1 | WP14 | Yes |
+| T14-08 | Performance benchmark for deep research | WP14 | No |
+| T14-09 | Security verification | WP14 | Yes |
+| T14-10 | Verify existing entry points remain functional | WP14 | Yes |

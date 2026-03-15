@@ -113,7 +113,7 @@ class TestDeepModeExecutesMultipleRounds:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["AI expert opinions", "AI data analytics"]
+            mock_expand.return_value = (["AI expert opinions", "AI data analytics"], [])
 
             mock_agent = MagicMock()
 
@@ -154,7 +154,7 @@ class TestDeepModeExecutesMultipleRounds:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["AI expert opinions", "AI data analytics"]
+            mock_expand.return_value = (["AI expert opinions", "AI data analytics"], [])
 
             def capture_make(round_idx, query):
                 captured_queries.append(query)
@@ -207,7 +207,7 @@ class TestDeepModeExecutesMultipleRounds:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["v1", "v2"]
+            mock_expand.return_value = (["v1", "v2"], [])
             mock_agent = MagicMock()
 
             async def fake_run(run_ctx):
@@ -289,7 +289,7 @@ class TestEarlyExitWhenEnoughURLs:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["v1", "v2"]
+            mock_expand.return_value = (["v1", "v2"], [])
             mock_agent = MagicMock()
 
             async def fake_run(run_ctx):
@@ -338,7 +338,7 @@ class TestEarlyExitWhenEnoughURLs:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["v1", "v2"]
+            mock_expand.return_value = (["v1", "v2"], [])
             mock_agent = MagicMock()
 
             async def fake_run(run_ctx):

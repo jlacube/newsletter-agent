@@ -354,7 +354,7 @@ class TestOrchestratorRun:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["variant 1", "variant 2"]
+            mock_expand.return_value = (["variant 1", "variant 2"], [])
 
             mock_agent = MagicMock()
 
@@ -403,7 +403,7 @@ class TestOrchestratorRun:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["v1", "v2"]
+            mock_expand.return_value = (["v1", "v2"], [])
 
             mock_agent = MagicMock()
 
@@ -439,7 +439,7 @@ class TestOrchestratorRun:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["v1"]
+            mock_expand.return_value = (["v1"], [])
             mock_agent = MagicMock()
 
             async def fake_run_async(run_ctx):
@@ -472,7 +472,7 @@ class TestOrchestratorRun:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["expanded variant 1"]
+            mock_expand.return_value = (["expanded variant 1"], [])
 
             def capture_make(round_idx, query):
                 captured_queries.append((round_idx, query))
@@ -527,7 +527,7 @@ class TestOrchestratorRun:
         with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
              patch.object(orch, "_make_search_agent") as mock_make:
 
-            mock_expand.return_value = ["v1"]
+            mock_expand.return_value = (["v1"], [])
 
             mock_agent = MagicMock()
 
@@ -577,7 +577,7 @@ class TestQueryExpansion:
             mock_instance.run_async = fake_run_async
             MockLlmAgent.return_value = mock_instance
 
-            variants = await orch._expand_queries(ctx)
+            variants, events = await orch._expand_queries(ctx)
 
         assert variants == ["v1", "v2"]
         MockLlmAgent.assert_called_once()
@@ -602,7 +602,80 @@ class TestQueryExpansion:
             mock_instance.run_async = fake_run_async
             MockLlmAgent.return_value = mock_instance
 
-            variants = await orch._expand_queries(ctx)
+            variants, events = await orch._expand_queries(ctx)
 
         assert len(variants) == 2  # max_rounds - 1
         assert all("my query" in v for v in variants)
+
+    @pytest.mark.asyncio
+    async def test_expand_queries_returns_events(self):
+        """Expansion collects and returns events from the LlmAgent (FB-02)."""
+        from google.adk.events import Event
+        from google.genai import types
+
+        orch = _make_orchestrator(max_rounds=3)
+        ctx = _make_ctx()
+
+        fake_event = Event(
+            author="QueryExpander_0_google",
+            content=types.Content(parts=[types.Part(text="expansion output")]),
+        )
+
+        with patch("newsletter_agent.tools.deep_research.LlmAgent") as MockLlmAgent:
+            mock_instance = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                run_ctx.session.state["deep_queries_0_google"] = '["v1", "v2"]'
+                yield fake_event
+
+            mock_instance.run_async = fake_run_async
+            MockLlmAgent.return_value = mock_instance
+
+            variants, events = await orch._expand_queries(ctx)
+
+        assert variants == ["v1", "v2"]
+        assert len(events) == 1
+        assert events[0] is fake_event
+
+    @pytest.mark.asyncio
+    async def test_expansion_events_yielded_from_run_async_impl(self):
+        """Events from query expansion are yielded by _run_async_impl (FB-02)."""
+        from google.adk.events import Event
+        from google.genai import types
+
+        orch = _make_orchestrator(max_rounds=2)
+        ctx = _make_ctx()
+
+        expansion_event = Event(
+            author="QueryExpander_0_google",
+            content=types.Content(parts=[types.Part(text="expansion result")]),
+        )
+
+        round_output = _research_text(
+            [("A", "https://a.com")], "Round findings"
+        )
+
+        with patch.object(orch, "_expand_queries", new_callable=AsyncMock) as mock_expand, \
+             patch.object(orch, "_make_search_agent") as mock_make:
+
+            mock_expand.return_value = (["v1"], [expansion_event])
+
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                run_ctx.session.state["deep_research_latest_0_google"] = round_output
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        # The expansion event should be among the yielded events
+        assert expansion_event in events
+        # It should appear before the round progress events
+        expansion_idx = events.index(expansion_event)
+        assert expansion_idx == 0

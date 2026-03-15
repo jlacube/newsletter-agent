@@ -65,7 +65,9 @@ class DeepResearchOrchestrator(BaseAgent):
         # --- Step 1-3: Query expansion (skip when max_rounds == 1) ---
         variants: list[str] = []
         if self.max_rounds > 1:
-            variants = await self._expand_queries(ctx)
+            variants, expander_events = await self._expand_queries(ctx)
+            for ev in expander_events:
+                yield ev
 
         # --- Step 4-5: Multi-round search loop ---
         accumulated_urls: set[str] = set()
@@ -164,8 +166,8 @@ class DeepResearchOrchestrator(BaseAgent):
 
     async def _expand_queries(
         self, ctx: InvocationContext
-    ) -> list[str]:
-        """Invoke QueryExpanderAgent and return parsed query variants."""
+    ) -> tuple[list[str], list[Event]]:
+        """Invoke QueryExpanderAgent and return parsed query variants and events."""
         idx = self.topic_idx
         prov = self.provider
         variant_count = self.max_rounds - 1
@@ -179,11 +181,12 @@ class DeepResearchOrchestrator(BaseAgent):
             output_key=f"deep_queries_{idx}_{prov}",
         )
 
+        events: list[Event] = []
         async for event in expander.run_async(ctx):
-            pass  # consume events; we only need the state output
+            events.append(event)
 
         raw = ctx.session.state.get(f"deep_queries_{idx}_{prov}", "[]")
-        return self._parse_variants(raw, variant_count)
+        return self._parse_variants(raw, variant_count), events
 
     def _parse_variants(self, raw: str, variant_count: int) -> list[str]:
         """Parse JSON array of query variants with fallback."""

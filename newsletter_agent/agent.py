@@ -134,6 +134,7 @@ class ConfigLoaderAgent(BaseAgent):
         if self.config is not None:
             state["config_newsletter_title"] = self.config.newsletter.title
             state["config_recipient_email"] = self.config.newsletter.recipient_email
+            state["config_recipient_emails"] = self.config.newsletter.recipient_emails
             state["config_dry_run"] = self.config.settings.dry_run
             state["config_output_dir"] = self.config.settings.output_dir
             state["config_verify_links"] = self.config.settings.verify_links

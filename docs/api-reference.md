@@ -36,7 +36,8 @@ Top-level configuration model.
 |-------|------|-------------|-------------|
 | `title` | `str` | 1-200 chars | Newsletter display title |
 | `schedule` | `str` | Non-empty | Cron expression |
-| `recipient_email` | `str` | Valid email format | Delivery target |
+| `recipient_emails` | `list[str]` | 1-10 unique valid emails | Delivery targets |
+| `recipient_email` | `str` | Valid email format | Deprecated alias (single recipient) |
 
 ### `AppSettings`
 
@@ -74,7 +75,8 @@ Populates session state with config values at pipeline start.
 
 **State keys written**:
 - `config_newsletter_title` (str)
-- `config_recipient_email` (str)
+- `config_recipient_emails` (list[str]) - all recipient addresses
+- `config_recipient_email` (str) - first recipient (backward compat)
 - `config_dry_run` (bool)
 - `config_output_dir` (str)
 
@@ -125,15 +127,16 @@ Renders the newsletter HTML from synthesis state.
 
 Delivers the newsletter via email or saves to disk.
 
-**Reads**: `newsletter_html`, `newsletter_metadata`, `config_dry_run`, `config_output_dir`, `config_recipient_email`
+**Reads**: `newsletter_html`, `newsletter_metadata`, `config_dry_run`, `config_output_dir`, `config_recipient_emails`, `config_recipient_email`
 
 **State keys written**:
 - `delivery_status` (dict with `status` and delivery details)
 
 **Delivery status values**:
 - `{"status": "dry_run", "output_file": "..."}` -- Saved to disk
-- `{"status": "sent", "message_id": "..."}` -- Email sent
-- `{"status": "failed", "fallback_file": "...", "error": "..."}` -- Email failed, saved as fallback
+- `{"status": "sent", "recipients": [...]}` -- All recipients succeeded
+- `{"status": "partial", "recipients": [...], "fallback_file": "..."}` -- Some recipients failed
+- `{"status": "failed", "fallback_file": "...", "error": "..."}` -- All failed, saved as fallback
 - `{"status": "aborted", "error": "...", "fallback_file": "..."}` -- Pipeline aborted
 
 ## Tool Functions
@@ -148,11 +151,13 @@ Searches the Perplexity Sonar API.
 
 **Returns**: `{"text": "...", "sources": [...], "provider": "perplexity"}` on success, or `{"error": True, "message": "...", "provider": "perplexity"}` on failure.
 
-### `send_newsletter_email(html_content: str, recipient_email: str, subject: str) -> dict`
+### `send_newsletter_email(html_content: str, recipient_email: str | list[str], subject: str) -> dict`
 
-Sends an HTML email via Gmail API.
+Sends an HTML email via Gmail API to one or more recipients.
 
-**Returns**: `{"status": "sent", "message_id": "..."}` or `{"status": "error", "error_message": "..."}`.
+**Returns** (single string): `{"status": "sent", "message_id": "..."}` or `{"status": "error", "error_message": "..."}`.
+
+**Returns** (list): `{"status": "sent"|"partial"|"failed", "recipients": [{"email": "...", "status": "...", ...}, ...]}`.
 
 ### `save_newsletter_html(html_content: str, output_dir: str, newsletter_date: str) -> str`
 

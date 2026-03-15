@@ -29,7 +29,12 @@ class DeliveryAgent(BaseAgent):
         metadata = state.get("newsletter_metadata", {})
         dry_run = state.get("config_dry_run", False)
         output_dir = state.get("config_output_dir", "output/")
-        recipient_email = state.get("config_recipient_email", "")
+        recipient_emails = state.get("config_recipient_emails") or []
+        # Backward compat: fall back to singular key
+        if not recipient_emails:
+            single = state.get("config_recipient_email", "")
+            if single:
+                recipient_emails = [single]
 
         title = metadata.get("title", "Newsletter")
         nl_date = metadata.get("date", "")
@@ -47,7 +52,7 @@ class DeliveryAgent(BaseAgent):
             )
             return
 
-        if not recipient_email:
+        if not recipient_emails:
             path = save_newsletter_html(html, output_dir, nl_date)
             state["delivery_status"] = {
                 "status": "failed",
@@ -63,27 +68,50 @@ class DeliveryAgent(BaseAgent):
             )
             return
 
-        result = send_newsletter_email(html, recipient_email, subject)
+        result = send_newsletter_email(html, recipient_emails, subject)
+
         if result["status"] == "sent":
             state["delivery_status"] = result
-            logger.info("Email sent: message_id=%s", result.get("message_id"))
+            sent_count = len(result.get("recipients", []))
+            logger.info("Email sent to %d recipient(s)", sent_count)
             yield Event(
                 author=self.name,
                 content=types.Content(
-                    parts=[types.Part(text=f"Email sent: {result.get('message_id')}")]
+                    parts=[types.Part(text=f"Email sent to {sent_count} recipient(s)")]
+                ),
+            )
+        elif result["status"] == "partial":
+            path = save_newsletter_html(html, output_dir, nl_date)
+            result["fallback_file"] = path
+            state["delivery_status"] = result
+            recipients_info = result.get("recipients", [])
+            sent = sum(1 for r in recipients_info if r["status"] == "sent")
+            failed = len(recipients_info) - sent
+            logger.warning(
+                "Partial delivery: %d sent, %d failed; saved fallback to %s",
+                sent, failed, path,
+            )
+            yield Event(
+                author=self.name,
+                content=types.Content(
+                    parts=[types.Part(text=f"Partial delivery: {sent} sent, {failed} failed; saved to {path}")]
                 ),
             )
         else:
             path = save_newsletter_html(html, output_dir, nl_date)
+            error_msg = result.get("error_message", "")
+            if not error_msg and "recipients" in result:
+                errors = [r.get("error", "") for r in result["recipients"] if r.get("error")]
+                error_msg = "; ".join(errors[:3])
             state["delivery_status"] = {
                 "status": "failed",
                 "fallback_file": path,
-                "error": result.get("error_message", "Unknown error"),
+                "error": error_msg or "All recipients failed",
+                "recipients": result.get("recipients", []),
             }
             logger.error(
                 "Email delivery failed: %s; saved fallback to %s",
-                result.get("error_message"),
-                path,
+                error_msg, path,
             )
             yield Event(
                 author=self.name,

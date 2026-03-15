@@ -15,6 +15,7 @@
 | [WP06](WP06-search-timeframe.md) | Search Timeframe Configuration | P2 | Complete | WP01, WP02 | Yes |
 | [WP07](WP07-link-verification.md) | Link Verification | P2 | Complete | WP01, WP03 | Yes |
 | [WP08](WP08-integration-testing.md) | Integration Testing, E2E & Documentation | P2 | Complete | WP06, WP07 | No |
+| [WP09](WP09-multi-recipient.md) | Multi-Recipient Email Delivery | P2 | Complete | WP01-WP05 | Yes |
 
 ## MVP Scope
 

@@ -38,7 +38,10 @@ class TestSuccessfulEmailSend:
     @pytest.mark.asyncio
     @patch(
         "newsletter_agent.tools.delivery.send_newsletter_email",
-        return_value={"status": "sent", "message_id": "msg-456"},
+        return_value={
+            "status": "sent",
+            "recipients": [{"email": "test@gmail.com", "status": "sent", "message_id": "msg-456"}],
+        },
     )
     async def test_given_newsletter_when_send_then_email_delivered(self, mock_send):
         """
@@ -58,7 +61,7 @@ class TestSuccessfulEmailSend:
 
         mock_send.assert_called_once()
         args = mock_send.call_args[0]
-        assert args[1] == "test@gmail.com"
+        assert args[1] == ["test@gmail.com"]
         assert args[2] == "Weekly Tech Digest - 2026-03-14"
         assert state["delivery_status"]["status"] == "sent"
 

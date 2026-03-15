@@ -71,7 +71,8 @@ Edit `config/topics.yaml` to define your newsletter:
 newsletter:
   title: "Weekly Tech Digest"
   schedule: "0 8 * * 0"                    # Cron: Sunday 8am UTC
-  recipient_email: "your-email@gmail.com"
+  recipient_emails:                         # 1-10 email addresses
+    - "your-email@gmail.com"
 
 settings:
   dry_run: true                             # true = save HTML, false = send email

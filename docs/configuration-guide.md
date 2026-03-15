@@ -18,7 +18,11 @@ The `config/topics.yaml` file is validated at startup using Pydantic models. Inv
 newsletter:
   title: "string"              # Required, 1-200 characters
   schedule: "cron expression"  # Required, e.g., "0 8 * * 0"
-  recipient_email: "email"     # Required, valid email address
+  recipient_emails:            # 1-10 valid email addresses
+    - "email1@example.com"
+    - "email2@example.com"
+  # OR (deprecated, backward compatible):
+  # recipient_email: "email"   # Single email address
 
 # Application settings
 settings:
@@ -44,7 +48,10 @@ topics:
 |-------|------|----------|-------------|-------------|
 | `title` | string | Yes | 1-200 chars | Newsletter display title, shown in header and email subject |
 | `schedule` | string | Yes | Non-empty | Cron expression for Cloud Scheduler (not enforced locally) |
-| `recipient_email` | string | Yes | Valid email format | Email address for newsletter delivery |
+| `recipient_emails` | list of strings | Yes (or `recipient_email`) | 1-10 unique valid emails | Email addresses for newsletter delivery |
+| `recipient_email` | string | Deprecated | Valid email format | Single email address (use `recipient_emails` instead) |
+
+**Note**: You must provide either `recipient_emails` or `recipient_email`, but not both. The singular `recipient_email` field is deprecated and will be removed in a future version. Use `recipient_emails` for new configurations.
 
 ### Section: `settings`
 
@@ -114,7 +121,9 @@ fallback) and removes broken links from the output:
 - All topic names must be unique (case-sensitive)
 - Empty `sources` lists default to `["google_search", "perplexity"]`
 - Extra fields in any section cause validation errors (strict schema)
-- The `recipient_email` must match standard email format
+- The `recipient_emails` list must contain 1-10 unique valid email addresses
+- The deprecated `recipient_email` field is accepted for backward compatibility
+- Specifying both `recipient_email` and `recipient_emails` causes a validation error
 
 ### Validation Error Example
 

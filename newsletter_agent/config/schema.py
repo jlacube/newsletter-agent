@@ -63,6 +63,22 @@ _EMAIL_PATTERN = re.compile(
 )
 
 
+def _validate_email_list(emails: list[str]) -> None:
+    """Validate a list of 1-10 unique, well-formed email addresses."""
+    if len(emails) == 0:
+        raise ValueError("recipient_emails must contain at least 1 email")
+    if len(emails) > 10:
+        raise ValueError("recipient_emails must contain at most 10 emails")
+    seen: set[str] = set()
+    for email in emails:
+        if not _EMAIL_PATTERN.match(email):
+            raise ValueError(f"'{email}' is not a valid email address")
+        lower = email.lower()
+        if lower in seen:
+            raise ValueError(f"Duplicate email address: '{email}'")
+        seen.add(lower)
+
+
 # ---------------------------------------------------------------------------
 # Pydantic models
 # ---------------------------------------------------------------------------
@@ -92,14 +108,43 @@ class NewsletterSettings(BaseModel):
 
     title: str = Field(min_length=1, max_length=200)
     schedule: str = Field(min_length=1)
-    recipient_email: str
+    recipient_email: str | None = None
+    recipient_emails: list[str] | None = None
 
-    @field_validator("recipient_email")
+    @model_validator(mode="before")
     @classmethod
-    def validate_email(cls, v: str) -> str:
-        if not _EMAIL_PATTERN.match(v):
-            raise ValueError(f"'{v}' is not a valid email address")
-        return v
+    def check_conflicting_recipients(cls, data: object) -> object:
+        """Reject raw input that specifies both recipient fields."""
+        if isinstance(data, dict):
+            has_singular = data.get("recipient_email") is not None
+            has_plural = data.get("recipient_emails") is not None
+            if has_singular and has_plural:
+                raise ValueError(
+                    "Cannot specify both 'recipient_email' and 'recipient_emails'. "
+                    "Use 'recipient_emails' for multiple recipients."
+                )
+        return data
+
+    @model_validator(mode="after")
+    def resolve_recipients(self) -> NewsletterSettings:
+        has_singular = self.recipient_email is not None
+        has_plural = self.recipient_emails is not None
+
+        if has_plural:
+            _validate_email_list(self.recipient_emails)
+            self.recipient_email = self.recipient_emails[0]
+        elif has_singular:
+            if not _EMAIL_PATTERN.match(self.recipient_email):
+                raise ValueError(
+                    f"'{self.recipient_email}' is not a valid email address"
+                )
+            self.recipient_emails = [self.recipient_email]
+        else:
+            raise ValueError(
+                "Either 'recipient_email' or 'recipient_emails' must be provided"
+            )
+
+        return self
 
 
 class AppSettings(BaseModel):

@@ -55,7 +55,9 @@ Edit `config/topics.yaml` to define what the newsletter covers:
 newsletter:
   title: "Weekly Tech Digest"
   schedule: "0 8 * * 0"                    # Cron: Sunday 8am UTC
-  recipient_email: "your-email@gmail.com"
+  recipient_emails:                         # 1-10 email addresses
+    - "alice@example.com"
+    - "bob@example.com"
 
 settings:
   dry_run: true                             # true = save HTML only, false = send email
@@ -72,6 +74,9 @@ topics:
   - name: "Cloud Native"
     query: "Recent cloud-native technology developments"
 ```
+
+The old `recipient_email` field (single string) is still accepted for backward
+compatibility but is deprecated. Use `recipient_emails` for new configurations.
 
 ### Topic Configuration Options
 

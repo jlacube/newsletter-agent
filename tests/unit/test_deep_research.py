@@ -396,3 +396,247 @@ class TestOrchestratorRun:
         agent = orch._make_search_agent(0, "test query")
         assert "DeepSearchRound" in agent.name
         assert agent.output_key == "deep_research_latest_0_google"
+
+
+# ---------------------------------------------------------------------------
+# Test: _parse_planning_output
+# ---------------------------------------------------------------------------
+
+
+class TestParsePlanningOutput:
+
+    def test_valid_json_returns_query_and_aspects(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "initial_search_query": "AI breakthroughs 2026",
+            "key_aspects": ["models", "hardware", "applications"],
+        })
+        query, aspects = orch._parse_planning_output(raw)
+        assert query == "AI breakthroughs 2026"
+        assert aspects == ["models", "hardware", "applications"]
+
+    def test_invalid_json_returns_fallback(self):
+        orch = _make_orchestrator()
+        query, aspects = orch._parse_planning_output("not valid json")
+        assert query == orch.query
+        assert len(aspects) > 0
+
+    def test_missing_initial_query_returns_fallback(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({"key_aspects": ["a", "b", "c"]})
+        query, aspects = orch._parse_planning_output(raw)
+        assert query == orch.query
+
+    def test_few_aspects_padded_to_3(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "initial_search_query": "query",
+            "key_aspects": ["one"],
+        })
+        _, aspects = orch._parse_planning_output(raw)
+        assert len(aspects) >= 3
+
+    def test_many_aspects_truncated_to_5(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "initial_search_query": "query",
+            "key_aspects": ["a", "b", "c", "d", "e", "f", "g"],
+        })
+        _, aspects = orch._parse_planning_output(raw)
+        assert len(aspects) == 5
+
+    def test_code_fenced_json_parsed(self):
+        orch = _make_orchestrator()
+        raw = '```json\n{"initial_search_query": "test", "key_aspects": ["x", "y", "z"]}\n```'
+        query, aspects = orch._parse_planning_output(raw)
+        assert query == "test"
+
+    def test_non_dict_json_returns_fallback(self):
+        orch = _make_orchestrator()
+        query, aspects = orch._parse_planning_output('["a", "b"]')
+        assert query == orch.query
+
+    def test_non_string_query_returns_fallback(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({"initial_search_query": 123, "key_aspects": ["a"]})
+        query, _ = orch._parse_planning_output(raw)
+        assert query == orch.query
+
+    def test_non_list_aspects_returns_fallback(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({"initial_search_query": "q", "key_aspects": "not a list"})
+        query, _ = orch._parse_planning_output(raw)
+        assert query == orch.query
+
+
+# ---------------------------------------------------------------------------
+# Test: _parse_analysis_output
+# ---------------------------------------------------------------------------
+
+
+class TestParseAnalysisOutput:
+
+    def test_valid_json_returns_analysis(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "findings_summary": "Found stuff",
+            "knowledge_gaps": ["gap1", "gap2"],
+            "coverage_assessment": "partial",
+            "saturated": False,
+            "next_query": "follow up",
+            "next_query_rationale": "need more",
+        })
+        result = orch._parse_analysis_output(raw, round_idx=0)
+        assert result["findings_summary"] == "Found stuff"
+        assert result["knowledge_gaps"] == ["gap1", "gap2"]
+        assert result["saturated"] is False
+        assert result["next_query"] == "follow up"
+
+    def test_invalid_json_returns_fallback(self):
+        orch = _make_orchestrator()
+        result = orch._parse_analysis_output("garbage", round_idx=1)
+        assert result["saturated"] is False
+        assert "analysis failed" in result["knowledge_gaps"]
+        assert result["next_query"]  # should have fallback query
+
+    def test_saturated_true_returns_no_next_query_override(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "findings_summary": "Done",
+            "knowledge_gaps": [],
+            "coverage_assessment": "comprehensive",
+            "saturated": True,
+            "next_query": "",
+            "next_query_rationale": "",
+        })
+        result = orch._parse_analysis_output(raw, round_idx=2)
+        assert result["saturated"] is True
+
+    def test_not_saturated_but_no_next_query_uses_fallback(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "findings_summary": "Partial",
+            "knowledge_gaps": ["gap"],
+            "coverage_assessment": "partial",
+            "saturated": False,
+            "next_query": "",
+        })
+        result = orch._parse_analysis_output(raw, round_idx=0)
+        assert result["next_query"]  # fallback applied
+        assert orch.query in result["next_query"]
+
+    def test_gaps_truncated_to_5(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "findings_summary": "F",
+            "knowledge_gaps": ["g1", "g2", "g3", "g4", "g5", "g6", "g7"],
+            "coverage_assessment": "partial",
+            "saturated": False,
+            "next_query": "q",
+        })
+        result = orch._parse_analysis_output(raw, round_idx=0)
+        assert len(result["knowledge_gaps"]) == 5
+
+    def test_non_list_gaps_defaults_to_empty(self):
+        orch = _make_orchestrator()
+        raw = json.dumps({
+            "findings_summary": "F",
+            "knowledge_gaps": "not a list",
+            "coverage_assessment": "partial",
+            "saturated": False,
+            "next_query": "q",
+        })
+        result = orch._parse_analysis_output(raw, round_idx=0)
+        assert result["knowledge_gaps"] == []
+
+    def test_code_fenced_analysis_parsed(self):
+        orch = _make_orchestrator()
+        raw = '```json\n{"findings_summary":"F","knowledge_gaps":[],"coverage_assessment":"good","saturated":true,"next_query":"","next_query_rationale":""}\n```'
+        result = orch._parse_analysis_output(raw, round_idx=0)
+        assert result["saturated"] is True
+
+    def test_non_dict_json_returns_fallback(self):
+        orch = _make_orchestrator()
+        result = orch._parse_analysis_output("[1, 2, 3]", round_idx=0)
+        assert result["saturated"] is False
+
+
+# ---------------------------------------------------------------------------
+# Test: _strip_code_fences
+# ---------------------------------------------------------------------------
+
+
+class TestStripCodeFences:
+
+    def test_strips_json_fence(self):
+        raw = '```json\n{"key": "value"}\n```'
+        assert '{"key": "value"}' == DeepResearchOrchestrator._strip_code_fences(raw)
+
+    def test_no_fences_unchanged(self):
+        raw = '{"key": "value"}'
+        assert raw == DeepResearchOrchestrator._strip_code_fences(raw)
+
+    def test_non_string_input(self):
+        result = DeepResearchOrchestrator._strip_code_fences(42)
+        assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# Test: _format_prior_rounds
+# ---------------------------------------------------------------------------
+
+
+class TestFormatPriorRounds:
+
+    def test_empty_rounds(self):
+        assert "No prior" in DeepResearchOrchestrator._format_prior_rounds([])
+
+    def test_formats_single_round(self):
+        rounds = [
+            {"round_idx": 0, "query": "q1", "findings_summary": "Found stuff",
+             "knowledge_gaps": ["gap1"]}
+        ]
+        result = DeepResearchOrchestrator._format_prior_rounds(rounds)
+        assert "Round 0" in result
+        assert "q1" in result
+        assert "Found stuff" in result
+        assert "gap1" in result
+
+    def test_formats_multiple_rounds(self):
+        rounds = [
+            {"round_idx": 0, "query": "q1", "findings_summary": "F1",
+             "knowledge_gaps": ["g1"]},
+            {"round_idx": 1, "query": "q2", "findings_summary": "F2",
+             "knowledge_gaps": []},
+        ]
+        result = DeepResearchOrchestrator._format_prior_rounds(rounds)
+        assert "Round 0" in result
+        assert "Round 1" in result
+        assert "none" in result  # empty gaps
+
+
+# ---------------------------------------------------------------------------
+# Test: _collect_bare_urls
+# ---------------------------------------------------------------------------
+
+
+class TestCollectBareUrls:
+
+    def test_collects_bare_url_with_preceding_title(self):
+        text = "- My Article\n  https://example.com/article"
+        seen = {}
+        DeepResearchOrchestrator._collect_bare_urls(text, seen)
+        assert "https://example.com/article" in seen
+        assert seen["https://example.com/article"] == "My Article"
+
+    def test_skips_urls_already_in_seen(self):
+        text = "https://example.com/a"
+        seen = {"https://example.com/a": "Already"}
+        DeepResearchOrchestrator._collect_bare_urls(text, seen)
+        assert seen["https://example.com/a"] == "Already"
+
+    def test_skips_urls_inside_markdown_links(self):
+        text = "[Title](https://example.com/md)"
+        seen = {}
+        DeepResearchOrchestrator._collect_bare_urls(text, seen)
+        assert "https://example.com/md" not in seen

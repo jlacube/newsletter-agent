@@ -1,15 +1,16 @@
-"""Integration tests for deep research multi-round pipeline.
+"""Integration tests for adaptive deep research pipeline.
 
 Tests verify that DeepResearchOrchestrator integrates correctly with
-the research phase, produces accumulated multi-round results, and
-cleans up intermediate state keys.
+the research phase using the adaptive Plan-Search-Analyze-Decide loop,
+produces accumulated multi-round results, and cleans up intermediate state keys.
 
-Spec refs: FR-MRR-001 through FR-MRR-011, FR-BC-001, FR-BC-004,
-           Section 11.3 (WP14 T14-01, T14-02).
+Spec refs: FR-ADR-001 through FR-ADR-006, FR-ADR-050 through FR-ADR-055,
+           FR-ADR-080 through FR-ADR-085, Section 11.3.
 """
 
+import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 from newsletter_agent.agent import build_research_phase
 from newsletter_agent.config.schema import (
@@ -33,19 +34,24 @@ def _make_ctx(state: dict | None = None) -> MagicMock:
     return ctx
 
 
-def _deep_config(tmp_path, max_rounds=3):
+def _deep_config(tmp_path, max_rounds=3, max_searches=None, min_rounds=None):
     """Config with a single deep-mode topic."""
+    settings_kwargs = {
+        "dry_run": True,
+        "output_dir": str(tmp_path),
+        "max_research_rounds": max_rounds,
+    }
+    if max_searches is not None:
+        settings_kwargs["max_searches_per_topic"] = max_searches
+    if min_rounds is not None:
+        settings_kwargs["min_research_rounds"] = min_rounds
     return NewsletterConfig(
         newsletter=NewsletterSettings(
             title="Deep Research Integration Test",
             schedule="0 8 * * 0",
             recipient_email="test@example.com",
         ),
-        settings=AppSettings(
-            dry_run=True,
-            output_dir=str(tmp_path),
-            max_research_rounds=max_rounds,
-        ),
+        settings=AppSettings(**settings_kwargs),
         topics=[
             TopicConfig(
                 name="AI Breakthroughs",
@@ -97,64 +103,105 @@ def _research_text_with_urls(round_idx: int, url_prefix: str, count: int = 6) ->
     return f"SUMMARY:\nRound {round_idx} findings about the topic.\n\nSOURCES:\n{sources}"
 
 
+def _planning_result(query="AI analysis deep dive", aspects=None):
+    """Return (initial_query, key_aspects, events) for mock _run_planning."""
+    if aspects is None:
+        aspects = ["recent developments", "expert opinions", "data and statistics"]
+    return (query, aspects, [])
+
+
+def _analysis_result(saturated=False, gaps=None, next_query=None, summary="Findings"):
+    """Return (analysis_dict, events) for mock _run_analysis."""
+    if gaps is None:
+        gaps = ["gap1"] if not saturated else []
+    return (
+        {
+            "findings_summary": summary,
+            "knowledge_gaps": gaps,
+            "coverage_assessment": "partial" if not saturated else "comprehensive",
+            "saturated": saturated,
+            "next_query": next_query or ("" if saturated else "follow-up query"),
+            "next_query_rationale": "continuing",
+        },
+        [],
+    )
+
+
+def _setup_adaptive_mocks(orch, max_rounds, url_prefix="https://example.com/google"):
+    """Set up planning, analysis, and search mocks for an orchestrator.
+
+    Returns (call_count_list, patchers_context_manager_args).
+    """
+    call_count = [0]
+
+    async def mock_planning(inner_ctx):
+        return _planning_result()
+
+    analysis_responses = []
+    for r in range(max_rounds):
+        if r < max_rounds - 1:
+            analysis_responses.append(
+                _analysis_result(saturated=False, next_query=f"query_r{r+1}", gaps=[f"gap_{r}"])
+            )
+        else:
+            analysis_responses.append(_analysis_result(saturated=True, gaps=[]))
+    analysis_idx = [0]
+
+    async def mock_analysis(*args, **kwargs):
+        idx = analysis_idx[0]
+        analysis_idx[0] += 1
+        return analysis_responses[min(idx, len(analysis_responses) - 1)]
+
+    def patched_make(round_idx, query):
+        agent = MagicMock()
+
+        async def mock_run_async(inner_ctx):
+            output_key = f"deep_research_latest_{orch.topic_idx}_{orch.provider}"
+            inner_ctx.session.state[output_key] = _research_text_with_urls(
+                call_count[0], url_prefix, count=6
+            )
+            call_count[0] += 1
+            return
+            yield
+
+        agent.run_async = mock_run_async
+        return agent
+
+    return call_count, mock_planning, mock_analysis, patched_make
+
+
 # ---------------------------------------------------------------------------
-# T14-01: Multi-round research with mocked tools
+# Integration: Multi-round adaptive research with mocked tools
 # ---------------------------------------------------------------------------
 
 
 class TestMultiRoundResearchIntegration:
-    """Integration test: deep-mode multi-round research produces
-    accumulated results in correct state keys with cleanup."""
+    """Integration: adaptive deep-mode research produces accumulated results."""
 
     @pytest.mark.asyncio
-    async def test_deep_topic_3_rounds_accumulates_urls(self, tmp_path):
+    async def test_deep_topic_3_rounds_google(self, tmp_path):
         """Deep-mode topic with 3 rounds produces merged SUMMARY + SOURCES
         in research_{idx}_{provider} and cleans up intermediate keys."""
         config = _deep_config(tmp_path, max_rounds=3)
         phase = build_research_phase(config)
 
-        # The phase is ParallelAgent -> Topic0Research (SequentialAgent)
-        # -> DeepResearch_0_google, DeepResearch_0_perplexity
         topic0 = phase.sub_agents[0]
         assert topic0.name == "Topic0Research"
-        assert len(topic0.sub_agents) == 2  # google + perplexity
+        assert len(topic0.sub_agents) == 2
 
-        # Test the google orchestrator directly with mocked sub-agents
         orch = topic0.sub_agents[0]
         assert isinstance(orch, DeepResearchOrchestrator)
         assert orch.provider == "google"
         assert orch.max_rounds == 3
 
         ctx = _make_ctx()
-        call_count = 0
+        call_count, mock_planning, mock_analysis, patched_make = _setup_adaptive_mocks(orch, 3)
 
-        async def mock_run_async(inner_ctx):
-            nonlocal call_count
-            output_key = f"deep_research_latest_0_google"
-            inner_ctx.session.state[output_key] = _research_text_with_urls(
-                call_count, "https://example.com/google", count=6
-            )
-            call_count += 1
-            return
-            yield  # async generator
-
-        # Patch the search agent creation to use our mock
-        original_make = orch._make_search_agent
-
-        def patched_make(round_idx, query):
-            agent = MagicMock()
-            agent.run_async = mock_run_async
-            return agent
-
-        # Also mock the query expansion
-        async def mock_expand(inner_ctx):
-            return ["variant query 1", "variant query 2"], []
-
-        with patch.object(orch, "_make_search_agent", side_effect=patched_make):
-            with patch.object(orch, "_expand_queries", side_effect=mock_expand):
-                events = []
-                async for event in orch._run_async_impl(ctx):
-                    events.append(event)
+        with patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
+             patch.object(orch, "_make_search_agent", side_effect=patched_make):
+            async for _ in orch._run_async_impl(ctx):
+                pass
 
         state = ctx.session.state
 
@@ -164,157 +211,195 @@ class TestMultiRoundResearchIntegration:
         final_text = state[final_key]
         assert "SUMMARY:" in final_text
         assert "SOURCES:" in final_text
-
-        # Verify URLs from multiple rounds are present
         assert "round0/article" in final_text
         assert "round1/article" in final_text
 
-        # Verify intermediate state keys are cleaned up (FR-MRR-011)
+        # Verify intermediate state keys are cleaned up
         for key in list(state.keys()):
-            assert not key.startswith("deep_queries_"), f"Intermediate key not cleaned: {key}"
             assert not key.startswith("deep_research_latest_"), f"Intermediate key not cleaned: {key}"
             assert not key.startswith("deep_urls_accumulated_"), f"Intermediate key not cleaned: {key}"
-            assert not key.startswith("deep_query_current_"), f"Intermediate key not cleaned: {key}"
-            assert "round_" not in key, f"Round key not cleaned: {key}"
+            if "round_" in key:
+                assert key.startswith("adaptive_reasoning"), f"Round key not cleaned: {key}"
+
+        # Verify reasoning chain persisted
+        chain_key = "adaptive_reasoning_chain_0_google"
+        assert chain_key in state
+        chain = json.loads(state[chain_key])
+        assert "plan" in chain
+        assert "rounds" in chain
+
+    @pytest.mark.asyncio
+    async def test_deep_topic_perplexity_provider(self, tmp_path):
+        """Deep-mode topic with Perplexity provider produces same flow."""
+        config = _deep_config(tmp_path, max_rounds=3)
+        phase = build_research_phase(config)
+        topic0 = phase.sub_agents[0]
+        orch = topic0.sub_agents[1]  # perplexity
+        assert isinstance(orch, DeepResearchOrchestrator)
+        assert orch.provider == "perplexity"
+
+        ctx = _make_ctx()
+        call_count, mock_planning, mock_analysis, patched_make = _setup_adaptive_mocks(
+            orch, 3, "https://example.com/perplexity"
+        )
+
+        with patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
+             patch.object(orch, "_make_search_agent", side_effect=patched_make):
+            async for _ in orch._run_async_impl(ctx):
+                pass
+
+        final_key = f"research_{orch.topic_idx}_{orch.provider}"
+        assert final_key in ctx.session.state
+        assert "SUMMARY:" in ctx.session.state[final_key]
+        assert "SOURCES:" in ctx.session.state[final_key]
 
     @pytest.mark.asyncio
     async def test_deep_research_standard_format(self, tmp_path):
         """Final merged output uses standard SUMMARY + SOURCES format."""
-        config = _deep_config(tmp_path, max_rounds=2)
         orch = DeepResearchOrchestrator(
-            name="DeepResearch_0_google",
-            topic_idx=0,
-            provider="google",
-            query="AI news",
-            topic_name="AI",
-            max_rounds=2,
-            search_depth="deep",
-            model="gemini-2.5-flash",
-            tools=[],
+            name="DeepResearch_0_google", topic_idx=0, provider="google",
+            query="AI news", topic_name="AI", max_rounds=2,
+            search_depth="deep", model="gemini-2.5-flash", tools=[],
         )
         ctx = _make_ctx()
-        call_count = 0
+        call_count, mock_planning, mock_analysis, patched_make = _setup_adaptive_mocks(orch, 2)
 
-        async def mock_run_async(inner_ctx):
-            nonlocal call_count
-            output_key = "deep_research_latest_0_google"
-            inner_ctx.session.state[output_key] = _research_text_with_urls(
-                call_count, "https://example.com", count=4
-            )
-            call_count += 1
-            return
-            yield
-
-        def patched_make(round_idx, query):
-            agent = MagicMock()
-            agent.run_async = mock_run_async
-            return agent
-
-        async def mock_expand(inner_ctx):
-            return ["variant 1"], []
-
-        with patch.object(orch, "_make_search_agent", side_effect=patched_make):
-            with patch.object(orch, "_expand_queries", side_effect=mock_expand):
-                async for _ in orch._run_async_impl(ctx):
-                    pass
+        with patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
+             patch.object(orch, "_make_search_agent", side_effect=patched_make):
+            async for _ in orch._run_async_impl(ctx):
+                pass
 
         result = ctx.session.state.get("research_0_google", "")
-        # Standard format: starts with SUMMARY:, contains SOURCES:
         assert result.startswith("SUMMARY:")
         assert "\nSOURCES:" in result or "\n\nSOURCES:" in result
 
     @pytest.mark.asyncio
-    async def test_early_exit_when_threshold_met(self, tmp_path):
-        """Orchestrator exits early when URL threshold (15) is met."""
-        orch = DeepResearchOrchestrator(
-            name="DeepResearch_0_google",
-            topic_idx=0,
-            provider="google",
-            query="AI news",
-            topic_name="AI",
-            max_rounds=3,
-            search_depth="deep",
-            model="gemini-2.5-flash",
-            tools=[],
-        )
-        ctx = _make_ctx()
-        call_count = 0
+    async def test_search_budget_binding_constraint(self, tmp_path):
+        """When max_searches_per_topic < max_research_rounds, budget is binding."""
+        config = _deep_config(tmp_path, max_rounds=5, max_searches=2)
+        phase = build_research_phase(config)
+        orch = phase.sub_agents[0].sub_agents[0]
 
-        async def mock_run_async(inner_ctx):
-            nonlocal call_count
-            output_key = "deep_research_latest_0_google"
-            # First round returns 16 URLs (exceeds threshold of 15)
-            inner_ctx.session.state[output_key] = _research_text_with_urls(
-                call_count, "https://ex.com", count=16
-            )
-            call_count += 1
-            return
-            yield
+        ctx = _make_ctx()
+
+        call_count = [0]
+
+        async def mock_planning(inner_ctx):
+            return _planning_result()
+
+        async def mock_analysis(*args, **kwargs):
+            return _analysis_result(saturated=False, next_query="next", gaps=["gap"])
 
         def patched_make(round_idx, query):
             agent = MagicMock()
-            agent.run_async = mock_run_async
+
+            async def mock_run(inner_ctx):
+                key = f"deep_research_latest_{orch.topic_idx}_{orch.provider}"
+                inner_ctx.session.state[key] = _research_text_with_urls(
+                    call_count[0], "https://example.com", count=4
+                )
+                call_count[0] += 1
+                return
+                yield
+
+            agent.run_async = mock_run
             return agent
 
-        async def mock_expand(inner_ctx):
-            return ["v1", "v2"], []
+        with patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
+             patch.object(orch, "_make_search_agent", side_effect=patched_make):
+            async for _ in orch._run_async_impl(ctx):
+                pass
 
-        with patch.object(orch, "_make_search_agent", side_effect=patched_make):
-            with patch.object(orch, "_expand_queries", side_effect=mock_expand):
-                async for _ in orch._run_async_impl(ctx):
-                    pass
+        assert call_count[0] == 2, f"Expected 2 searches (budget), got {call_count[0]}"
 
-        # Only 1 round executed (early exit after round 0)
-        assert call_count == 1
-        assert "research_0_google" in ctx.session.state
+    @pytest.mark.asyncio
+    async def test_saturation_path_exits_early(self, tmp_path):
+        """Mock AnalysisAgent to saturate on round 2, verify only 3 rounds."""
+        orch = DeepResearchOrchestrator(
+            name="DeepResearch_0_google", topic_idx=0, provider="google",
+            query="AI news", topic_name="AI", max_rounds=5,
+            search_depth="deep", model="gemini-2.5-flash", tools=[],
+        )
+        ctx = _make_ctx()
+        call_count = [0]
+
+        async def mock_planning(inner_ctx):
+            return _planning_result()
+
+        analysis_responses = [
+            _analysis_result(saturated=False, next_query="q1", gaps=["g1"]),
+            _analysis_result(saturated=False, next_query="q2", gaps=["g2"]),
+            _analysis_result(saturated=True, gaps=[]),
+        ]
+        analysis_idx = [0]
+
+        async def mock_analysis(*args, **kwargs):
+            idx = analysis_idx[0]
+            analysis_idx[0] += 1
+            return analysis_responses[min(idx, len(analysis_responses) - 1)]
+
+        def patched_make(round_idx, query):
+            agent = MagicMock()
+
+            async def mock_run(inner_ctx):
+                key = f"deep_research_latest_0_google"
+                inner_ctx.session.state[key] = _research_text_with_urls(
+                    call_count[0], "https://example.com", count=4
+                )
+                call_count[0] += 1
+                return
+                yield
+
+            agent.run_async = mock_run
+            return agent
+
+        with patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis), \
+             patch.object(orch, "_make_search_agent", side_effect=patched_make):
+            async for _ in orch._run_async_impl(ctx):
+                pass
+
+        assert call_count[0] == 3, f"Expected 3 rounds (saturation), got {call_count[0]}"
 
 
 # ---------------------------------------------------------------------------
-# T14-02: Mixed standard and deep topics
+# Integration: Mixed standard and deep topics
 # ---------------------------------------------------------------------------
 
 
 class TestMixedStandardDeepIntegration:
-    """Integration test: mixed config with standard and deep topics."""
+    """Integration: mixed config with standard and deep topics."""
 
     def test_phase_has_correct_agent_types(self, tmp_path):
         """Standard topic uses LlmAgent, deep topic uses DeepResearchOrchestrator."""
         config = _mixed_config(tmp_path)
         phase = build_research_phase(config)
 
-        # 2 topic agents
         assert len(phase.sub_agents) == 2
 
-        # Topic 0: standard mode
         topic0 = phase.sub_agents[0]
         assert topic0.name == "Topic0Research"
         for sub in topic0.sub_agents:
-            assert not isinstance(sub, DeepResearchOrchestrator), (
-                "Standard topic should not use DeepResearchOrchestrator"
-            )
+            assert not isinstance(sub, DeepResearchOrchestrator)
 
-        # Topic 1: deep mode
         topic1 = phase.sub_agents[1]
         assert topic1.name == "Topic1Research"
         for sub in topic1.sub_agents:
-            assert isinstance(sub, DeepResearchOrchestrator), (
-                "Deep topic should use DeepResearchOrchestrator"
-            )
+            assert isinstance(sub, DeepResearchOrchestrator)
 
     @pytest.mark.asyncio
     async def test_standard_topic_no_deep_state_keys(self, tmp_path):
         """Standard topic does not produce any deep_* intermediate keys."""
         config = _mixed_config(tmp_path)
         phase = build_research_phase(config)
-        topic0 = phase.sub_agents[0]  # standard
+        topic0 = phase.sub_agents[0]
 
-        # Simulate by checking the output_key of standard LlmAgents
         for sub in topic0.sub_agents:
-            # Standard agents use output_key like research_0_google
-            assert hasattr(sub, "output_key"), "Standard agent should have output_key"
-            assert sub.output_key.startswith("research_0_"), (
-                f"Unexpected output_key: {sub.output_key}"
-            )
+            assert hasattr(sub, "output_key")
+            assert sub.output_key.startswith("research_0_")
             assert "deep" not in sub.output_key
 
     @pytest.mark.asyncio
@@ -322,55 +407,44 @@ class TestMixedStandardDeepIntegration:
         """Deep topic's orchestrator respects max_research_rounds from config."""
         config = _mixed_config(tmp_path, max_rounds=2)
         phase = build_research_phase(config)
-        topic1 = phase.sub_agents[1]  # deep
+        topic1 = phase.sub_agents[1]
 
         for sub in topic1.sub_agents:
             assert isinstance(sub, DeepResearchOrchestrator)
             assert sub.max_rounds == 2
 
     def test_state_key_format_downstream_compatible(self, tmp_path):
-        """Both standard and deep topics produce research_{idx}_{provider} key
-        format expected by downstream agents (FR-BC-004)."""
+        """Both standard and deep topics produce research_{idx}_{provider} key."""
         config = _mixed_config(tmp_path)
         phase = build_research_phase(config)
 
-        # Standard: output_key = research_0_google, research_0_perplexity
         topic0 = phase.sub_agents[0]
         for sub in topic0.sub_agents:
             assert sub.output_key.startswith("research_0_")
 
-        # Deep: DeepResearchOrchestrator writes to research_1_google etc.
         topic1 = phase.sub_agents[1]
         for sub in topic1.sub_agents:
             assert sub.topic_idx == 1
-            # Orchestrator writes to research_{idx}_{provider} at the end
 
     @pytest.mark.asyncio
     async def test_standard_topic_single_round_per_provider(self, tmp_path):
-        """Standard-mode topic produces exactly 1 research key per provider,
-        no round keys, no deep keys (FR-BC-001)."""
+        """Standard-mode topic produces exactly 1 research key per provider."""
         config = _mixed_config(tmp_path, max_rounds=3)
         phase = build_research_phase(config)
-        topic0 = phase.sub_agents[0]  # standard
+        topic0 = phase.sub_agents[0]
 
-        # Standard agents are LlmAgents with output_key attributes
-        # Verify they produce a single key and no deep/round keys
         state = {}
         for sub in topic0.sub_agents:
             output_key = sub.output_key
-            # Simulate what LlmAgent would write
             state[output_key] = (
                 "SUMMARY:\nStandard findings.\n\nSOURCES:\n"
                 "- [Src1](https://standard.example.com/1)\n"
                 "- [Src2](https://standard.example.com/2)"
             )
 
-        # Verify standard keys exist
         assert "research_0_google" in state or "research_0_perplexity" in state
 
-        # Verify NO deep intermediate keys
         for key in state:
             assert not key.startswith("deep_"), f"Unexpected deep key: {key}"
             assert "round_" not in key, f"Unexpected round key: {key}"
-            # Verify key is the standard format
-            assert key.startswith("research_0_"), f"Unexpected key format: {key}"
+            assert key.startswith("research_0_")

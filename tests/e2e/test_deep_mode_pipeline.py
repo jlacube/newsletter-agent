@@ -119,13 +119,33 @@ class TestE2EDeepModePipeline:
             agent.run_async = mock_run_async
             return agent
 
-        async def mock_expand(inner_ctx):
-            return ["variant 1", "variant 2"], []
+        async def mock_planning(inner_ctx):
+            return ("AI breakthroughs query", ["recent developments", "key players"], [])
 
-        with patch.object(orch, "_make_search_agent", side_effect=patched_make):
-            with patch.object(orch, "_expand_queries", side_effect=mock_expand):
-                async for _ in orch._run_async_impl(ctx):
-                    pass
+        analysis_idx = [0]
+
+        async def mock_analysis(*args, **kwargs):
+            idx = analysis_idx[0]
+            analysis_idx[0] += 1
+            if idx < 2:
+                return (
+                    {"findings_summary": f"Round {idx} findings", "knowledge_gaps": [f"gap_{idx}"],
+                     "coverage_assessment": "partial", "saturated": False,
+                     "next_query": f"follow-up query {idx+1}", "next_query_rationale": "more data"},
+                    [],
+                )
+            return (
+                {"findings_summary": "Final findings", "knowledge_gaps": [],
+                 "coverage_assessment": "comprehensive", "saturated": True,
+                 "next_query": "", "next_query_rationale": "done"},
+                [],
+            )
+
+        with patch.object(orch, "_make_search_agent", side_effect=patched_make), \
+             patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis):
+            async for _ in orch._run_async_impl(ctx):
+                pass
 
         state = ctx.session.state
         final = state.get(f"research_{orch.topic_idx}_{orch.provider}", "")
@@ -168,13 +188,23 @@ class TestE2EDeepModePipeline:
             agent.run_async = mock_run_async
             return agent
 
-        async def mock_expand(inner_ctx):
-            return ["variant 1"], []
+        async def mock_planning(inner_ctx):
+            return ("AI query", ["aspect1"], [])
 
-        with patch.object(orch, "_make_search_agent", side_effect=patched_make):
-            with patch.object(orch, "_expand_queries", side_effect=mock_expand):
-                async for _ in orch._run_async_impl(ctx):
-                    pass
+        async def mock_analysis(*args, **kwargs):
+            # Never saturate - let max_rounds be the binding constraint
+            return (
+                {"findings_summary": "Findings", "knowledge_gaps": ["gap"],
+                 "coverage_assessment": "partial", "saturated": False,
+                 "next_query": "next query", "next_query_rationale": "more data"},
+                [],
+            )
+
+        with patch.object(orch, "_make_search_agent", side_effect=patched_make), \
+             patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis):
+            async for _ in orch._run_async_impl(ctx):
+                pass
 
         # Should have executed exactly max_rounds
         assert call_count == max_rounds

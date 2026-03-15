@@ -1,9 +1,9 @@
 """Integration tests: backward compatibility for deep research features.
 
-Verifies that standard-mode topics are unaffected by deep research
+Verifies that standard-mode topics are unaffected by adaptive research
 additions, and that max_research_rounds=1 behaves like single-round.
 
-Spec refs: FR-BC-001, FR-BC-002, FR-BC-004, SC-005, SC-006 (WP14 T14-06, T14-07).
+Spec refs: FR-ADR-080 through FR-ADR-085, SC-ADR-005.
 """
 
 import pytest
@@ -79,27 +79,49 @@ def _deep_single_round_config(tmp_path):
     )
 
 
+def _deep_no_new_config_config(tmp_path):
+    """Config without max_searches_per_topic or min_research_rounds."""
+    return NewsletterConfig(
+        newsletter=NewsletterSettings(
+            title="No New Config Fields Test",
+            schedule="0 8 * * 0",
+            recipient_email="test@example.com",
+        ),
+        settings=AppSettings(
+            dry_run=True,
+            output_dir=str(tmp_path),
+            max_research_rounds=3,
+        ),
+        topics=[
+            TopicConfig(
+                name="AI News",
+                query="latest AI developments",
+                search_depth="deep",
+                sources=["google_search"],
+            ),
+        ],
+    )
+
+
 # ---------------------------------------------------------------------------
 # T14-06: Backward compatibility - standard mode unchanged
 # ---------------------------------------------------------------------------
 
 
 class TestStandardModeBackwardCompat:
-    """FR-BC-001, SC-005: Standard-mode topics behave identically."""
+    """FR-ADR-080, SC-ADR-005: Standard-mode topics behave identically."""
 
     def test_standard_topic_uses_llm_agent_not_orchestrator(self, tmp_path):
-        """Standard topic uses LlmAgent, not DeepResearchOrchestrator (FR-BC-001)."""
+        """Standard topic uses LlmAgent, not DeepResearchOrchestrator."""
         config = _standard_config(tmp_path, max_rounds=3)
         phase = build_research_phase(config)
         topic0 = phase.sub_agents[0]
 
         for sub in topic0.sub_agents:
-            assert not isinstance(sub, DeepResearchOrchestrator), (
-                "Standard topic should NOT use DeepResearchOrchestrator"
-            )
+            assert not isinstance(sub, DeepResearchOrchestrator)
 
     def test_standard_topic_output_key_format(self, tmp_path):
-        """Standard topic produces research_{idx}_{provider} key (FR-BC-004)."""
+        """Standard topic produces research_{idx}_{provider} key."""
         config = _standard_config(tmp_path)
         phase = build_research_phase(config)
         topic0 = phase.sub_agents[0]
@@ -114,7 +136,6 @@ class TestStandardModeBackwardCompat:
         phase = build_research_phase(config)
         topic0 = phase.sub_agents[0]
 
-        # Verify output keys don't contain "deep" or "round"
         for sub in topic0.sub_agents:
             assert "deep" not in sub.output_key
             assert "round" not in sub.output_key
@@ -126,17 +147,14 @@ class TestStandardModeBackwardCompat:
         topic0 = phase.sub_agents[0]
 
         for sub in topic0.sub_agents:
-            assert not isinstance(sub, DeepResearchOrchestrator), (
-                "Standard topic with high max_rounds should still be LlmAgent"
-            )
+            assert not isinstance(sub, DeepResearchOrchestrator)
 
     def test_pipeline_agents_all_present(self, tmp_path):
-        """Full pipeline has all expected agents in standard mode (FR-BC-003)."""
+        """Full pipeline has all expected agents in standard mode."""
         config = _standard_config(tmp_path)
         pipeline = build_pipeline(config)
         agent_names = [a.name for a in pipeline.sub_agents]
 
-        # All pipeline stages present
         assert "ConfigLoader" in agent_names
         assert "ResearchPhase" in agent_names
         assert "ResearchValidator" in agent_names
@@ -148,12 +166,19 @@ class TestStandardModeBackwardCompat:
         assert "OutputPhase" in agent_names
 
     def test_existing_test_suite_passes(self):
-        """SC-006: Baseline - this test existing in the suite confirms no import errors."""
-        # This is a placeholder asserting the test infrastructure works.
-        # The actual SC-006 verification is running `pytest tests/` at the
-        # end of WP14 and confirming all 572+ tests pass.
+        """Baseline: this test confirms no import errors."""
         from newsletter_agent.agent import root_agent
         assert root_agent is not None
+
+    def test_config_without_new_fields_loads_correctly(self, tmp_path):
+        """Config without max_searches_per_topic or min_research_rounds loads."""
+        config = _deep_no_new_config_config(tmp_path)
+        phase = build_research_phase(config)
+        orch = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(orch, DeepResearchOrchestrator)
+        # Defaults apply
+        assert orch.max_searches == config.settings.max_research_rounds
+        assert orch.min_rounds == 2
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +187,7 @@ class TestStandardModeBackwardCompat:
 
 
 class TestMaxRoundsOneBackwardCompat:
-    """FR-BC-002: Deep-mode with max_research_rounds=1 behaves like single-round."""
+    """FR-ADR-082: Deep-mode with max_research_rounds=1 behaves like single-round."""
 
     def test_deep_max_rounds_1_uses_orchestrator(self, tmp_path):
         """Deep topic still uses DeepResearchOrchestrator with max_rounds=1."""
@@ -207,13 +232,15 @@ class TestMaxRoundsOneBackwardCompat:
         assert call_count == 1, f"Expected 1 round, got {call_count}"
 
     @pytest.mark.asyncio
-    async def test_max_rounds_1_no_query_expansion(self, tmp_path):
-        """max_research_rounds=1 skips query expansion entirely."""
+    async def test_max_rounds_1_no_planning_or_analysis(self, tmp_path):
+        """max_research_rounds=1 skips planning and analysis entirely."""
         config = _deep_single_round_config(tmp_path)
         phase = build_research_phase(config)
         orch = phase.sub_agents[0].sub_agents[0]
 
         ctx = _make_ctx()
+        planning_called = False
+        analysis_called = False
 
         async def mock_run_async(inner_ctx):
             key = f"deep_research_latest_{orch.topic_idx}_{orch.provider}"
@@ -229,20 +256,25 @@ class TestMaxRoundsOneBackwardCompat:
             agent.run_async = mock_run_async
             return agent
 
-        expand_called = False
-        original_expand = orch._expand_queries
+        async def tracked_planning(inner_ctx):
+            nonlocal planning_called
+            planning_called = True
+            return ("query", ["aspect"], [])
 
-        async def tracked_expand(inner_ctx):
-            nonlocal expand_called
-            expand_called = True
-            return await original_expand(inner_ctx)
+        async def tracked_analysis(*args, **kwargs):
+            nonlocal analysis_called
+            analysis_called = True
+            return ({"findings_summary": "", "knowledge_gaps": [], "coverage_assessment": "",
+                     "saturated": True, "next_query": "", "next_query_rationale": ""}, [])
 
-        with patch.object(orch, "_make_search_agent", side_effect=patched_make):
-            with patch.object(orch, "_expand_queries", side_effect=tracked_expand):
-                async for _ in orch._run_async_impl(ctx):
-                    pass
+        with patch.object(orch, "_make_search_agent", side_effect=patched_make), \
+             patch.object(orch, "_run_planning", side_effect=tracked_planning), \
+             patch.object(orch, "_run_analysis", side_effect=tracked_analysis):
+            async for _ in orch._run_async_impl(ctx):
+                pass
 
-        assert not expand_called, "Query expansion should not run with max_rounds=1"
+        assert not planning_called, "Planning should not run with max_rounds=1"
+        assert not analysis_called, "Analysis should not run with max_rounds=1"
 
     @pytest.mark.asyncio
     async def test_max_rounds_1_no_intermediate_keys_remain(self, tmp_path):

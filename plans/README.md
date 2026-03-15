@@ -308,7 +308,7 @@ Cross-WP consistency audit performed. No inconsistencies found. Key validations:
 |----|-------|----------|--------|-----------|----------------|
 | [WP15](WP15-config-and-prompts.md) | Config Fields & Prompt Templates | P0 | Complete | WP11-WP14 (base system) | No |
 | [WP16](WP16-adaptive-orchestrator.md) | Adaptive Research Orchestrator | P1 | Complete | WP15 | No |
-| [WP17](WP17-acceptance-integration-testing.md) | Acceptance & Integration Testing | P1 | Not Started | WP16 | No |
+| [WP17](WP17-acceptance-integration-testing.md) | Acceptance & Integration Testing | P1 | Complete | WP16 | No |
 | [WP18](WP18-quality-and-docs.md) | Quality, Performance & Documentation | P2 | Not Started | WP17 | No |
 
 ### Enhancement MVP Scope

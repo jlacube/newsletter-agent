@@ -144,11 +144,34 @@ class TestDeepResearchRoundPerformance:
         async def mock_expand(inner_ctx):
             return [f"expanded query round {round_counter + 1}"], []
 
+        async def mock_planning(inner_ctx):
+            return ("research query", ["aspect1"], [])
+
+        analysis_idx = [0]
+
+        async def mock_analysis(*args, **kwargs):
+            idx = analysis_idx[0]
+            analysis_idx[0] += 1
+            if idx < 2:
+                return (
+                    {"findings_summary": f"Round {idx}", "knowledge_gaps": [f"gap_{idx}"],
+                     "coverage_assessment": "partial", "saturated": False,
+                     "next_query": f"query_r{idx+1}", "next_query_rationale": "more"},
+                    [],
+                )
+            return (
+                {"findings_summary": "Final", "knowledge_gaps": [],
+                 "coverage_assessment": "comprehensive", "saturated": True,
+                 "next_query": "", "next_query_rationale": "done"},
+                [],
+            )
+
         start = time.monotonic()
-        with patch.object(orch, "_make_search_agent", side_effect=patched_make):
-            with patch.object(orch, "_expand_queries", side_effect=mock_expand):
-                async for _ in orch._run_async_impl(ctx):
-                    pass
+        with patch.object(orch, "_make_search_agent", side_effect=patched_make), \
+             patch.object(orch, "_run_planning", side_effect=mock_planning), \
+             patch.object(orch, "_run_analysis", side_effect=mock_analysis):
+            async for _ in orch._run_async_impl(ctx):
+                pass
         elapsed = time.monotonic() - start
         assert elapsed < 5.0, f"Three rounds took {elapsed:.3f}s"
 

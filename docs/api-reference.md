@@ -18,6 +18,35 @@ Triggers a full newsletter generation cycle. Designed to be called by Cloud Sche
 | 200 | Pipeline completed (dry-run) | `{"status": "success", "newsletter_date": "...", "topics_processed": N, "email_sent": false, "output_file": "..."}` |
 | 500 | Pipeline failed | `{"status": "error", "message": "..."}` |
 
+## CLI Entry Point
+
+### `python -m newsletter_agent`
+
+Runs the full pipeline autonomously without interactive input. Sends a `"Generate newsletter"` trigger message using ADK's `Runner` and `InMemorySessionService`.
+
+**Module**: `newsletter_agent/__main__.py`
+
+**Exit codes**:
+
+| Code | Condition |
+|------|-----------|
+| 0 | Pipeline completed successfully |
+| 1 | Any exception or pipeline failure |
+
+**Stdout output**: A single JSON line with the pipeline summary:
+
+- On success: `{"status": "success", "newsletter_date": "...", "topics_processed": N, "email_sent": true/false}`
+- On dry-run success: adds `"output_file": "..."` to the above
+- On failure: `{"status": "error", "message": "..."}`
+
+### `main() -> int`
+
+Synchronous entry point. Sets up logging, runs the async pipeline via `asyncio.run()`, and returns an exit code (0 or 1).
+
+### `run_pipeline() -> dict`
+
+Async function that creates an ADK `Runner`, sends the trigger message, consumes all events, and returns the final session state as a dict.
+
 ## Configuration Models
 
 ### `NewsletterConfig`
@@ -45,6 +74,9 @@ Top-level configuration model.
 |-------|------|---------|-------------|
 | `dry_run` | `bool` | `False` | Save HTML only (no email) |
 | `output_dir` | `str` | `"output/"` | Output directory path |
+| `timeframe` | `str \| None` | `None` | Global search timeframe constraint |
+| `verify_links` | `bool` | `False` | Verify source URLs and remove broken links |
+| `max_research_rounds` | `int` | `3` | Research rounds for deep-mode topics (1-5) |
 
 ### `TopicConfig`
 

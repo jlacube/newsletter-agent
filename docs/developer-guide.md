@@ -8,6 +8,7 @@ NewsletterAgent/
     topics.yaml              # Newsletter configuration (topics, settings)
   newsletter_agent/
     __init__.py
+    __main__.py              # Autonomous CLI entry point (python -m newsletter_agent)
     agent.py                 # Root agent, pipeline factory, custom agents
     logging_config.py        # Structured logging setup
     timing.py                # Pipeline timing instrumentation

@@ -104,11 +104,18 @@ With `dry_run: true` in `config/topics.yaml`, the pipeline saves the newsletter 
 # Using ADK dev UI (opens browser)
 adk web
 
-# Using ADK command line
+# Using ADK command line (interactive)
 adk run newsletter_agent
+
+# Autonomous CLI runner (no interactive input needed)
+python -m newsletter_agent
 ```
 
 The generated HTML file is saved to the configured `output_dir` (default: `output/`) with the filename format `YYYY-MM-DD-newsletter.html`.
+
+### Autonomous CLI Runner
+
+The `python -m newsletter_agent` command runs the entire pipeline without interactive input. It is designed for scheduled/automated execution (cron, Cloud Scheduler, CI/CD). On completion it prints a JSON summary line and exits with code 0 (success) or 1 (failure).
 
 ### Email Delivery Mode
 

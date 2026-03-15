@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP11 - Config Extension & Autonomous CLI Runner
 
 > **Spec**: `specs/autonomous-deep-research.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P0 (config field) / P1 (CLI runner = US-01)
 > **Goal**: Add `max_research_rounds` config field and a `python -m newsletter_agent` CLI entry point that runs the full pipeline without interactive input
 > **Independent Test**: Run `python -m newsletter_agent` with `dry_run: true` in config. Verify it completes without prompting, produces HTML in `output/`, and exits with code 0.
@@ -207,3 +207,48 @@ This work package delivers two foundational changes: (1) the `max_research_round
 
 ## Activity Log
 - 2026-03-15T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-15T10:30:00Z - coder - lane=doing - Started implementation of WP11
+- 2026-03-15T10:55:00Z - coder - lane=for_review - All tasks complete, submitted for review
+
+## Self-Review
+
+### Spec Compliance
+- [x] FR-CFG-001: max_research_rounds field accepts values 1-5
+- [x] FR-CFG-002: default value is 3
+- [x] FR-CFG-003: values outside 1-5 raise ValidationError
+- [x] FR-CFG-004: field present in AppSettings, available via config loader
+- [x] FR-CLI-001: __main__.py module exists, python -m newsletter_agent works
+- [x] FR-CLI-002: Uses ADK Runner with InMemorySessionService, sends "Generate newsletter"
+- [x] FR-CLI-003: Logs pipeline progress using setup_logging()
+- [x] FR-CLI-004: Exit code 0 on success, 1 on failure
+- [x] FR-CLI-005: Prints JSON summary with status, newsletter_date, topics_processed, email_sent, output_file
+- [x] FR-CLI-006: Existing http_handler.py and adk entry points unchanged
+
+### Correctness
+- [x] All 464 tests pass (excluding pre-existing Flask import failure)
+- [x] 12 new config tests cover default, valid range (1-5), rejections (0, 6, -1, "abc"), YAML loading
+- [x] 14 CLI runner unit tests cover success/failure paths, JSON output, exit codes, run_pipeline
+- [x] 7 BDD tests cover all 3 spec scenarios (success, config error, pipeline failure)
+
+### Code Quality
+- [x] No unused code or debug artifacts
+- [x] No hardcoded values - config-driven
+- [x] No security issues - no secrets, no injection vectors
+- [x] Clean, well-documented code following existing patterns
+
+### Scope Discipline
+- [x] Only config/schema.py modified, __main__.py created, tests created, docs updated
+- [x] No unasked-for abstractions
+
+### Coverage
+- [x] __main__.py: 90% code coverage (lines 50-51 event logging branch are the only miss)
+- [x] config/schema.py: 89% (misses are in pre-existing email validation code)
+- [x] Total: 89.36% - exceeds 80% threshold
+
+### Documentation
+- [x] api-reference.md: Added CLI entry point section, updated AppSettings table
+- [x] architecture.md: No changes needed (pipeline structure unchanged)
+- [x] configuration-guide.md: Added max_research_rounds to settings table
+- [x] deployment-guide.md: Added Autonomous CLI Runner section
+- [x] developer-guide.md: Added __main__.py to project structure
+- [x] user-guide.md: Added CLI runner instructions

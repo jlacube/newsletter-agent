@@ -364,3 +364,64 @@ def test_config_validation_error_field_details():
             err = ConfigValidationError.from_pydantic(e)
             assert len(err.field_errors) > 0
             assert any("field" in fe for fe in err.field_errors)
+
+
+# ---------------------------------------------------------------------------
+# max_research_rounds config field tests (FR-CFG-001 through FR-CFG-004)
+# ---------------------------------------------------------------------------
+
+
+from newsletter_agent.config.schema import AppSettings
+
+
+def test_max_research_rounds_default():
+    """Omitting max_research_rounds uses default 3. FR-CFG-002."""
+    settings = AppSettings()
+    assert settings.max_research_rounds == 3
+
+
+def test_max_research_rounds_default_via_newsletter_config():
+    """Omitting max_research_rounds from full config uses default 3. FR-CFG-002."""
+    data = make_config()
+    config = NewsletterConfig(**data)
+    assert config.settings.max_research_rounds == 3
+
+
+@pytest.mark.parametrize("value", [1, 2, 3, 4, 5])
+def test_max_research_rounds_valid_values(value):
+    """Values 1-5 are accepted. FR-CFG-001."""
+    settings = AppSettings(max_research_rounds=value)
+    assert settings.max_research_rounds == value
+
+
+def test_max_research_rounds_rejects_zero():
+    """Value 0 raises ValidationError. FR-CFG-003."""
+    with pytest.raises(Exception, match="greater than or equal to 1"):
+        AppSettings(max_research_rounds=0)
+
+
+def test_max_research_rounds_rejects_six():
+    """Value 6 raises ValidationError. FR-CFG-003."""
+    with pytest.raises(Exception, match="less than or equal to 5"):
+        AppSettings(max_research_rounds=6)
+
+
+def test_max_research_rounds_rejects_negative():
+    """Negative value raises ValidationError. FR-CFG-003."""
+    with pytest.raises(Exception, match="greater than or equal to 1"):
+        AppSettings(max_research_rounds=-1)
+
+
+def test_max_research_rounds_rejects_non_integer():
+    """Non-integer value raises ValidationError. FR-CFG-003."""
+    with pytest.raises(Exception):
+        AppSettings(max_research_rounds="abc")
+
+
+def test_max_research_rounds_in_yaml_config(make_config_yaml):
+    """max_research_rounds is loaded from YAML settings section. FR-CFG-004."""
+    data = make_config()
+    data["settings"] = {"max_research_rounds": 5}
+    path = make_config_yaml(data)
+    config = load_config(path)
+    assert config.settings.max_research_rounds == 5

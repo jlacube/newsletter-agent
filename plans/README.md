@@ -202,7 +202,7 @@ WP08 must wait for both WP06 and WP07 because it tests combined behavior, backwa
 
 | ID | Title | Priority | Status | Depends On | Parallelisable |
 |----|-------|----------|--------|-----------|----------------|
-| [WP11](WP11-config-and-cli-runner.md) | Config Extension & Autonomous CLI Runner | P0/P1 | Not Started | WP01-WP10 (base system) | Yes |
+| [WP11](WP11-config-and-cli-runner.md) | Config Extension & Autonomous CLI Runner | P0/P1 | Complete | WP01-WP10 (base system) | Yes |
 | [WP12](WP12-deep-research-orchestrator.md) | Multi-Round Deep Research Orchestrator | P1 | Not Started | WP11 | No |
 | [WP13](WP13-source-refinement.md) | Deep Research Source Refinement | P1 | Not Started | WP12 | No |
 | [WP14](WP14-integration-testing.md) | Integration Testing & Backward Compatibility | P1 | Not Started | WP11, WP12, WP13 | No |

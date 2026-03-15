@@ -20,7 +20,20 @@ Opens the ADK development UI in your browser where you can trigger the pipeline 
 adk run newsletter_agent
 ```
 
-Runs the pipeline once and exits.
+Runs the pipeline once interactively and exits.
+
+### Autonomous CLI Runner
+
+```bash
+python -m newsletter_agent
+```
+
+Runs the full pipeline autonomously without interactive input. This is the recommended mode for scheduled/automated execution (e.g., cron, Cloud Scheduler, CI/CD). The runner:
+
+- Sends a `"Generate newsletter"` trigger message automatically
+- Logs pipeline progress to stdout
+- Prints a JSON summary line on completion
+- Exits with code 0 (success) or 1 (failure)
 
 ### Dry-Run Mode
 

@@ -154,6 +154,7 @@ class AppSettings(BaseModel):
     output_dir: str = "output/"
     timeframe: TimeframeValue = None
     verify_links: bool = False
+    max_research_rounds: int = Field(default=3, ge=1, le=5)
 
 
 class NewsletterConfig(BaseModel):

@@ -61,6 +61,7 @@ topics:
 | `output_dir` | string | No | `"output/"` | Directory for HTML output (created automatically) |
 | `timeframe` | string | No | `null` | Global search timeframe constraint (see Timeframe Values below) |
 | `verify_links` | boolean | No | `false` | When `true`, verifies source URLs and removes broken links |
+| `max_research_rounds` | integer | No | `3` | Number of research rounds for deep-mode topics (1-5). Only affects topics with `search_depth: deep`. Standard-mode topics always perform 1 round. |
 
 ### Section: `topics`
 

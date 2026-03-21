@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP19 - Telemetry Foundation: Dependencies, OTel Init & Config Schema
@@ -423,6 +423,7 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 - 2025-07-18T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
 - 2026-03-21T12:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03). Process deviation noted: WP19 tasks were committed in a single commit (f5c3648) instead of one commit per task. This cannot be retroactively fixed. Future WPs will use per-task commits.
 - 2026-03-21T12:30:00Z - coder - lane=for_review - All feedback items resolved, submitted for re-review
+- 2026-03-21T13:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 
 ## Review
 
@@ -597,3 +598,35 @@ Changes Required. Three FAILs found: (1) `shutdown_telemetry()` does not pass `t
 1. **FB-01**: Add `timeout_millis=5000` to `provider.shutdown()` call in `shutdown_telemetry()` (spec deviation).
 2. **FB-02**: Add Spec Compliance Checklists for all 9 tasks in the WP file.
 3. **FB-03**: Document the single-commit process deviation in the Activity Log. Ensure per-task commits for future WPs.
+
+## Re-Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-21
+> **Verdict**: Approved with Findings
+> **Scope**: FB-01, FB-02, FB-03 remediation + regression check
+
+### Summary
+All three FAILs from the initial review are resolved. No regressions detected. Two WARNs from the initial review remain unchanged (branch coverage config, test file path); these do not block correctness.
+
+### Re-Review Findings
+
+#### PASS - FB-01: shutdown_telemetry timeout_millis
+- **Status**: Resolved
+- **Detail**: `provider.shutdown(timeout_millis=5000)` now matches the spec implementation contract (Section 8.1). Verified in `newsletter_agent/telemetry.py` line 131.
+
+#### PASS - FB-02: Spec Compliance Checklists
+- **Status**: Resolved
+- **Detail**: All 9 tasks (T19-01 through T19-09) now have Spec Compliance Checklists with all items checked. Verified via grep.
+
+#### PASS - FB-03: Commit Process Deviation
+- **Status**: Resolved
+- **Detail**: Process deviation documented in Activity Log entry dated 2026-03-21T12:00:00Z. Commitment to per-task commits for future WPs noted.
+
+#### No Regressions
+- All 85 tests pass (33 telemetry, 34 cost tracker, 18 pricing config).
+- No files modified outside the remediation scope.
+
+### Surviving WARNs (from initial review)
+- **WARN** - Coverage Thresholds: `branch = true` still not in pyproject.toml. Does not block correctness.
+- **WARN** - Scope Discipline: Test files in `tests/unit/` vs plan-declared `tests/`. Correct for project convention.

@@ -142,11 +142,11 @@ The function signature defines the tool's parameters. ADK handles serialization 
 | Directory | Marker | Description |
 |-----------|--------|-------------|
 | `tests/unit/` | `unit` | Pure logic tests, no external dependencies |
-| `tests/bdd/` | -- | BDD scenario tests |
-| `tests/integration/` | -- | Cross-component tests with mocked external services |
+| `tests/bdd/` | -- | BDD scenario tests (token tracking, cost, spans, log correlation, export config, budget, kill switch) |
+| `tests/integration/` | -- | Cross-component tests with mocked external services, OTel end-to-end, cost pipeline |
 | `tests/e2e/` | `e2e` | Pipeline integration, mocked LLM calls |
-| `tests/security/` | -- | XSS, sanitization, injection, prompt safety, adaptive prompt injection tests |
-| `tests/performance/` | `performance` | Timing, resource validation, adaptive loop benchmarks |
+| `tests/security/` | -- | XSS, sanitization, injection, prompt safety, adaptive prompt injection, OTel PII/secret tests |
+| `tests/performance/` | `performance` | Timing, resource validation, adaptive loop benchmarks, OTel overhead |
 
 ### Running Tests
 
@@ -168,6 +168,12 @@ pytest tests/unit/test_agent_factory.py::TestBuildPipeline -v
 
 # By marker
 pytest -m performance -v
+
+# Observability acceptance tests (BDD + integration + performance + security)
+pytest tests/bdd/ tests/integration/test_observability.py tests/performance/test_otel_overhead.py tests/security/test_otel_security.py -v
+
+# Observability coverage for target modules
+pytest tests/ --ignore=tests/unit/test_http_handler.py --cov=newsletter_agent.telemetry --cov=newsletter_agent.cost_tracker --cov=newsletter_agent.timing --cov=newsletter_agent.logging_config --cov-branch --cov-report=term-missing
 ```
 
 ### Test Configuration
@@ -228,10 +234,12 @@ Shared fixtures are defined in `tests/conftest.py`:
 All modules use `logging.getLogger(__name__)`. Log levels:
 
 - `DEBUG`: Detailed internal state (disabled by default)
-- `INFO`: Phase transitions, timing, normal operations
-- `WARNING`: Fallback behavior, non-critical issues
+- `INFO`: Phase transitions, timing, cost summaries, normal operations
+- `WARNING`: Fallback behavior, non-critical issues, missing spans
 - `ERROR`: Provider failures, delivery failures
 - `CRITICAL`: Total research failure (pipeline will abort)
+
+Log format includes trace context: `{timestamp} {level} {name} [trace={trace_id} span={span_id}] {message}`. The `TraceContextFilter` in `logging_config.py` injects `trace_id`/`span_id` from the active OTel span into every log record. When no span is active or OTel is disabled, zero IDs are used.
 
 ### Error Handling
 

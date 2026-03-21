@@ -405,3 +405,121 @@ Cross-WP consistency audit performed on 2026-03-15. No inconsistencies found. Ke
 | T18-03 | Update configuration-guide.md | WP18 | Yes |
 | T18-04 | Update deployment-guide.md and .env.example | WP18 | Yes |
 | T18-05 | Update README.md with adaptive research overview | WP18 | Yes |
+
+---
+
+## Enhancement: Observability, Cost Monitoring & Debug Tracing
+
+> **Spec**: `specs/003-observability-cost-tracing.spec.md` (v1.0)
+> **Added**: 2025-07-18
+
+### Enhancement Work Packages
+
+| ID | Title | Priority | Status | Depends On | Parallelisable |
+|----|-------|----------|--------|-----------|----------------|
+| [WP19](WP19-telemetry-foundation.md) | Telemetry Foundation: Dependencies, OTel Init & Config Schema | P0 | Not Started | WP15-WP18 (base system) | No |
+| [WP20](WP20-cost-tracking.md) | Cost Tracking & LLM Instrumentation | P1 | Not Started | WP19 | No |
+| [WP21](WP21-span-hierarchy-logging.md) | Agent Span Hierarchy & Log Correlation | P1 | Not Started | WP19, WP20 | No |
+| [WP22](WP22-acceptance-testing.md) | Acceptance Testing & Quality Gate | P1 | Not Started | WP19, WP20, WP21 | No |
+
+### Enhancement MVP Scope
+
+All four work packages constitute the minimum releasable increment: **WP19, WP20, WP21, WP22**.
+
+- **WP19** (P0) delivers the foundation: OTel SDK dependencies, `telemetry.py` init/shutdown, `PricingConfig` in config schema, entry point wiring, and `.env.example` updates. No user-facing observability yet.
+- **WP20** (P1) delivers cost tracking and LLM instrumentation: `cost_tracker.py`, `traced_generate()`, call-site modifications in synthesizer/refiner, ConfigLoaderAgent CostTracker init. After this, every LLM call has token counts and cost.
+- **WP21** (P1) delivers the span hierarchy and log correlation: modified `timing.py` with OTel span creation in ADK callbacks, root/topic span attributes, cost summary logging, `TraceContextFilter` in logging_config.py. After this, the full trace tree is visible.
+- **WP22** (P1) delivers the quality gate: all 8 BDD feature test suites, integration tests, performance benchmarks, security tests, and coverage verification.
+
+### Enhancement Dependency & Execution Summary
+
+- **Prerequisite**: WP01-WP18 must all be complete (base system + all prior enhancements).
+- **Sequence**: WP19 -> WP20 -> WP21 -> WP22
+- **Parallelization**: Strictly sequential. Each WP depends on the prior. Within WPs, some tasks are parallelizable (marked in WP files).
+- **Critical path**: WP19 (T19-02) -> WP20 (T20-04) -> WP21 (T21-01, T21-06) -> WP22 (T22-09, T22-12)
+
+### Enhancement Sequencing Notes
+
+**WP19 (Telemetry Foundation)** must be completed first. It provides:
+1. OTel SDK packages in requirements.txt (needed by all subsequent WPs)
+2. `init_telemetry()`, `shutdown_telemetry()`, `get_tracer()`, `is_enabled()` functions (needed by WP20 and WP21)
+3. `PricingConfig`/`ModelPricingConfig` Pydantic models (needed by WP20)
+4. Entry point wiring in `__init__.py`, `__main__.py`, `http_handler.py`
+
+Within WP19, T19-02 (telemetry.py) and T19-03 (PricingConfig) are independent and can be worked in parallel.
+
+**WP20 (Cost Tracking & LLM Instrumentation)** depends on WP19 for `get_tracer()` and `is_enabled()` (used in `traced_generate()`) and for `PricingConfig` (converted to `ModelPricing` in ConfigLoaderAgent). Key outputs:
+- `cost_tracker.py` module with `CostTracker`, data classes, and module-level accessor functions
+- `traced_generate()` function in `telemetry.py`
+- Modified call sites in `per_topic_synthesizer.py` and `deep_research_refiner.py`
+
+Within WP20, T20-05 (synthesizer mod) and T20-06 (refiner mod) are independent.
+
+**WP21 (Agent Span Hierarchy & Log Correlation)** depends on WP20 for `get_cost_tracker()` (used in cost summary at pipeline end). It modifies:
+- `timing.py`: OTel span creation in before/after callbacks, cost summary logging
+- `logging_config.py`: TraceContextFilter, updated log formats
+
+Within WP21, T21-03/T21-04/T21-05 (span attribute tasks) and T21-07 (TraceContextFilter) are independent.
+
+**WP22 (Acceptance Testing)** is the final quality gate. Cannot start until all features are implemented. Tests verify all 7 success criteria (SC-001 through SC-007).
+
+### Consistency Notes
+
+Cross-WP consistency audit performed. No inconsistencies found. Key validations:
+- `ModelPricingConfig` (Pydantic, WP19) and `ModelPricing` (frozen dataclass, WP20) have matching field names (`input_per_million`, `output_per_million`). Conversion code in WP20 T20-07.
+- `init_telemetry()` signature (no params, WP19) called consistently from `__init__.py` (WP19 T19-04)
+- `get_tracer(name)` signature (WP19) called with `"newsletter_agent.timing"` in WP21 T21-01
+- `is_enabled()` returns `bool` (WP19) checked in WP20 T20-04, WP20 T20-07, WP21 T21-01/T21-02
+- `traced_generate()` signature (WP20 T20-04) matches call sites in WP20 T20-05/T20-06
+- `get_cost_tracker()` (WP20 T20-03) called in WP20 T20-04 and WP21 T21-06 with consistent expectations
+- `OTEL_ENABLED` env var default `"true"` consistent across WP19 T19-02 and WP22 T22-08
+- Coverage thresholds 80% code / 90% branch stated consistently in WP19 T19-09, WP20 T20-08, WP21 T21-09, WP22 T22-12
+- All 37 FRs from spec traceability matrix (Section 16) assigned to exactly one task across WPs - no orphans, no duplicates
+- All 7 SCs mapped to WP22 acceptance tests
+- All 7 USs mapped to WP22 BDD scenarios
+
+### Enhancement Task Index
+
+| Task ID | Summary | Work Package | Parallel? |
+|---------|---------|--------------|----------|
+| T19-01 | Add OpenTelemetry dependencies to requirements.txt | WP19 | No |
+| T19-02 | Create telemetry.py with init, shutdown, get_tracer, is_enabled | WP19 | No |
+| T19-03 | Add PricingConfig and ModelPricingConfig to config/schema.py | WP19 | Yes |
+| T19-04 | Wire init_telemetry() into __init__.py | WP19 | No |
+| T19-05 | Wire shutdown_telemetry() into __main__.py and http_handler.py | WP19 | Yes |
+| T19-06 | Update .env.example with OTel environment variables | WP19 | Yes |
+| T19-07 | Unit tests for telemetry initialization and shutdown | WP19 | No |
+| T19-08 | Unit tests for PricingConfig and ModelPricingConfig | WP19 | No |
+| T19-09 | Configure coverage thresholds for new modules | WP19 | No |
+| T20-01 | Create cost_tracker.py with data model classes | WP20 | No |
+| T20-02 | Implement CostTracker class | WP20 | No |
+| T20-03 | Implement module-level init, get, reset functions | WP20 | No |
+| T20-04 | Implement traced_generate() in telemetry.py | WP20 | No |
+| T20-05 | Modify per_topic_synthesizer.py to use traced_generate() | WP20 | Yes |
+| T20-06 | Modify deep_research_refiner.py to use traced_generate() | WP20 | Yes |
+| T20-07 | Modify ConfigLoaderAgent to initialize CostTracker | WP20 | No |
+| T20-08 | Unit tests for CostTracker | WP20 | Yes |
+| T20-09 | Unit tests for traced_generate() | WP20 | No |
+| T20-10 | Unit tests for no-op CostTracker behavior when disabled | WP20 | Yes |
+| T21-01 | Modify before_agent_callback to create OTel spans | WP21 | No |
+| T21-02 | Modify after_agent_callback to end spans and detach context | WP21 | No |
+| T21-03 | Implement root agent span attributes | WP21 | Yes |
+| T21-04 | Implement topic-scoped agent span attributes | WP21 | Yes |
+| T21-05 | Add gen_ai.tokens_available attribute for LlmAgent spans | WP21 | Yes |
+| T21-06 | Implement cost summary logging and span events at pipeline end | WP21 | No |
+| T21-07 | Create TraceContextFilter in logging_config.py | WP21 | Yes |
+| T21-08 | Update text and JSON log formats with trace IDs | WP21 | No |
+| T21-09 | Unit tests for timing OTel integration | WP21 | No |
+| T21-10 | Unit tests for TraceContextFilter and log formats | WP21 | Yes |
+| T22-01 | BDD tests: Token Tracking on LLM Calls | WP22 | Yes |
+| T22-02 | BDD tests: Cost Calculation | WP22 | Yes |
+| T22-03 | BDD tests: Cost Summary at Pipeline End | WP22 | Yes |
+| T22-04 | BDD tests: Span Hierarchy | WP22 | Yes |
+| T22-05 | BDD tests: Log-Trace Correlation | WP22 | Yes |
+| T22-06 | BDD tests: Export Configuration | WP22 | Yes |
+| T22-07 | BDD tests: Cost Budget Warning | WP22 | Yes |
+| T22-08 | BDD tests: Telemetry Kill Switch | WP22 | Yes |
+| T22-09 | Integration tests: OTel e2e, cost pipeline, config loading | WP22 | No |
+| T22-10 | Performance tests: OTel overhead benchmark | WP22 | Yes |
+| T22-11 | Security tests: no PII in spans, OTLP headers not logged | WP22 | Yes |
+| T22-12 | Coverage verification for all new modules | WP22 | No |

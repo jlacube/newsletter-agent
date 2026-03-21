@@ -177,3 +177,20 @@ Export behavior:
 - With `OTEL_EXPORTER_OTLP_ENDPOINT` set: OTLP gRPC export (plus console in development)
 - Without endpoint: Console span export only
 - With `OTEL_ENABLED=false`: No-op (no spans, no overhead)
+
+### Cost Tracking
+
+The `newsletter_agent/cost_tracker.py` module provides LLM cost tracking:
+
+- **`CostTracker`**: Thread-safe accumulator for per-call cost data. Stores `LlmCallRecord` entries and computes `CostSummary` with per-model, per-topic, and per-phase breakdowns.
+- **`init_cost_tracker(pricing, cost_budget_usd)`**: Called by `ConfigLoaderAgent` after parsing pricing config. Creates the global `CostTracker` instance with model pricing from `topics.yaml`.
+- **`get_cost_tracker()`**: Returns the active `CostTracker`, or a silent no-op instance if not initialized.
+- **`reset_cost_tracker()`**: Clears the global tracker (used in test teardown).
+
+The `traced_generate()` function in `telemetry.py` wraps every direct `genai.Client().aio.models.generate_content()` call. It creates an OTel span (`llm.generate:{model}`), extracts token counts from `response.usage_metadata`, records them as span attributes (`gen_ai.usage.*`, `newsletter.cost.*`), and accumulates cost in the `CostTracker`. Call sites in `per_topic_synthesizer.py` and `deep_research_refiner.py` use `traced_generate()` instead of calling the Gemini API directly.
+
+Data model classes:
+- **`ModelPricing`**: Frozen dataclass with `input_per_million` and `output_per_million` (USD per million tokens)
+- **`LlmCallRecord`**: Frozen dataclass capturing a single LLM call's model, agent, phase, topic, token counts, and costs
+- **`CostSummary`**: Aggregated totals with `per_model`, `per_topic`, and `per_phase` breakdowns
+- **`ModelCostDetail`**: Per-dimension detail (tokens, cost, call count)

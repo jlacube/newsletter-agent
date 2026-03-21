@@ -323,3 +323,53 @@ Builds the research phase `ParallelAgent` with one `SequentialAgent` per topic. 
 ### `build_synthesis_agent(config: NewsletterConfig) -> LlmAgent`
 
 Builds the synthesis `LlmAgent` with Gemini Pro model.
+
+## Telemetry & Cost Tracking
+
+### `traced_generate(model, contents, config, *, agent_name, topic_name, topic_index, phase) -> GenerateContentResponse`
+
+Wraps `genai.Client().aio.models.generate_content()` with OTel span creation, token extraction, and cost recording.
+
+**Module**: `newsletter_agent.telemetry`
+
+**Parameters**:
+- `model` (str) -- Gemini model name (e.g., `"gemini-2.5-pro"`)
+- `contents` (str | list) -- Prompt contents
+- `config` (GenerateContentConfig | None) -- Generation config
+- `agent_name` (str) -- Calling agent name for attribution
+- `topic_name` (str | None) -- Topic name (optional)
+- `topic_index` (int | None) -- Topic index (optional)
+- `phase` (str) -- Pipeline phase: `"research"`, `"synthesis"`, `"refinement"`, or `"unknown"`
+
+**Behavior**: Creates an OTel span `llm.generate:{model}`, calls the Gemini API, extracts token counts from `usage_metadata`, sets `gen_ai.*` and `newsletter.cost.*` span attributes, records cost via `CostTracker`, and returns the response unchanged. When telemetry is disabled (`is_enabled() == False`), calls the API directly without instrumentation.
+
+**Span attributes set**:
+- `gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.thinking_tokens`, `gen_ai.usage.total_tokens`
+- `newsletter.cost.input_usd`, `newsletter.cost.output_usd`, `newsletter.cost.total_usd`
+- `newsletter.cost.pricing_missing` (True when model not in pricing config)
+- `newsletter.agent.name`, `newsletter.phase`, `newsletter.topic.name`, `newsletter.topic.index`
+
+### `CostTracker`
+
+Thread-safe accumulator for LLM call cost data.
+
+**Module**: `newsletter_agent.cost_tracker`
+
+**Constructor**: `CostTracker(pricing: dict[str, ModelPricing], cost_budget_usd: float | None = None)`
+
+**Methods**:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `record_llm_call(**kwargs)` | `LlmCallRecord` | Records an LLM call, computes cost, returns the record |
+| `get_summary()` | `CostSummary` | Aggregates all calls into per-model/topic/phase summaries |
+| `get_calls()` | `list[LlmCallRecord]` | Returns shallow copy of all recorded calls |
+| `has_pricing(model)` | `bool` | Returns True if model has known pricing |
+
+### Module-Level Functions (`cost_tracker.py`)
+
+| Function | Description |
+|----------|-------------|
+| `init_cost_tracker(pricing, cost_budget_usd)` | Creates global `CostTracker` instance |
+| `get_cost_tracker()` | Returns active tracker or silent no-op if not initialized |
+| `reset_cost_tracker()` | Clears global tracker (test teardown) |

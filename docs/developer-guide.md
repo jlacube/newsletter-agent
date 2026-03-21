@@ -11,7 +11,8 @@ NewsletterAgent/
     __main__.py              # Autonomous CLI entry point (python -m newsletter_agent)
     agent.py                 # Root agent, pipeline factory, custom agents
     logging_config.py        # Structured logging setup
-    telemetry.py             # OpenTelemetry init/shutdown/get_tracer/is_enabled
+    telemetry.py             # OpenTelemetry init/shutdown/get_tracer/is_enabled/traced_generate
+    cost_tracker.py          # CostTracker, LlmCallRecord, CostSummary, ModelPricing
     timing.py                # Pipeline timing instrumentation
     http_handler.py          # Cloud Run HTTP endpoint (Flask)
     config/

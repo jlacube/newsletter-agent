@@ -1,6 +1,5 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
 ---
 
 # WP20 - Cost Tracking & LLM Instrumentation
@@ -453,6 +452,44 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
 - 2026-03-21T12:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
 - 2026-03-21T14:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04)
 - 2026-03-21T14:30:00Z - coder - lane=for_review - All FB items resolved, submitted for re-review
+- 2026-03-21T15:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (3 WARNs)
+
+## Re-Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-21
+> **Verdict**: Approved with Findings
+
+### Summary
+
+All four FB items from the initial review are resolved. FB-01: `newsletter.cost.pricing_missing` span attribute is now set with two passing tests. FB-02: `CostSummary.per_topic`/`per_phase` type deviation is documented in the docstring. FB-03: Spec Compliance Checklists added for all 10 tasks, Activity Log updated, commits made per fix. FB-04: Documentation updated in architecture.md, api-reference.md, and developer-guide.md. All 67 tests pass. Three WARNs from the initial review remain recorded (deliberate `get_cost_tracker()` no-op behavior, keyword-only `record_llm_call` signature, documentation was initially missing) but do not block correctness.
+
+### Re-Review Findings
+
+#### PASS - FB-01: pricing_missing span attribute (FR-404)
+- `traced_generate()` now calls `tracker.has_pricing(model)` and sets `newsletter.cost.pricing_missing: True` when model is unknown.
+- `has_pricing()` implemented on both `CostTracker` and `_NoOpCostTracker`.
+- Two new tests: `test_pricing_missing_attribute_for_unknown_model`, `test_pricing_missing_not_set_for_known_model`.
+- **Status**: Resolved.
+
+#### PASS - FB-02: CostSummary per_topic/per_phase types (Section 7.5)
+- Deliberate deviation documented in `CostSummary` docstring explaining the richer `ModelCostDetail` vs spec's `float`.
+- **Status**: Resolved (documented deviation).
+
+#### PASS - FB-03: Process compliance
+- Spec Compliance Checklists added for T20-01 through T20-10, all items checked.
+- Activity Log entries added for coder lane transitions.
+- Commits exist per fix: `eaeae92` (FB-01), `306fd0f` (FB-02), `14cc5cd` (FB-03), `9cd3a68` (FB-04).
+- **Status**: Resolved.
+
+#### PASS - FB-04: Documentation updates
+- `docs/architecture.md`: Cost Tracking subsection added under Telemetry.
+- `docs/api-reference.md`: `traced_generate()`, `CostTracker`, and module-level functions documented.
+- `docs/developer-guide.md`: `cost_tracker.py` added to project structure.
+- **Status**: Resolved.
+
+### Regressions
+None. All 67 tests pass (62 original + 2 new pricing_missing tests + 3 has_pricing tests).
 
 ## Review
 

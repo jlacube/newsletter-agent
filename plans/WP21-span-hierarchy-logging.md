@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP21 - Agent Span Hierarchy & Log Correlation
@@ -432,8 +432,9 @@ Modify `timing.py` to create OTel spans in the existing ADK `before_agent_callba
 - 2026-03-21T11:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (1 FAIL) -- awaiting remediation
 - 2026-03-21T11:30:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03)
 - 2026-03-21T12:00:00Z - coder - lane=for_review - All feedback items resolved, resubmitted for review
+- 2026-03-21T12:30:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs, carried forward)
 
-## Review
+## Review (Round 1)
 
 > **Reviewed by**: Reviewer Agent
 > **Date**: 2026-03-21
@@ -446,158 +447,82 @@ Changes Required due to 1 FAIL. The topic-scoped attribute regex (FR-206) does n
 
 ### Review Feedback
 
-> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+- [x] **FB-01**: FR-206 regex does not match actual `TopicNResearch` agent names.
+- [x] **FB-02**: Test parametrization uses fabricated `Topic_3_Research` instead of real names.
+- [x] **FB-03**: No full callback test for `TopicNResearch` agent names.
 
-- [x] **FB-01**: FR-206 regex `r'_(\d+)(?:_|$)'` does not match actual agent names `Topic{idx}Research` (e.g., `Topic0Research`, `Topic3Research`) as created at [agent.py line 140](newsletter_agent/agent.py#L140). The spec and WP T21-04 acceptance criteria both state this pattern should match. Either (a) update the regex to also match `Topic(\d+)` patterns, or (b) update agent.py naming to use underscores (e.g., `Topic_{idx}_Research`). Option (a) is preferred as it requires no changes to the agent tree. Update the regex to something like `r'(?:^Topic|_)(\d+)(?:_|$)'` or a dual-pattern approach.
-  - **Remediation**: Updated regex to `r"(?:^Topic|_)(\d+)(?:_|$|[A-Z])"` which matches both `Topic{N}Research` and `_N_`/`_N$` patterns. Verified via script and all parametrized tests pass.
-- [x] **FB-02**: Test `TestTopicScopedAttributes.test_topic_index_regex` at [test_timing_otel.py line 270](tests/unit/test_timing_otel.py#L270) uses `Topic_3_Research` instead of `Topic3Research`. This must be corrected to actually test the claimed pattern. Add `Topic0Research` and `Topic3Research` to the parametrize list and ensure they match.
-  - **Remediation**: Replaced `Topic_3_Research` with actual agent names `Topic0Research` and `Topic3Research` in the parametrize list. Both match the updated regex correctly.
-- [x] **FB-03**: Add a test case that uses an actual `Topic{idx}Research` name (matching codebase reality) through the full `before_agent_callback` flow and verifies `newsletter.topic.index` and `newsletter.topic.name` are set on the resulting span.
-  - **Remediation**: Added `test_topic_research_callback_sets_attributes` which exercises `Topic0Research` through the full `before_agent_callback`/`after_agent_callback` flow and asserts `newsletter.topic.index == 0` and `newsletter.topic.name == "AI Frameworks"`.
+*(See Round 2 review below for resolution verification.)*
 
-### Findings
+---
 
-#### REMEDIATED - Spec Adherence: FR-206 Topic Index Regex
+## Review (Round 2 — Re-review)
 
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-21
+> **Verdict**: Approved with Findings
+> **review_status**:
+
+### Summary
+
+All three FB items from Round 1 are fully resolved. The regex now matches real `TopicNResearch` agent names, tests use actual agent names, and a new full-callback test verifies the end-to-end flow. 45/45 tests pass. Two pre-existing WARNs (data model deviation, branch coverage) carry forward unchanged — neither blocks correctness. Zero FAILs.
+
+### Review Feedback
+
+> No actionable feedback. All prior FB items resolved.
+
+### Findings (Re-review scope: FB-01, FB-02, FB-03 + regression check)
+
+#### PASS - FB-01 Resolution: FR-206 Topic Index Regex
 - **Requirement**: FR-206, T21-04 acceptance criteria
-- **Status**: Remediated (was FAIL)
-- **Detail**: Regex updated from `r'_(\d+)(?:_|$)'` to `r'(?:^Topic|_)(\d+)(?:_|$|[A-Z])'` which matches both `TopicNResearch` and `_N_`/`_N$` patterns. Tests updated to use real agent names (`Topic0Research`, `Topic3Research`). New test `test_topic_research_callback_sets_attributes` verifies full callback flow with `Topic0Research`.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L39) updated regex. [test_timing_otel.py](tests/unit/test_timing_otel.py) updated parametrize and new callback test. All 33 tests pass.
+- **Status**: Compliant (was FAIL)
+- **Detail**: Regex updated to `r"(?:^Topic|_)(\d+)(?:_|$|[A-Z])"`. Matches `Topic0Research`, `Topic3Research`, `GoogleSearcher_0`, `DeepResearch_2_google` — all patterns required by spec and used in agent.py.
+- **Evidence**: [timing.py#L40](newsletter_agent/timing.py#L40), [agent.py#L140](newsletter_agent/agent.py#L140) confirms `f"Topic{idx}Research"` naming.
 
-#### PASS - Spec Adherence: FR-201 Span Creation
+#### PASS - FB-02 Resolution: Test Parametrization Corrected
+- **Requirement**: Section 11.1 test requirements, T21-04
+- **Status**: Compliant (was FAIL)
+- **Detail**: `test_topic_index_regex` now parametrized with `("Topic0Research", 0)` and `("Topic3Research", 3)` alongside the original underscore patterns. Fabricated `Topic_3_Research` removed.
+- **Evidence**: [test_timing_otel.py#L268-L273](tests/unit/test_timing_otel.py#L268-L273)
 
-- **Requirement**: FR-201
-- **Status**: Compliant
-- **Detail**: `before_agent_callback` creates an OTel span named after the agent with `newsletter.agent.name` and `newsletter.invocation_id` attributes. Verified in test and code.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L72-L78), test `TestBeforeCallbackSpanCreation.test_creates_span_when_enabled`
+#### PASS - FB-03 Resolution: Full Callback Test Added
+- **Requirement**: FR-206 end-to-end verification
+- **Status**: Compliant (was FAIL)
+- **Detail**: `test_topic_research_callback_sets_attributes` exercises `Topic0Research` through `before_agent_callback` → `after_agent_callback` and asserts `newsletter.topic.index == 0` and `newsletter.topic.name == "AI Frameworks"` on the finished span. This is a real test that would fail if the regex did not match.
+- **Evidence**: [test_timing_otel.py#L296-L312](tests/unit/test_timing_otel.py#L296-L312)
 
-#### PASS - Spec Adherence: FR-202 Context Attach/Detach
+#### PASS - Regression Check: All Previously Passing Dimensions
+- **Detail**: 45/45 tests pass. Span hierarchy, root attributes, LLM markers, cost summary, log correlation all unaffected by the regex change. No files outside WP21 scope were modified.
 
-- **Requirement**: FR-202
-- **Status**: Compliant
-- **Detail**: Span is attached to context in before_callback, detached in after_callback with try/finally. Parent-child hierarchy verified with 2-level and 3-level tests.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L109-L110), tests `TestSpanHierarchy`
-
-#### PASS - Spec Adherence: FR-203 Duration Attribute
-
-- **Requirement**: FR-203
-- **Status**: Compliant
-- **Detail**: `newsletter.duration_seconds` float attribute set from monotonic timer difference.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L127-L129), test `test_ends_span_with_duration`
-
-#### PASS - Spec Adherence: FR-204 Active Spans Dict
-
-- **Requirement**: FR-204
-- **Status**: Compliant
-- **Detail**: Module-level `_active_spans` dict keyed by `"{invocation_id}:{agent_name}"`. Missing key logs WARNING.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L45), test `test_handles_missing_span_gracefully`
-
-#### PASS - Spec Adherence: FR-205 Root Agent Attributes
-
-- **Requirement**: FR-205
-- **Status**: Compliant
-- **Detail**: Root span gets `newsletter.topic_count`, `newsletter.dry_run`, `newsletter.pipeline_start_time` from state. Missing state keys handled gracefully.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L82-L92), tests `TestRootAgentAttributes`
-
-#### PASS - Spec Adherence: FR-207 Existing Behavior Preserved
-
-- **Requirement**: FR-207
-- **Status**: Compliant
-- **Detail**: Start time recording, pipeline_start_time in state, timing log messages, generation_time_seconds metadata all preserved.
-- **Evidence**: Tests `test_preserves_timing_log`, `test_preserves_pipeline_metadata`, `test_preserves_start_time_recording`
-
-#### PASS - Spec Adherence: FR-304 LlmAgent Marker
-
-- **Requirement**: FR-304
-- **Status**: Compliant
-- **Detail**: Known prefixes stored in `_LLMAGENT_PREFIXES` frozenset. Spans for matching agents get `gen_ai.tokens_available: false`. Non-matching agents excluded.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L30-L36), tests `TestLlmAgentMarker`
-
-#### PASS - Spec Adherence: FR-501 through FR-504 Cost Summary
-
-- **Requirement**: FR-501, FR-502, FR-503, FR-504
-- **Status**: Compliant
-- **Detail**: Structured JSON logged at INFO with all required fields. Span event `"cost_summary"` with flat primitives. `state["run_cost_usd"]` and `state["cost_summary"]` set via `asdict()`. Zero summary does not error.
-- **Evidence**: [timing.py](newsletter_agent/timing.py#L145-L210), tests `TestCostSummary` (5 tests)
-
-#### PASS - Spec Adherence: FR-701 through FR-704 Log Correlation
-
-- **Requirement**: FR-701, FR-702, FR-703, FR-704
-- **Status**: Compliant
-- **Detail**: `TraceContextFilter` injects 32-char trace_id and 16-char span_id. Text format includes `[trace=... span=...]`. JSON format includes fields. OTel import inside method for safety. Zero IDs when disabled.
-- **Evidence**: [logging_config.py](newsletter_agent/logging_config.py#L66-L85), tests `TestTraceContextFilter`, `TestTextLogFormat`, `TestJsonLogFormat`, `TestOtelDisabledLogs`
-
-#### PASS - Process Compliance
-
-- **Requirement**: Step 2b Spec Compliance Checklist
-- **Status**: Compliant
-- **Detail**: Self-review section contains a complete Spec Compliance Checklist with all FR items checked. Activity Log entries present.
-- **Evidence**: WP21 Self-Review section
-
-#### WARN - Data Model: CostSummary Internal Types
-
+#### WARN - Data Model: CostSummary Internal Types (carried forward)
 - **Requirement**: Spec Section 7.5
 - **Status**: Deviating (non-blocking)
-- **Detail**: Spec defines `per_topic: dict[str, float]` and `per_phase: dict[str, float]`. Implementation uses `dict[str, ModelCostDetail]` internally. Serialized output correctly extracts `.cost_usd` to produce `dict[str, float]` for the log line (matching FR-501 format). Code documents this deviation in a docstring. Functionally compliant on all interfaces.
-- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py#L62-L82), [timing.py](newsletter_agent/timing.py#L155-L170)
+- **Detail**: `per_topic`/`per_phase` use `ModelCostDetail` internally but serialize to `dict[str, float]` at all interfaces. Functionally compliant.
 
-#### PASS - API / Interface Adherence
-
-- **Requirement**: Section 8.3, 8.4
-- **Status**: Compliant
-- **Detail**: `before_agent_callback` and `after_agent_callback` signatures match contract. `TraceContextFilter` matches Section 8.4.
-
-#### PASS - Architecture Adherence
-
-- **Requirement**: Section 9.3
-- **Status**: Compliant
-- **Detail**: Only `timing.py` and `logging_config.py` modified (plus new test files). Matches Section 9.3 directory structure.
-
-#### PASS - Test Coverage
-
-- **Requirement**: Section 11.1
-- **Status**: Compliant
-- **Detail**: 43 tests across 2 files, all passing. timing.py: 94% coverage. logging_config.py: 88% coverage. Combined: 92%. Exceeds 80% code threshold.
-- **Evidence**: pytest run with `--cov-branch` output
-
-#### PASS - Non-Functional: Security
-
-- **Requirement**: Section 10.2
-- **Status**: Compliant
-- **Detail**: No prompt content in spans. No secrets in attributes. No new injection surfaces.
-
-#### PASS - Non-Functional: Performance
-
-- **Requirement**: Section 10.1
-- **Status**: Compliant
-- **Detail**: All OTel operations gated behind `is_enabled()`. No N+1 patterns. No blocking calls. No unbounded data fetching.
-
-#### PASS - Documentation Accuracy
-
-- **Requirement**: docs/ files
-- **Status**: Compliant
-- **Detail**: `architecture.md` documents span hierarchy and TraceContextFilter. `developer-guide.md` documents log format with trace IDs. `api-reference.md` documents timing callbacks and span attributes.
-
-#### PASS - Success Criteria
-
-- **Requirement**: SC-003, SC-005
-- **Status**: Compliant
-- **Detail**: SC-003 verified by `test_three_level_hierarchy`. SC-005 verified by `TestTraceContextFilter.test_sets_ids_from_active_span` and text/JSON format tests.
-
-#### WARN - Coverage Thresholds: Branch Coverage
-
+#### WARN - Coverage Thresholds: Branch Coverage (carried forward)
 - **Requirement**: 90% branch coverage
-- **Status**: Partial
-- **Detail**: timing.py has 4 missed branch partials (96->102, 118->130, 130->150, 135->141) and logging_config.py has 3 missed branch partials. The defensive code at lines 98-99 and 209-210 in timing.py is acknowledged in the self-review. Overall branch coverage is healthy but some defensive paths remain unexercised.
-- **Evidence**: Coverage report: timing.py 94%, logging_config.py 88%, combined 92%
-
-#### PASS - Scope Discipline
-
-- **Requirement**: WP21 scope
-- **Status**: Compliant
-- **Detail**: Only declared files modified (timing.py, logging_config.py, plus test/doc files). No extra features or abstractions.
+- **Status**: Partial (non-blocking)
+- **Detail**: timing.py 94% code coverage. Some defensive branches (IndexError/TypeError guards, except-Exception fallbacks) remain unexercised. Acknowledged in self-review.
 
 #### PASS - Encoding (UTF-8)
+- **Status**: Compliant
+- **Detail**: Both modified files (timing.py, test_timing_otel.py) scanned — pure ASCII, no encoding violations.
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| FB-01 Resolution | 1 | 0 | 0 |
+| FB-02 Resolution | 1 | 0 | 0 |
+| FB-03 Resolution | 1 | 0 | 0 |
+| Regression Check | 1 | 0 | 0 |
+| Data Model | 0 | 1 | 0 |
+| Coverage Thresholds | 0 | 1 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+| **Total** | **5** | **2** | **0** |
+
+### Recommended Actions
+
+None required. The two WARNs are pre-existing, non-blocking, and documented.
 
 - **Requirement**: UTF-8 compliance
 - **Status**: Compliant

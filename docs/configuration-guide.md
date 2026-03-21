@@ -62,7 +62,7 @@ topics:
 | `timeframe` | string | No | `null` | Global search timeframe constraint (see Timeframe Values below) |
 | `verify_links` | boolean | No | `false` | When `true`, verifies source URLs and removes broken links |
 | `max_research_rounds` | integer | No | `3` | Number of research rounds for deep-mode topics (1-5). Only affects topics with `search_depth: deep`. Standard-mode topics always perform 1 round. |
-| `max_searches_per_topic` | integer | No | Same as `max_research_rounds` | Maximum search API calls per topic (1-15). Defaults to `max_research_rounds` if omitted. |
+| `max_searches_per_topic` | integer | No | Same as `max_research_rounds` | Maximum search API calls per topic (1-20). Defaults to `max_research_rounds` if omitted. |
 | `min_research_rounds` | integer | No | `2` | Minimum rounds before saturation exit is allowed (1-3). Must be <= `max_research_rounds`. |
 | `pricing` | object | No | See below | Model pricing configuration for cost tracking |
 
@@ -122,7 +122,7 @@ The adaptive deep research loop is controlled by three settings that work togeth
 | Setting | Default | Range | Role |
 |---------|---------|-------|------|
 | `max_research_rounds` | `3` | 1-5 | Maximum reasoning rounds (Plan-Search-Analyze cycles) |
-| `max_searches_per_topic` | same as `max_research_rounds` | 1-15 | Search budget cap per topic-provider pair |
+| `max_searches_per_topic` | same as `max_research_rounds` | 1-20 | Search budget cap per topic-provider pair |
 | `min_research_rounds` | `2` | 1-3 | Minimum rounds before saturation exit is allowed |
 
 **How the settings interact:**
@@ -166,9 +166,12 @@ Omitting `timeframe` entirely preserves the default behavior (no filtering).
 
 ### Link Verification Behavior
 
-When `verify_links: true`, the pipeline inserts a LinkVerifier stage after
-synthesis. It concurrently checks all source URLs via HTTP HEAD (with GET
-fallback) and removes broken links from the output:
+When `verify_links: true`, the pipeline runs two verification stages:
+
+- `LinkVerifier` checks research URLs before synthesis so downstream prompts only see validated sources
+- `SynthesisLinkVerifier` checks links embedded in synthesized section bodies and source lists before formatting
+
+Both stages use HTTP GET-based validation with SSRF protections and remove broken links from the relevant state:
 
 - URLs returning 4xx/5xx status codes are removed
 - URLs that time out (10s default) are removed

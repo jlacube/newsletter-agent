@@ -44,14 +44,14 @@ root_agent (SequentialAgent: "NewsletterPipeline")
 |
 +-- DeepResearchRefiner (Custom BaseAgent)
 |     For deep-mode topics with >10 sources, uses LLM to select the
-|     5-10 most relevant per provider. No-op for standard-mode topics.
+|     5-20 most relevant per provider. No-op for standard-mode topics.
 |
-+-- Synthesizer (LlmAgent, gemini-2.5-pro)
-|     Reads all research_N_* from state (pre-verified when verify_links=true)
-|     output_key: synthesis_raw
++-- PerTopicSynthesizer (Custom BaseAgent)
+|     Calls Gemini Pro once per topic and writes synthesis_N plus
+|     executive_summary state keys directly
 |
-+-- SynthesisPostProcessor (Custom BaseAgent)
-|     Parses synthesis_raw JSON into synthesis_N and executive_summary state keys
++-- SynthesisLinkVerifier (Custom BaseAgent)
+|     Verifies links embedded in synthesized sections before formatting
 |
 +-- OutputPhase (SequentialAgent)
       +-- FormatterAgent (Custom BaseAgent)
@@ -93,17 +93,16 @@ The pipeline communicates between agents exclusively through ADK session state. 
 | `config_output_dir` | ConfigLoader | Delivery | str |
 | `config_timeframes` | ConfigLoader | Research agents | dict or None |
 | `config_verify_links` | ConfigLoader | LinkVerifier | bool |
-| `config_topic_count` | SynthesisPostProcessor | Formatter | int |
+| `config_topic_count` | PerTopicSynthesizer | Formatter | int |
 | `pipeline_start_time` | before_agent_callback | Formatter | str (ISO 8601) |
-| `research_N_google` | GoogleSearcher_N or DeepResearchOrchestrator | LinkVerifier, Synthesizer | str (raw LLM output) |
-| `research_N_perplexity` | PerplexitySearcher_N or DeepResearchOrchestrator | LinkVerifier, Synthesizer | str (raw LLM output) |
+| `research_N_google` | GoogleSearcher_N or DeepResearchOrchestrator | LinkVerifier, DeepResearchRefiner, PerTopicSynthesizer | str (raw LLM output) |
+| `research_N_perplexity` | PerplexitySearcher_N or DeepResearchOrchestrator | LinkVerifier, DeepResearchRefiner, PerTopicSynthesizer | str (raw LLM output) |
 | `adaptive_context_N_{provider}` | DeepResearchOrchestrator | -- | dict (plan + per-round analysis) |
 | `adaptive_reasoning_chain_N_{provider}` | DeepResearchOrchestrator | -- | str (JSON, persisted reasoning chain) |
 | `deep_urls_accumulated_N_{provider}` | DeepResearchOrchestrator | -- | list[str] (accumulated unique URLs) |
 | `research_all_failed` | ResearchValidator | PipelineAbortCheck | bool |
-| `synthesis_raw` | Synthesizer | SynthesisPostProcessor | str (JSON) |
-| `synthesis_N` | SynthesisPostProcessor | Formatter | dict |
-| `executive_summary` | SynthesisPostProcessor | Formatter | list[dict] |
+| `synthesis_N` | PerTopicSynthesizer | SynthesisLinkVerifier, Formatter | dict |
+| `executive_summary` | PerTopicSynthesizer | Formatter | list[dict] |
 | `newsletter_html` | Formatter | Delivery | str (HTML) |
 | `newsletter_metadata` | Formatter / after_agent_callback | Delivery / HTTP handler | dict |
 | `delivery_status` | Delivery | HTTP handler | dict |
@@ -118,15 +117,17 @@ The pipeline communicates between agents exclusively through ADK session state. 
 
 4. **Abort Check**: If `research_all_failed` is True, saves an error HTML page and raises `RuntimeError` to halt the pipeline.
 
-5. **Synthesis**: The Gemini Pro model reads all research results from state and produces a JSON blob with executive summary and per-topic analysis sections.
+5. **Pre-Synthesis Link Verification**: When `verify_links=true`, `LinkVerifier` verifies URLs in the research text before any synthesis step runs. Broken links are stripped so downstream synthesis only sees verified sources.
 
-6. **Post-Processing**: Parses the raw synthesis JSON into individual `synthesis_N` state keys and the `executive_summary` list.
+6. **Deep Research Refinement**: For deep-mode topics with large source pools, `DeepResearchRefiner` trims each provider's source set before synthesis.
 
-7. **Link Verification**: When `verify_links=true`, verifies all source URLs concurrently via HTTP HEAD/GET. Removes broken links from sources and inline markdown citations. SSRF protections block private IPs and non-HTTP schemes. No-ops when `verify_links=false` or omitted.
+7. **Per-Topic Synthesis**: `PerTopicSynthesizerAgent` calls Gemini Pro once per topic, writes `synthesis_N` section data directly, and accumulates `executive_summary` entries without going through a monolithic `synthesis_raw` blob in the live pipeline.
 
-8. **Formatting**: Renders the Jinja2 HTML template with synthesis data. Sanitizes LLM-generated content through nh3 to prevent XSS.
+8. **Post-Synthesis Link Verification**: `SynthesisLinkVerifier` verifies links embedded in the synthesized markdown sections and removes broken URLs from section bodies and source lists.
 
-9. **Delivery**: Sends the newsletter via Gmail (if not dry-run and recipient is configured) or saves it as an HTML file.
+9. **Formatting**: Renders the Jinja2 HTML template with synthesis data. Sanitizes LLM-generated content through nh3 to prevent XSS.
+
+10. **Delivery**: Sends the newsletter via Gmail (if not dry-run and recipient is configured) or saves it as an HTML file.
 
 ## Dynamic Agent Construction
 
@@ -198,6 +199,8 @@ Span attributes include:
 - LlmAgent-based agents: `gen_ai.tokens_available: false` (token tracking not available in P1)
 
 At pipeline completion, a `cost_summary` span event is recorded on the root span and a structured JSON cost summary is logged at INFO level. Cost data is also stored in session state (`run_cost_usd`, `cost_summary`).
+
+For the end-to-end observability tranche delivered in WP19-WP22, see [docs/observability-guide.md](observability-guide.md).
 
 ## Telemetry (OpenTelemetry)
 

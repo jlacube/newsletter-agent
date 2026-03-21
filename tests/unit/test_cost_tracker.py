@@ -13,7 +13,6 @@ from newsletter_agent.cost_tracker import (
     CostSummary,
     CostTracker,
     LlmCallRecord,
-    ModelCostDetail,
     ModelPricing,
     _NoOpCostTracker,
     get_cost_tracker,
@@ -157,8 +156,8 @@ class TestGetSummary:
         assert summary.call_count == 2
         assert "gemini-2.5-pro" in summary.per_model
         assert "gemini-2.5-flash" in summary.per_model
-        assert summary.per_model["gemini-2.5-pro"].call_count == 1
-        assert summary.per_model["gemini-2.5-flash"].call_count == 1
+        assert summary.per_model["gemini-2.5-pro"]["call_count"] == 1
+        assert summary.per_model["gemini-2.5-flash"]["call_count"] == 1
 
     def test_aggregates_per_topic(self):
         tracker = _make_tracker()
@@ -175,8 +174,13 @@ class TestGetSummary:
             topic_name="Crypto", prompt_tokens=800, completion_tokens=400,
         )
         summary = tracker.get_summary()
-        assert summary.per_topic["AI News"].call_count == 2
-        assert summary.per_topic["Crypto"].call_count == 1
+        ai_cost = (
+            (1000 * 1.25 / 1_000_000) + (500 * 10.0 / 1_000_000)
+            + (500 * 1.25 / 1_000_000) + (200 * 10.0 / 1_000_000)
+        )
+        crypto_cost = (800 * 1.25 / 1_000_000) + (400 * 10.0 / 1_000_000)
+        assert summary.per_topic["AI News"] == pytest.approx(ai_cost)
+        assert summary.per_topic["Crypto"] == pytest.approx(crypto_cost)
 
     def test_aggregates_per_phase(self):
         tracker = _make_tracker()
@@ -191,8 +195,8 @@ class TestGetSummary:
         summary = tracker.get_summary()
         assert "synthesis" in summary.per_phase
         assert "refinement" in summary.per_phase
-        assert summary.per_phase["synthesis"].call_count == 1
-        assert summary.per_phase["refinement"].call_count == 1
+        assert summary.per_phase["synthesis"] == pytest.approx(0.00625)
+        assert summary.per_phase["refinement"] == pytest.approx(0.00048)
 
     def test_none_topic_mapped_to_unknown(self):
         tracker = _make_tracker()
@@ -491,9 +495,3 @@ class TestDataModels:
         assert s.per_topic == {}
         assert s.per_phase == {}
 
-    def test_model_cost_detail_defaults(self):
-        d = ModelCostDetail()
-        assert d.input_tokens == 0
-        assert d.output_tokens == 0
-        assert d.cost_usd == 0.0
-        assert d.call_count == 0

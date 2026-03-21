@@ -15,6 +15,42 @@ logger = logging.getLogger(__name__)
 _initialized: bool = False
 
 
+class _NoOpSpan:
+    def set_attribute(self, *args, **kwargs) -> None:
+        return None
+
+    def set_status(self, *args, **kwargs) -> None:
+        return None
+
+    def record_exception(self, *args, **kwargs) -> None:
+        return None
+
+    def add_event(self, *args, **kwargs) -> None:
+        return None
+
+    def end(self) -> None:
+        return None
+
+
+class _NoOpSpanContextManager:
+    def __enter__(self) -> _NoOpSpan:
+        return _NoOpSpan()
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _NoOpTracer:
+    def start_span(self, name: str):
+        return _NoOpSpan()
+
+    def start_as_current_span(self, name: str):
+        return _NoOpSpanContextManager()
+
+
+_NOOP_TRACER = _NoOpTracer()
+
+
 def init_telemetry() -> None:
     """Initialize the OpenTelemetry TracerProvider with configured exporters.
 
@@ -138,7 +174,13 @@ def get_tracer(name: str):
 
     Returns a real tracer if telemetry is initialized, otherwise a NoOp tracer.
     """
-    from opentelemetry import trace
+    if not _initialized:
+        return _NOOP_TRACER
+
+    try:
+        from opentelemetry import trace
+    except ImportError:
+        return _NOOP_TRACER
 
     return trace.get_tracer(name)
 

@@ -14,10 +14,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import asdict
 from datetime import datetime, timezone
-
-from opentelemetry import context, trace
 
 from newsletter_agent.telemetry import get_tracer, is_enabled
 
@@ -66,6 +63,8 @@ def before_agent_callback(callback_context) -> None:
 
     # OTel span creation (FR-201, FR-202)
     if is_enabled():
+        from opentelemetry import context, trace
+
         tracer = get_tracer("newsletter_agent.timing")
         span = tracer.start_span(name=agent_name)
         span.set_attribute("newsletter.agent.name", agent_name)
@@ -130,6 +129,8 @@ def after_agent_callback(callback_context) -> None:
 
     # OTel span finalization (FR-203, FR-204)
     if is_enabled():
+        from opentelemetry import context
+
         span_data = _active_spans.pop(key, None)
         if span_data is not None:
             span, token = span_data
@@ -159,24 +160,6 @@ def _record_cost_summary(span, callback_context) -> None:
     try:
         summary = get_cost_tracker().get_summary()
 
-        # Build serializable per_model dict
-        per_model = {}
-        for model_name, detail in summary.per_model.items():
-            per_model[model_name] = {
-                "cost_usd": detail.cost_usd,
-                "call_count": detail.call_count,
-            }
-
-        # Build serializable per_topic dict
-        per_topic = {}
-        for topic_key, detail in summary.per_topic.items():
-            per_topic[topic_key] = detail.cost_usd
-
-        # Build serializable per_phase dict
-        per_phase = {}
-        for phase_key, detail in summary.per_phase.items():
-            per_phase[phase_key] = detail.cost_usd
-
         cost_dict = {
             "event": "pipeline_cost_summary",
             "total_cost_usd": summary.total_cost_usd,
@@ -184,9 +167,15 @@ def _record_cost_summary(span, callback_context) -> None:
             "total_output_tokens": summary.total_output_tokens,
             "total_thinking_tokens": summary.total_thinking_tokens,
             "call_count": summary.call_count,
-            "per_model": per_model,
-            "per_topic": per_topic,
-            "per_phase": per_phase,
+            "per_model": {
+                model_name: {
+                    "cost_usd": detail["cost_usd"],
+                    "call_count": detail["call_count"],
+                }
+                for model_name, detail in summary.per_model.items()
+            },
+            "per_topic": dict(summary.per_topic),
+            "per_phase": dict(summary.per_phase),
         }
         logger.info(json.dumps(cost_dict))
 
@@ -204,9 +193,17 @@ def _record_cost_summary(span, callback_context) -> None:
         # Store in session state (FR-503, FR-504)
         callback_context.state["run_cost_usd"] = summary.total_cost_usd
 
-        # Full summary as dict for state storage
-        summary_dict = asdict(summary)
-        callback_context.state["cost_summary"] = summary_dict
+        # Full summary as a spec-aligned dict for state storage
+        callback_context.state["cost_summary"] = {
+            "total_cost_usd": summary.total_cost_usd,
+            "total_input_tokens": summary.total_input_tokens,
+            "total_output_tokens": summary.total_output_tokens,
+            "total_thinking_tokens": summary.total_thinking_tokens,
+            "call_count": summary.call_count,
+            "per_model": dict(summary.per_model),
+            "per_topic": dict(summary.per_topic),
+            "per_phase": dict(summary.per_phase),
+        }
 
     except Exception:
         logger.warning("Failed to record cost summary", exc_info=True)

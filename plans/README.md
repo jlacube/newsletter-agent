@@ -418,8 +418,8 @@ Cross-WP consistency audit performed on 2026-03-15. No inconsistencies found. Ke
 | ID | Title | Priority | Status | Depends On | Parallelisable |
 |----|-------|----------|--------|-----------|----------------|
 | [WP19](WP19-telemetry-foundation.md) | Telemetry Foundation: Dependencies, OTel Init & Config Schema | P0 | Complete | WP15-WP18 (base system) | No |
-| [WP20](WP20-cost-tracking.md) | Cost Tracking & LLM Instrumentation | P1 | Not Started | WP19 | No |
-| [WP21](WP21-span-hierarchy-logging.md) | Agent Span Hierarchy & Log Correlation | P1 | Not Started | WP19, WP20 | No |
+| [WP20](WP20-cost-tracking.md) | Cost Tracking & LLM Instrumentation | P1 | Complete | WP19 | No |
+| [WP21](WP21-span-hierarchy-logging.md) | Agent Span Hierarchy & Log Correlation | P1 | Complete | WP19, WP20 | No |
 | [WP22](WP22-acceptance-testing.md) | Acceptance Testing & Quality Gate | P1 | Complete | WP19, WP20, WP21 | No |
 
 ### Enhancement MVP Scope

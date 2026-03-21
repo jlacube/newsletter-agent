@@ -81,7 +81,7 @@ cp .env.example .env
 |-----------|-----------|----------|
 | `SequentialAgent` | Workflow | Runs sub-agents in order (pipeline root, per-topic research, output phase) |
 | `ParallelAgent` | Workflow | Runs sub-agents concurrently (research phase across topics) |
-| `LlmAgent` | Model | Calls Gemini with instructions and tools (search agents, synthesizer) |
+| `LlmAgent` | Model | Calls Gemini with instructions and tools (search agents, legacy monolithic synthesis helper) |
 | `BaseAgent` | Custom | Programmatic logic without LLM calls (ConfigLoader, Formatter, Delivery, DeepResearchOrchestrator, etc.) |
 
 ### Session State
@@ -240,6 +240,8 @@ All modules use `logging.getLogger(__name__)`. Log levels:
 - `CRITICAL`: Total research failure (pipeline will abort)
 
 Log format includes trace context: `{timestamp} {level} {name} [trace={trace_id} span={span_id}] {message}`. The `TraceContextFilter` in `logging_config.py` injects `trace_id`/`span_id` from the active OTel span into every log record. When no span is active or OTel is disabled, zero IDs are used.
+
+For the observability, tracing, debugging, and cost-monitoring rollout delivered in WP19-WP22, see [docs/observability-guide.md](observability-guide.md).
 
 ### Error Handling
 

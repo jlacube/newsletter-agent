@@ -145,9 +145,39 @@ Pre-synthesis agent that verifies source URLs in research results. Runs before s
 
 **Behavior**: When `config_verify_links` is True, extracts markdown link URLs from research text, verifies them concurrently via HTTP HEAD/GET, and removes broken links from the research text. No-ops when `config_verify_links` is False.
 
+### `PerTopicSynthesizerAgent`
+
+Synthesizes each topic independently and writes structured section state directly.
+
+**Module**: `newsletter_agent.tools.per_topic_synthesizer`
+
+**Parameters**:
+- `topic_names` (list[str]) -- Topic display names in config order
+- `providers` (list[str]) -- Provider names to read from research state
+
+**Reads**: `research_N_{provider}` state keys
+
+**State keys written**:
+- `synthesis_N` (dict with `title`, `body_markdown`, `sources`)
+- `executive_summary` (list of dicts with `topic`, `summary`)
+- `config_topic_count` (int)
+
+**Behavior**: Builds one Gemini Pro prompt per topic, calls `traced_generate()` once per topic, parses the returned JSON, and writes synthesis results directly without using a single shared `synthesis_raw` key in the live runtime pipeline.
+
+### `SynthesisLinkVerifierAgent`
+
+Post-synthesis link verifier that validates URLs embedded in synthesized sections.
+
+**Parameters**:
+- `topic_count` (int) -- Number of topics to check
+
+**Reads**: `config_verify_links`, `synthesis_N` state keys
+
+**Behavior**: When `config_verify_links` is True, verifies links in section markdown and source lists, removes broken URLs, and leaves title text intact. No-ops when link verification is disabled.
+
 ### `SynthesisPostProcessorAgent`
 
-Parses the synthesis LLM output into structured state keys.
+Legacy helper retained for compatibility and tests. It parses a monolithic `synthesis_raw` payload into structured state keys, but it is not wired into the current root pipeline.
 
 **Parameters**:
 - `topic_names` (list) -- Expected topic names
@@ -230,7 +260,7 @@ Custom BaseAgent that orchestrates adaptive deep research for topics with `searc
 
 ### `DeepResearchRefinerAgent`
 
-Custom BaseAgent that selects the 5-10 most relevant sources per deep-mode topic-provider combination using LLM-based relevance scoring. Runs after LinkVerifier and before Synthesizer.
+Custom BaseAgent that selects the 5-20 most relevant sources per deep-mode topic-provider combination using LLM-based relevance scoring. Runs after LinkVerifier and before PerTopicSynthesizer.
 
 **Module**: `newsletter_agent.tools.deep_research_refiner`
 
@@ -243,8 +273,8 @@ Custom BaseAgent that selects the 5-10 most relevant sources per deep-mode topic
 1. Iterates over topics and providers. Skips standard-mode topics (no-op).
 2. For deep-mode topics, extracts source URLs from `research_{idx}_{provider}`.
 3. If source count < 5: keeps all sources (no LLM call).
-4. If source count is 5-10: keeps all sources (already in target range).
-5. If source count > 10: calls `gemini-2.5-flash` with refinement prompt to select best 5-10.
+4. If source count is 5-20: keeps all sources (already in target range).
+5. If source count > 20: calls `gemini-2.5-flash` with refinement prompt to select best 5-20.
 6. Filters SOURCES section in-place, preserving SUMMARY text.
 7. Logs before/after source counts.
 
@@ -253,7 +283,7 @@ Custom BaseAgent that selects the 5-10 most relevant sources per deep-mode topic
 - Invalid JSON response: keeps all sources, logs warning.
 - Empty selection: keeps all sources, logs warning.
 - LLM selects < 5 valid URLs: keeps all original sources.
-- LLM selects > 10 URLs: truncates to first 10.
+- LLM selects > 20 URLs: truncates to first 20.
 
 **State keys read/written**:
 - `research_{idx}_{provider}` (str) -- Updated in-place with refined sources
@@ -314,15 +344,15 @@ Renders the Jinja2 HTML template with the provided data.
 
 ### `build_pipeline(config: NewsletterConfig) -> SequentialAgent`
 
-Builds the complete agent pipeline from a validated config. Returns the root `SequentialAgent` with 9 sub-agents: ConfigLoader, ResearchPhase, ResearchValidator, PipelineAbortCheck, LinkVerifier, DeepResearchRefiner, Synthesizer, SynthesisPostProcessor, OutputPhase.
+Builds the complete live agent pipeline from a validated config. Returns the root `SequentialAgent` with 9 sub-agents: ConfigLoader, ResearchPhase, ResearchValidator, PipelineAbortCheck, LinkVerifier, DeepResearchRefiner, PerTopicSynthesizer, SynthesisLinkVerifier, OutputPhase.
 
 ### `build_research_phase(config: NewsletterConfig) -> ParallelAgent`
 
 Builds the research phase `ParallelAgent` with one `SequentialAgent` per topic. For topics with `search_depth: "standard"`, creates `LlmAgent` instances per provider. For topics with `search_depth: "deep"`, creates `DeepResearchOrchestrator` instances per provider that perform adaptive multi-round search with planning and analysis sub-agents.
 
-### `build_synthesis_agent(config: NewsletterConfig) -> LlmAgent`
+### `build_synthesis_agent(config: NewsletterConfig, providers: list[str]) -> LlmAgent`
 
-Builds the synthesis `LlmAgent` with Gemini Pro model.
+Builds the legacy monolithic synthesis `LlmAgent` with Gemini Pro model. This helper is still present in code and tests, but the live root pipeline uses `PerTopicSynthesizerAgent` instead.
 
 ## Telemetry & Cost Tracking
 

@@ -5,7 +5,7 @@ lane: done
 # WP20 - Cost Tracking & LLM Instrumentation
 
 > **Spec**: `specs/003-observability-cost-tracing.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1
 > **Goal**: Every direct `genai.Client()` LLM call records token counts on OTel spans and accumulates USD cost in a CostTracker; ConfigLoaderAgent initializes pricing
 > **Independent Test**: Run the pipeline with 1 topic in dry_run mode. After completion, inspect logs for `pipeline_cost_summary` with `total_cost_usd > 0` and `call_count >= 1`. Verify spans named `llm.generate:gemini-2.5-pro` contain `gen_ai.usage.input_tokens > 0`.

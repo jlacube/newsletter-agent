@@ -441,6 +441,8 @@ class TestCostSummary:
         assert isinstance(ctx.state["run_cost_usd"], float)
         assert "cost_summary" in ctx.state
         assert isinstance(ctx.state["cost_summary"], dict)
+        assert ctx.state["cost_summary"]["per_topic"] == {}
+        assert ctx.state["cost_summary"]["per_phase"] == {}
 
     def test_zero_summary_does_not_error(self, otel_exporter, caplog):
         """Empty cost tracker produces zeros, no error."""

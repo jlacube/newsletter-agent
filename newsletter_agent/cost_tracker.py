@@ -60,23 +60,16 @@ class ModelCostDetail:
 
 @dataclass
 class CostSummary:
-    """Aggregated cost summary across all LLM calls.
-
-    Note: per_topic and per_phase use ModelCostDetail instead of the spec's
-    dict[str, float] (Section 7.5). This is a deliberate enhancement -- the
-    richer breakdown (input/output/thinking tokens + call_count) is more
-    useful for debugging and cost attribution. The spec's float value maps
-    to ModelCostDetail.cost_usd.
-    """
+    """Aggregated cost summary across all LLM calls."""
 
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_thinking_tokens: int = 0
     total_cost_usd: float = 0.0
     call_count: int = 0
-    per_model: dict[str, ModelCostDetail] = field(default_factory=dict)
-    per_topic: dict[str, ModelCostDetail] = field(default_factory=dict)
-    per_phase: dict[str, ModelCostDetail] = field(default_factory=dict)
+    per_model: dict[str, dict[str, int | float]] = field(default_factory=dict)
+    per_topic: dict[str, float] = field(default_factory=dict)
+    per_phase: dict[str, float] = field(default_factory=dict)
 
 
 _ZERO_PRICING = ModelPricing(input_per_million=0.0, output_per_million=0.0)
@@ -173,34 +166,31 @@ class CostTracker:
 
             # Per-model aggregation
             model_detail = summary.per_model.setdefault(
-                call.model, ModelCostDetail()
+                call.model,
+                {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "thinking_tokens": 0,
+                    "cost_usd": 0.0,
+                    "call_count": 0,
+                },
             )
-            model_detail.input_tokens += call.prompt_tokens
-            model_detail.output_tokens += call.completion_tokens
-            model_detail.thinking_tokens += call.thinking_tokens
-            model_detail.cost_usd += call.total_cost_usd
-            model_detail.call_count += 1
+            model_detail["input_tokens"] += call.prompt_tokens
+            model_detail["output_tokens"] += call.completion_tokens
+            model_detail["thinking_tokens"] += call.thinking_tokens
+            model_detail["cost_usd"] += call.total_cost_usd
+            model_detail["call_count"] += 1
 
             # Per-topic aggregation
             topic_key = call.topic_name or "unknown"
-            topic_detail = summary.per_topic.setdefault(
-                topic_key, ModelCostDetail()
+            summary.per_topic[topic_key] = (
+                summary.per_topic.get(topic_key, 0.0) + call.total_cost_usd
             )
-            topic_detail.input_tokens += call.prompt_tokens
-            topic_detail.output_tokens += call.completion_tokens
-            topic_detail.thinking_tokens += call.thinking_tokens
-            topic_detail.cost_usd += call.total_cost_usd
-            topic_detail.call_count += 1
 
             # Per-phase aggregation
-            phase_detail = summary.per_phase.setdefault(
-                call.phase, ModelCostDetail()
+            summary.per_phase[call.phase] = (
+                summary.per_phase.get(call.phase, 0.0) + call.total_cost_usd
             )
-            phase_detail.input_tokens += call.prompt_tokens
-            phase_detail.output_tokens += call.completion_tokens
-            phase_detail.thinking_tokens += call.thinking_tokens
-            phase_detail.cost_usd += call.total_cost_usd
-            phase_detail.call_count += 1
 
         return summary
 

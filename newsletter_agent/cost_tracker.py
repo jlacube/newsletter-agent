@@ -60,7 +60,14 @@ class ModelCostDetail:
 
 @dataclass
 class CostSummary:
-    """Aggregated cost summary across all LLM calls."""
+    """Aggregated cost summary across all LLM calls.
+
+    Note: per_topic and per_phase use ModelCostDetail instead of the spec's
+    dict[str, float] (Section 7.5). This is a deliberate enhancement -- the
+    richer breakdown (input/output/thinking tokens + call_count) is more
+    useful for debugging and cost attribution. The spec's float value maps
+    to ModelCostDetail.cost_usd.
+    """
 
     total_input_tokens: int = 0
     total_output_tokens: int = 0

@@ -1,11 +1,12 @@
 ---
-lane: doing
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP19 - Telemetry Foundation: Dependencies, OTel Init & Config Schema
 
 > **Spec**: `specs/003-observability-cost-tracing.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P0
 > **Goal**: OTel SDK is installed, telemetry initializes at import, shuts down at exit, and PricingConfig is available in the config schema
 > **Independent Test**: Run `python -c "from newsletter_agent.telemetry import init_telemetry, is_enabled; init_telemetry(); assert is_enabled()"` and verify it exits 0. Run `python -c "from newsletter_agent.config.schema import PricingConfig; p = PricingConfig(); print(p)"` and verify defaults.
@@ -328,3 +329,179 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 
 - 2025-07-18T00:00:00Z - planner - lane=planned - Work package created
 - 2025-07-18T12:00:00Z - coder - lane=doing - Begin implementation of WP19 tasks
+- 2025-07-18T13:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2025-07-18T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2025-07-18
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+Changes Required. Three FAILs found: (1) `shutdown_telemetry()` does not pass `timeout_millis=5000` as required by the spec implementation contract, (2) Spec Compliance Checklists are missing for all tasks, and (3) all tasks were committed in a single commit instead of one per task. Two WARNs found: branch coverage not enforced in pyproject.toml config, and test files placed in `tests/unit/` instead of `tests/` as declared in the plan.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: `shutdown_telemetry()` in `newsletter_agent/telemetry.py` line ~131 calls `provider.shutdown()` without `timeout_millis=5000`. The spec implementation contract (Section 8.1, line 74 of spec) explicitly requires `TracerProvider.shutdown(timeout_millis=5000)`. The docstring says "5-second timeout" but the parameter is not passed. Fix: change `provider.shutdown()` to `provider.shutdown(timeout_millis=5000)`.
+- [ ] **FB-02**: Add Spec Compliance Checklists (Step 2b) for each task T19-01 through T19-09 in the WP file. This is a required process step per the Coder workflow.
+- [ ] **FB-03**: Commit history shows a single commit `f5c3648` for all WP19 tasks. The process requires one commit per task. Since this cannot be retroactively fixed, document this as a process deviation in the Activity Log and ensure future WPs use per-task commits.
+
+### Findings
+
+#### FAIL - Process Compliance: Spec Compliance Checklist
+- **Requirement**: Coder workflow Step 2b
+- **Status**: Missing
+- **Detail**: No Spec Compliance Checklists exist for any of the 9 tasks (T19-01 through T19-09). The WP file has no `### Spec Compliance Checklist` sections.
+- **Evidence**: `plans/WP19-telemetry-foundation.md` ends at Activity Log with no checklists.
+
+#### FAIL - Process Compliance: Commit Granularity
+- **Requirement**: Coder workflow - one commit per task
+- **Status**: Deviating
+- **Detail**: All 9 tasks were committed in a single commit `f5c3648 feat(telemetry): add OTel foundation - init, shutdown, pricing config (WP19)`. 14 files changed in one commit. This cannot be fixed retroactively.
+- **Evidence**: `git log --oneline` shows single WP19 commit.
+
+#### FAIL - Spec Adherence: shutdown_telemetry timeout_millis
+- **Requirement**: FR-106, Section 8.1 implementation contract
+- **Status**: Deviating
+- **Detail**: The spec implementation contract states `Function: shutdown_telemetry() -> None / Calls: TracerProvider.shutdown(timeout_millis=5000)`. The implementation at `newsletter_agent/telemetry.py` line ~131 calls `provider.shutdown()` without the `timeout_millis=5000` parameter. The OTel SDK `TracerProvider.shutdown()` defaults to 30 seconds without this parameter, not 5 seconds as specified.
+- **Evidence**: `newsletter_agent/telemetry.py` line 131: `provider.shutdown()` -- missing `timeout_millis=5000`.
+
+#### PASS - Spec Adherence: FR-101 (OTel Init at Import)
+- **Requirement**: FR-101
+- **Status**: Compliant
+- **Detail**: `init_telemetry()` is called in `__init__.py` after `load_dotenv()` and before agent import. Gracefully handles OTel import failure with WARNING log.
+- **Evidence**: `newsletter_agent/__init__.py` lines 5-7.
+
+#### PASS - Spec Adherence: FR-102 (Kill Switch)
+- **Requirement**: FR-102
+- **Status**: Compliant
+- **Detail**: `OTEL_ENABLED=false` (case-insensitive) sets `NoOpTracerProvider` and `_initialized = False`.
+- **Evidence**: `newsletter_agent/telemetry.py` lines 54-57.
+
+#### PASS - Spec Adherence: FR-103, FR-104, FR-105 (Resource Attributes)
+- **Requirement**: FR-103, FR-104, FR-105
+- **Status**: Compliant
+- **Detail**: Resource created with `service.name` from `OTEL_SERVICE_NAME` (default "newsletter-agent"), `service.version` from package version (fallback "0.1.0"), `deployment.environment` from `K_SERVICE` presence.
+- **Evidence**: `newsletter_agent/telemetry.py` lines 60-79.
+
+#### PASS - Spec Adherence: FR-106 (Shutdown Wiring)
+- **Requirement**: FR-106
+- **Status**: Compliant
+- **Detail**: `shutdown_telemetry()` is called in `finally` block in `__main__.py` and in `finally` block in `http_handler.py`. Both success and error paths covered.
+- **Evidence**: `newsletter_agent/__main__.py` lines 117-118, `newsletter_agent/http_handler.py` lines 119-120.
+
+#### PASS - Spec Adherence: FR-601 (PricingConfig in AppSettings)
+- **Requirement**: FR-601, Section 7.1, 7.2, 7.3
+- **Status**: Compliant
+- **Detail**: `ModelPricingConfig` and `PricingConfig` models match spec exactly. `AppSettings` has `pricing: PricingConfig` field with `default_factory`. Default models include `gemini-2.5-flash` (0.30/2.50) and `gemini-2.5-pro` (1.25/10.00). `cost_budget_usd: float | None = Field(default=None, ge=0.0)`. `models` has `min_length=1`. Both models use `ConfigDict(extra="forbid")`.
+- **Evidence**: `newsletter_agent/config/schema.py` lines 150-181.
+
+#### PASS - Spec Adherence: FR-602, FR-603, FR-604 (Export Configuration)
+- **Requirement**: FR-602, FR-603, FR-604
+- **Status**: Compliant
+- **Detail**: OTLP endpoint set -> `BatchSpanProcessor(OTLPSpanExporter)`. No endpoint -> `BatchSpanProcessor(ConsoleSpanExporter)`. Dev mode + OTLP -> also `SimpleSpanProcessor(ConsoleSpanExporter)`.
+- **Evidence**: `newsletter_agent/telemetry.py` lines 83-112.
+
+#### PASS - Spec Adherence: FR-605 (.env.example)
+- **Requirement**: FR-605
+- **Status**: Compliant
+- **Detail**: All four OTel env vars documented under `# --- OpenTelemetry ---` section with descriptive comments. Matches T19-06 acceptance criteria exactly.
+- **Evidence**: `.env.example` lines 36-44.
+
+#### PASS - Data Model Adherence
+- **Requirement**: Section 7.1, 7.2, 7.3
+- **Status**: Compliant
+- **Detail**: `ModelPricingConfig` has `input_per_million: float` and `output_per_million: float` with `ge=0.0`. `PricingConfig` has `models: dict[str, ModelPricingConfig]` with correct defaults and `min_length=1`, `cost_budget_usd: float | None` with `ge=0.0`. `AppSettings.pricing` field present with `default_factory`.
+- **Evidence**: `newsletter_agent/config/schema.py` lines 150-181.
+
+#### PASS - API / Interface Adherence
+- **Requirement**: Section 8.1
+- **Status**: Compliant
+- **Detail**: `telemetry.py` exports `init_telemetry()`, `shutdown_telemetry()`, `get_tracer(name)`, `is_enabled()` -- all four functions per the implementation contract. (Note: `traced_generate()` is also present but that is WP20 scope.)
+- **Evidence**: `newsletter_agent/telemetry.py` public functions.
+
+#### PASS - Architecture Adherence
+- **Requirement**: Section 9.2, 9.3, 9.4
+- **Status**: Compliant
+- **Detail**: OTel packages in requirements.txt match Section 9.2. Module at `newsletter_agent/telemetry.py` matches Section 9.3. Console in dev, OTLP in production matches Decision 4 in Section 9.4.
+- **Evidence**: `requirements.txt` lines 29-31, `newsletter_agent/telemetry.py`.
+
+#### PASS - Test Coverage: T19-07 (Telemetry Tests)
+- **Requirement**: Section 11.1, T19-07 acceptance criteria
+- **Status**: Compliant
+- **Detail**: 21 WP19-scoped tests in `tests/unit/test_telemetry.py` cover: default init, disabled via env, case-insensitive disable, idempotent init, console exporter, OTLP exporter, production-only OTLP (no console), OTLP with headers, resource attributes (dev + prod), default service name, import error, general exception, shutdown (clean, uninitialized, exception), get_tracer (initialized + uninitialized), is_enabled (initial, after init, disabled). All pass.
+- **Evidence**: `pytest tests/unit/test_telemetry.py -k "not TestTracedGenerate"` -- 21 passed.
+
+#### PASS - Test Coverage: T19-08 (Pricing Config Tests)
+- **Requirement**: Section 11.1, T19-08 acceptance criteria
+- **Status**: Compliant
+- **Detail**: 18 tests cover: valid pricing, zero values, negative input/output validation, extra fields forbidden, defaults, default flash/pro pricing, custom model, cost_budget_usd (None, zero, positive, negative), empty models raises, extra fields on PricingConfig, AppSettings default includes pricing, custom pricing in settings, pricing from dict. All pass.
+- **Evidence**: `pytest tests/unit/test_config_pricing.py` -- 18 passed.
+
+#### WARN - Coverage Thresholds: Branch Coverage Not Enforced
+- **Requirement**: T19-09, Section 11.1
+- **Status**: Partial
+- **Detail**: `pyproject.toml` `[tool.coverage.run]` does not include `branch = true`. Running `pytest --cov-branch` manually achieves 99%+ branch coverage for telemetry.py, but branch coverage is not enforced automatically in CI. T19-09 acceptance criteria focus on manual verification, so this is a WARN not a FAIL.
+- **Evidence**: `pyproject.toml` lines 18-20 -- missing `branch = true`.
+
+#### PASS - Non-Functional: Security
+- **Requirement**: Section 10
+- **Status**: Compliant
+- **Detail**: No secrets in code, all credentials read from env vars. OTLP headers parsed from env var, not hardcoded. No SQL injection, XSS, or SSRF vectors in the telemetry module.
+- **Evidence**: `newsletter_agent/telemetry.py`.
+
+#### PASS - Non-Functional: Error Handling
+- **Requirement**: FR-101, FR-106
+- **Status**: Compliant
+- **Detail**: `init_telemetry()` catches `ImportError` and generic `Exception` separately, logs WARNING, and returns gracefully. `shutdown_telemetry()` catches all exceptions and logs WARNING. Neither function raises. Pipeline continues without tracing if init fails.
+- **Evidence**: `newsletter_agent/telemetry.py` lines 44-49, 115-118, 126-132.
+
+#### PASS - Performance
+- **Requirement**: Section 10
+- **Status**: Compliant
+- **Detail**: No N+1 queries, no unbounded data fetching. `init_telemetry()` is called once at import time (idempotent). BatchSpanProcessor for OTLP export ensures non-blocking span export.
+- **Evidence**: `newsletter_agent/telemetry.py`.
+
+#### PASS - Documentation Accuracy
+- **Requirement**: docs/ files
+- **Status**: Compliant
+- **Detail**: `architecture.md` documents telemetry module functions and export behavior. `configuration-guide.md` documents OTel env vars. `deployment-guide.md` and `developer-guide.md` updated. Documentation matches actual implementation.
+- **Evidence**: WP19 commit diff for docs/ files.
+
+#### WARN - Scope Discipline: Test File Location
+- **Requirement**: WP19 Implementation Notes
+- **Status**: Minor Deviation
+- **Detail**: WP19 plan declares test files as `tests/test_telemetry.py` and `tests/test_config_pricing.py` but actual files are at `tests/unit/test_telemetry.py` and `tests/unit/test_config_pricing.py`. This matches the project's existing directory structure convention and is correct, but deviates from what the plan declared.
+- **Evidence**: Plan says "Test files created: `tests/test_telemetry.py`, `tests/test_config_pricing.py`" vs actual `tests/unit/` path.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: Review protocol
+- **Status**: Compliant
+- **Detail**: No em dashes, smart quotes, or curly apostrophes found in any WP19-modified files.
+- **Evidence**: PowerShell regex scan of all 14 modified files.
+
+### Statistics
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 0 | 2 |
+| Spec Adherence | 8 | 0 | 1 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 1 | 0 | 0 |
+| Architecture | 1 | 0 | 0 |
+| Test Coverage | 2 | 0 | 0 |
+| Non-Functional | 2 | 0 | 0 |
+| Performance | 1 | 0 | 0 |
+| Documentation | 1 | 0 | 0 |
+| Success Criteria | 0 | 0 | 0 |
+| Coverage Thresholds | 0 | 1 | 0 |
+| Scope Discipline | 0 | 1 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+1. **FB-01**: Add `timeout_millis=5000` to `provider.shutdown()` call in `shutdown_telemetry()` (spec deviation).
+2. **FB-02**: Add Spec Compliance Checklists for all 9 tasks in the WP file.
+3. **FB-03**: Document the single-commit process deviation in the Activity Log. Ensure per-task commits for future WPs.

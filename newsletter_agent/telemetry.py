@@ -146,3 +146,95 @@ def get_tracer(name: str):
 def is_enabled() -> bool:
     """Return True if telemetry was successfully initialized."""
     return _initialized
+
+
+async def traced_generate(
+    model,
+    contents,
+    config=None,
+    *,
+    agent_name: str,
+    topic_name: str | None = None,
+    topic_index: int | None = None,
+    phase: str,
+):
+    """Wrap genai.Client().aio.models.generate_content() with OTel span and cost tracking.
+
+    When telemetry is disabled, calls the LLM directly without instrumentation.
+
+    Spec refs: FR-301, FR-303, FR-402, Section 4.3, 8.1.
+    """
+    from google import genai
+
+    if not _initialized:
+        client = genai.Client()
+        return await client.aio.models.generate_content(
+            model=model, contents=contents, config=config
+        )
+
+    from opentelemetry.trace import StatusCode
+
+    from newsletter_agent.cost_tracker import get_cost_tracker
+
+    tracer = get_tracer("newsletter_agent.telemetry")
+    with tracer.start_as_current_span(f"llm.generate:{model}") as span:
+        span.set_attribute("gen_ai.system", "google_genai")
+        span.set_attribute("gen_ai.request.model", model)
+        span.set_attribute("newsletter.agent.name", agent_name)
+        span.set_attribute("newsletter.phase", phase)
+        if topic_name is not None:
+            span.set_attribute("newsletter.topic.name", topic_name)
+        if topic_index is not None:
+            span.set_attribute("newsletter.topic.index", topic_index)
+
+        try:
+            client = genai.Client()
+            response = await client.aio.models.generate_content(
+                model=model, contents=contents, config=config
+            )
+
+            # Extract token counts from usage_metadata
+            usage = getattr(response, "usage_metadata", None)
+            if usage is None:
+                logger.warning("usage_metadata missing from LLM response")
+                prompt_tokens = 0
+                completion_tokens = 0
+                thinking_tokens = 0
+            else:
+                prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
+                completion_tokens = getattr(usage, "candidates_token_count", 0) or 0
+                thinking_tokens = getattr(usage, "thoughts_token_count", 0) or 0
+
+            total_tokens = prompt_tokens + completion_tokens + thinking_tokens
+
+            span.set_attribute("gen_ai.usage.input_tokens", prompt_tokens)
+            span.set_attribute("gen_ai.usage.output_tokens", completion_tokens)
+            span.set_attribute("gen_ai.usage.thinking_tokens", thinking_tokens)
+            span.set_attribute("gen_ai.usage.total_tokens", total_tokens)
+
+            # Record cost
+            tracker = get_cost_tracker()
+            record = tracker.record_llm_call(
+                model=model,
+                agent_name=agent_name,
+                phase=phase,
+                topic_name=topic_name,
+                topic_index=topic_index,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                thinking_tokens=thinking_tokens,
+            )
+
+            span.set_attribute("newsletter.cost.input_usd", record.input_cost_usd)
+            span.set_attribute("newsletter.cost.output_usd", record.output_cost_usd)
+            span.set_attribute("newsletter.cost.total_usd", record.total_cost_usd)
+
+            if not tracker.has_pricing(model):
+                span.set_attribute("newsletter.cost.pricing_missing", True)
+
+            return response
+
+        except Exception as e:
+            span.set_status(StatusCode.ERROR, str(e))
+            span.record_exception(e)
+            raise

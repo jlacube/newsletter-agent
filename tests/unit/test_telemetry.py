@@ -1,17 +1,26 @@
-"""Unit tests for telemetry initialization, shutdown, get_tracer, and is_enabled.
+"""Unit tests for telemetry initialization, shutdown, get_tracer, is_enabled,
+and traced_generate.
 
-Spec refs: FR-101 through FR-106, FR-602, FR-603, FR-604, SC-004, SC-007, Section 11.1.
+Spec refs: FR-101 through FR-106, FR-301, FR-303, FR-402,
+FR-602, FR-603, FR-604, SC-004, SC-007, Section 11.1.
 """
 
 import logging
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 import newsletter_agent.telemetry as tel
+from newsletter_agent.cost_tracker import (
+    ModelPricing,
+    get_cost_tracker,
+    init_cost_tracker,
+    reset_cost_tracker,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -247,3 +256,370 @@ class TestIsEnabled:
         monkeypatch.setenv("OTEL_ENABLED", "false")
         tel.init_telemetry()
         assert tel.is_enabled() is False
+
+
+# ---------------------------------------------------------------------------
+# T20-09: traced_generate() tests
+# ---------------------------------------------------------------------------
+
+def _setup_otel_with_memory_exporter():
+    """Set up a TracerProvider with InMemorySpanExporter and return the exporter."""
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    tel._initialized = True
+    return exporter
+
+
+def _mock_genai_response(
+    prompt_tokens=1000,
+    candidates_tokens=500,
+    thoughts_tokens=200,
+    total_tokens=1700,
+):
+    """Create a mock genai response with usage_metadata."""
+    response = MagicMock()
+    response.usage_metadata.prompt_token_count = prompt_tokens
+    response.usage_metadata.candidates_token_count = candidates_tokens
+    response.usage_metadata.thoughts_token_count = thoughts_tokens
+    response.usage_metadata.total_token_count = total_tokens
+    response.text = "Generated text"
+    return response
+
+
+class TestTracedGenerate:
+
+    _GENAI_CLIENT = "google.genai.Client"
+
+    @pytest.fixture(autouse=True)
+    def _setup_cost_tracker(self):
+        """Initialize cost tracker for each test."""
+        init_cost_tracker(
+            {
+                "gemini-2.5-pro": ModelPricing(input_per_million=1.25, output_per_million=10.0),
+                "gemini-2.5-flash": ModelPricing(input_per_million=0.15, output_per_million=0.60),
+            },
+            cost_budget_usd=100.0,
+        )
+        yield
+        reset_cost_tracker()
+
+    @pytest.mark.asyncio
+    async def test_creates_span_with_correct_name(self, monkeypatch):
+        """Span named 'llm.generate:{model}' with correct attributes."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response()
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            result = await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test prompt",
+                agent_name="PerTopicSynthesizer",
+                phase="synthesis",
+                topic_name="AI News",
+                topic_index=0,
+            )
+
+        assert result is mock_response
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        assert spans[0].name == "llm.generate:gemini-2.5-pro"
+
+    @pytest.mark.asyncio
+    async def test_sets_span_attributes(self, monkeypatch):
+        """Span has gen_ai.*, newsletter.* attributes set correctly."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response()
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="PerTopicSynthesizer",
+                phase="synthesis",
+                topic_name="AI News",
+                topic_index=0,
+            )
+
+        spans = exporter.get_finished_spans()
+        attrs = dict(spans[0].attributes)
+        assert attrs["gen_ai.system"] == "google_genai"
+        assert attrs["gen_ai.request.model"] == "gemini-2.5-pro"
+        assert attrs["gen_ai.usage.input_tokens"] == 1000
+        assert attrs["gen_ai.usage.output_tokens"] == 500
+        assert attrs["gen_ai.usage.thinking_tokens"] == 200
+        assert attrs["gen_ai.usage.total_tokens"] == 1700
+        assert attrs["newsletter.agent.name"] == "PerTopicSynthesizer"
+        assert attrs["newsletter.phase"] == "synthesis"
+        assert attrs["newsletter.topic.name"] == "AI News"
+        assert attrs["newsletter.topic.index"] == 0
+
+    @pytest.mark.asyncio
+    async def test_sets_cost_attributes(self, monkeypatch):
+        """Span has newsletter.cost.* attributes from CostTracker."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response(
+            prompt_tokens=10000, candidates_tokens=2000, thoughts_tokens=500
+        )
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="test",
+                phase="synthesis",
+            )
+
+        spans = exporter.get_finished_spans()
+        attrs = dict(spans[0].attributes)
+        assert attrs["newsletter.cost.input_usd"] == pytest.approx(0.0125)
+        assert attrs["newsletter.cost.output_usd"] == pytest.approx(0.025)
+        assert attrs["newsletter.cost.total_usd"] == pytest.approx(0.0375)
+
+    @pytest.mark.asyncio
+    async def test_records_cost_in_tracker(self, monkeypatch):
+        """traced_generate records the call in CostTracker."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response()
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="PerTopicSynthesizer",
+                phase="synthesis",
+                topic_name="AI News",
+                topic_index=0,
+            )
+
+        tracker = get_cost_tracker()
+        summary = tracker.get_summary()
+        assert summary.call_count == 1
+        assert summary.total_input_tokens == 1000
+        assert summary.total_output_tokens == 500
+        assert summary.total_thinking_tokens == 200
+
+    @pytest.mark.asyncio
+    async def test_missing_usage_metadata(self, monkeypatch, caplog):
+        """FR-303: usage_metadata is None -> tokens default to 0, WARNING logged."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = MagicMock()
+        mock_response.usage_metadata = None
+        mock_response.text = "ok"
+
+        with caplog.at_level(logging.WARNING):
+            with patch(self._GENAI_CLIENT) as mock_cls:
+                mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                    return_value=mock_response
+                )
+                await tel.traced_generate(
+                    model="gemini-2.5-pro",
+                    contents="test",
+                    agent_name="test",
+                    phase="synthesis",
+                )
+
+        assert "usage_metadata missing" in caplog.text
+        spans = exporter.get_finished_spans()
+        attrs = dict(spans[0].attributes)
+        assert attrs["gen_ai.usage.input_tokens"] == 0
+        assert attrs["gen_ai.usage.output_tokens"] == 0
+        assert attrs["gen_ai.usage.thinking_tokens"] == 0
+
+    @pytest.mark.asyncio
+    async def test_individual_missing_fields_default_to_zero(self, monkeypatch):
+        """Individual None usage fields default to 0."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = MagicMock()
+        mock_response.usage_metadata.prompt_token_count = 500
+        mock_response.usage_metadata.candidates_token_count = None
+        mock_response.usage_metadata.thoughts_token_count = None
+        mock_response.text = "ok"
+
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="test",
+                phase="synthesis",
+            )
+
+        spans = exporter.get_finished_spans()
+        attrs = dict(spans[0].attributes)
+        assert attrs["gen_ai.usage.input_tokens"] == 500
+        assert attrs["gen_ai.usage.output_tokens"] == 0
+        assert attrs["gen_ai.usage.thinking_tokens"] == 0
+
+    @pytest.mark.asyncio
+    async def test_api_exception_sets_error_and_reraises(self, monkeypatch):
+        """On API exception: span status = ERROR, exception recorded, re-raised."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                side_effect=RuntimeError("API timeout")
+            )
+            with pytest.raises(RuntimeError, match="API timeout"):
+                await tel.traced_generate(
+                    model="gemini-2.5-pro",
+                    contents="test",
+                    agent_name="test",
+                    phase="synthesis",
+                )
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        from opentelemetry.trace import StatusCode
+        assert spans[0].status.status_code == StatusCode.ERROR
+        events = spans[0].events
+        assert any("API timeout" in str(e.attributes) for e in events)
+
+    @pytest.mark.asyncio
+    async def test_disabled_calls_llm_without_span(self, monkeypatch):
+        """When is_enabled() == False: calls LLM directly, no span."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        tel._initialized = False
+
+        mock_response = _mock_genai_response()
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            result = await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="test",
+                phase="synthesis",
+            )
+
+        assert result is mock_response
+        mock_cls.return_value.aio.models.generate_content.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_optional_topic_attributes_omitted_when_none(self, monkeypatch):
+        """topic_name and topic_index not set on span when None."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response()
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="test",
+                phase="synthesis",
+                topic_name=None,
+                topic_index=None,
+            )
+
+        spans = exporter.get_finished_spans()
+        attrs = dict(spans[0].attributes)
+        assert "newsletter.topic.name" not in attrs
+        assert "newsletter.topic.index" not in attrs
+
+    @pytest.mark.asyncio
+    async def test_returns_response_unchanged(self, monkeypatch):
+        """Returns the original GenerateContentResponse unchanged."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response()
+        mock_response.text = "Original response text"
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            result = await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="test",
+                phase="synthesis",
+            )
+
+        assert result.text == "Original response text"
+
+    @pytest.mark.asyncio
+    async def test_pricing_missing_attribute_for_unknown_model(self, monkeypatch):
+        """FR-404: Sets newsletter.cost.pricing_missing=True when model not in pricing."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response()
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            await tel.traced_generate(
+                model="unknown-model-xyz",
+                contents="test",
+                agent_name="test",
+                phase="synthesis",
+            )
+
+        spans = exporter.get_finished_spans()
+        attrs = dict(spans[0].attributes)
+        assert attrs["newsletter.cost.pricing_missing"] is True
+        # Cost should be zero for unknown model
+        assert attrs["newsletter.cost.total_usd"] == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_pricing_missing_not_set_for_known_model(self, monkeypatch):
+        """Known model should NOT have newsletter.cost.pricing_missing attribute."""
+        monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+        monkeypatch.delenv("K_SERVICE", raising=False)
+        exporter = _setup_otel_with_memory_exporter()
+
+        mock_response = _mock_genai_response()
+        with patch(self._GENAI_CLIENT) as mock_cls:
+            mock_cls.return_value.aio.models.generate_content = AsyncMock(
+                return_value=mock_response
+            )
+            await tel.traced_generate(
+                model="gemini-2.5-pro",
+                contents="test",
+                agent_name="test",
+                phase="synthesis",
+            )
+
+        spans = exporter.get_finished_spans()
+        attrs = dict(spans[0].attributes)
+        assert "newsletter.cost.pricing_missing" not in attrs

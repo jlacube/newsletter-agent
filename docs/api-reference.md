@@ -373,3 +373,46 @@ Thread-safe accumulator for LLM call cost data.
 | `init_cost_tracker(pricing, cost_budget_usd)` | Creates global `CostTracker` instance |
 | `get_cost_tracker()` | Returns active tracker or silent no-op if not initialized |
 | `reset_cost_tracker()` | Clears global tracker (test teardown) |
+
+### Pipeline Timing Callbacks (`timing.py`)
+
+**Module**: `newsletter_agent.timing`
+
+Agent execution callbacks that record timing and create OTel spans with parent-child hierarchy.
+
+| Function | Description |
+|----------|-------------|
+| `before_agent_callback(callback_context)` | Records start time, creates OTel span with attributes, attaches to context |
+| `after_agent_callback(callback_context)` | Logs elapsed time, ends span, records cost summary (root agent only) |
+
+**Module-level state**:
+- `_phase_starts: dict[str, float]` -- Start times keyed by `"{invocation_id}:{agent_name}"`
+- `_active_spans: dict[str, tuple]` -- Active (span, token) tuples keyed by same scheme
+
+**Span attributes set per agent**:
+- `newsletter.agent.name`, `newsletter.invocation_id`, `newsletter.duration_seconds`
+
+**Root agent (`NewsletterPipeline`) additional attributes**:
+- `newsletter.topic_count`, `newsletter.dry_run`, `newsletter.pipeline_start_time`
+
+**Topic-scoped agents** (name matching `r'_(\d+)(?:_|$)'`):
+- `newsletter.topic.index`, `newsletter.topic.name`
+
+**LlmAgent-based agents** (GoogleSearcher, PerplexitySearcher, AdaptivePlanner, DeepSearchRound, AdaptiveAnalyzer):
+- `gen_ai.tokens_available: false`
+
+**Root agent completion side effects**:
+- Logs structured JSON cost summary at INFO (`event: "pipeline_cost_summary"`)
+- Records `cost_summary` span event with `total_cost_usd`, `total_input_tokens`, `total_output_tokens`, `call_count`
+- Sets `state["run_cost_usd"]` and `state["cost_summary"]`
+
+### `TraceContextFilter` (`logging_config.py`)
+
+**Module**: `newsletter_agent.logging_config`
+
+A `logging.Filter` subclass that injects `trace_id` and `span_id` from the current OTel span into every log record.
+
+- Always returns `True` (does not filter out records)
+- Sets `record.trace_id` (32-char lowercase hex) and `record.span_id` (16-char lowercase hex)
+- When no active span or OTel unavailable: zero IDs (`"0" * 32` / `"0" * 16`)
+- Attached to the `newsletter_agent` logger in `setup_logging()`

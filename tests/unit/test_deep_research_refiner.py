@@ -75,40 +75,32 @@ def _source_urls(n: int) -> list[str]:
 
 
 def _mock_genai_success(selected_urls: list[str], rationale: str = "Selected best sources"):
-    """Create a mock genai response with valid JSON."""
+    """Create a mock traced_generate response with valid JSON."""
     response = MagicMock()
     response.text = json.dumps({
         "selected_urls": selected_urls,
         "rationale": rationale,
     })
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=response)
-    return client
+    return AsyncMock(return_value=response)
 
 
 def _mock_genai_failure(error_msg="API error"):
-    """Create a mock genai client that raises on generate_content."""
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(side_effect=Exception(error_msg))
-    return client
+    """Create a mock traced_generate that raises on call."""
+    return AsyncMock(side_effect=Exception(error_msg))
 
 
 def _mock_genai_invalid_json():
-    """Create a mock genai response with invalid JSON."""
+    """Create a mock traced_generate response with invalid JSON."""
     response = MagicMock()
     response.text = "This is not valid JSON at all"
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=response)
-    return client
+    return AsyncMock(return_value=response)
 
 
 def _mock_genai_empty_selection():
-    """Create a mock genai response with empty selected_urls."""
+    """Create a mock traced_generate response with empty selected_urls."""
     response = MagicMock()
     response.text = json.dumps({"selected_urls": [], "rationale": "None suitable"})
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=response)
-    return client
+    return AsyncMock(return_value=response)
 
 
 # ---------------------------------------------------------------------------
@@ -248,15 +240,15 @@ class TestNoOpStandardMode:
         deep_topic = _make_topic(name="Deep Topic", search_depth="deep")
         std_topic = _make_topic(name="Standard Topic", search_depth="standard")
 
-        selected = _source_urls(20)[:8]
-        client = _mock_genai_success(selected)
+        selected = _source_urls(25)[:8]
+        mock_fn = _mock_genai_success(selected)
 
         refiner = _make_refiner(
             topic_configs=[deep_topic, std_topic],
             providers=["google"],
         )
 
-        deep_text = _research_text_with_n_sources(20)
+        deep_text = _research_text_with_n_sources(25)
         std_text = _research_text_with_n_sources(15)
         state = {
             "research_0_google": deep_text,
@@ -264,8 +256,7 @@ class TestNoOpStandardMode:
         }
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
@@ -290,13 +281,13 @@ class TestSourceCountThresholds:
         state = {"research_0_google": _research_text_with_n_sources(3)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
+        with patch("newsletter_agent.telemetry.traced_generate", new_callable=AsyncMock) as mock_fn:
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
 
             # No LLM call should be made
-            mock_genai.Client.assert_not_called()
+            mock_fn.assert_not_awaited()
 
         # All 3 sources still present
         result_urls = _extract_source_urls(ctx.session.state["research_0_google"])
@@ -309,12 +300,12 @@ class TestSourceCountThresholds:
         state = {"research_0_google": _research_text_with_n_sources(8)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
+        with patch("newsletter_agent.telemetry.traced_generate", new_callable=AsyncMock) as mock_fn:
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
 
-            mock_genai.Client.assert_not_called()
+            mock_fn.assert_not_awaited()
 
         result_urls = _extract_source_urls(ctx.session.state["research_0_google"])
         assert len(result_urls) == 8
@@ -326,30 +317,29 @@ class TestSourceCountThresholds:
         state = {"research_0_google": _research_text_with_n_sources(10)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
+        with patch("newsletter_agent.telemetry.traced_generate", new_callable=AsyncMock) as mock_fn:
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
 
-            mock_genai.Client.assert_not_called()
+            mock_fn.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_more_than_10_triggers_llm(self):
-        """Pool > 10: triggers LLM refinement."""
-        selected = _source_urls(20)[:8]
-        client = _mock_genai_success(selected)
+    async def test_more_than_max_triggers_llm(self):
+        """Pool > _MAX_SOURCES: triggers LLM refinement."""
+        selected = _source_urls(25)[:8]
+        mock_fn = _mock_genai_success(selected)
         refiner = _make_refiner()
 
-        state = {"research_0_google": _research_text_with_n_sources(20)}
+        state = {"research_0_google": _research_text_with_n_sources(25)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
 
-            mock_genai.Client.assert_called_once()
+            mock_fn.assert_awaited_once()
 
         result_urls = _extract_source_urls(ctx.session.state["research_0_google"])
         assert len(result_urls) == 8
@@ -365,15 +355,14 @@ class TestLlmRefinement:
     @pytest.mark.asyncio
     async def test_selects_valid_urls(self):
         """LLM returns valid selection within range."""
-        selected = _source_urls(20)[:7]
-        client = _mock_genai_success(selected)
+        selected = _source_urls(25)[:7]
+        mock_fn = _mock_genai_success(selected)
         refiner = _make_refiner()
 
-        state = {"research_0_google": _research_text_with_n_sources(20)}
+        state = {"research_0_google": _research_text_with_n_sources(25)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -384,16 +373,15 @@ class TestLlmRefinement:
     @pytest.mark.asyncio
     async def test_state_updated_in_place(self):
         """State key is updated with refined text."""
-        original = _research_text_with_n_sources(20)
-        selected = _source_urls(20)[:8]
-        client = _mock_genai_success(selected)
+        original = _research_text_with_n_sources(25)
+        selected = _source_urls(25)[:8]
+        mock_fn = _mock_genai_success(selected)
         refiner = _make_refiner()
 
         state = {"research_0_google": original}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -413,14 +401,13 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_llm_api_failure_keeps_all(self):
         """LLM call fails: keep all sources, log warning."""
-        client = _mock_genai_failure("Connection error")
+        mock_fn = _mock_genai_failure("Connection error")
         refiner = _make_refiner()
-        original = _research_text_with_n_sources(20)
+        original = _research_text_with_n_sources(25)
         state = {"research_0_google": original}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -430,14 +417,13 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_invalid_json_keeps_all(self):
         """LLM returns invalid JSON: keep all sources."""
-        client = _mock_genai_invalid_json()
+        mock_fn = _mock_genai_invalid_json()
         refiner = _make_refiner()
-        original = _research_text_with_n_sources(20)
+        original = _research_text_with_n_sources(25)
         state = {"research_0_google": original}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -446,14 +432,13 @@ class TestErrorHandling:
     @pytest.mark.asyncio
     async def test_empty_selection_keeps_all(self):
         """LLM returns empty selection: keep all sources."""
-        client = _mock_genai_empty_selection()
+        mock_fn = _mock_genai_empty_selection()
         refiner = _make_refiner()
-        original = _research_text_with_n_sources(20)
+        original = _research_text_with_n_sources(25)
         state = {"research_0_google": original}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -468,17 +453,16 @@ class TestErrorHandling:
 class TestClamping:
 
     @pytest.mark.asyncio
-    async def test_llm_selects_more_than_10_clamped(self):
-        """LLM selects > 10 URLs: only first 10 kept."""
-        selected = _source_urls(20)[:15]  # LLM claims 15 are relevant
-        client = _mock_genai_success(selected)
+    async def test_llm_selects_more_than_max_clamped(self):
+        """LLM selects > _MAX_SOURCES URLs: only first _MAX_SOURCES kept."""
+        selected = _source_urls(30)[:25]  # LLM claims 25 are relevant
+        mock_fn = _mock_genai_success(selected)
         refiner = _make_refiner()
 
-        state = {"research_0_google": _research_text_with_n_sources(20)}
+        state = {"research_0_google": _research_text_with_n_sources(30)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -488,16 +472,15 @@ class TestClamping:
     @pytest.mark.asyncio
     async def test_llm_selects_fewer_than_5_keeps_all(self):
         """LLM selects < 5 valid URLs: keep all original sources."""
-        selected = _source_urls(20)[:3]  # Only 3 valid
-        client = _mock_genai_success(selected)
+        selected = _source_urls(25)[:3]  # Only 3 valid
+        mock_fn = _mock_genai_success(selected)
         refiner = _make_refiner()
-        original = _research_text_with_n_sources(20)
+        original = _research_text_with_n_sources(25)
 
         state = {"research_0_google": original}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -508,16 +491,15 @@ class TestClamping:
     async def test_llm_returns_urls_not_in_source_list(self):
         """LLM returns URLs not in original list: filtered out."""
         # 5 valid + 5 invalid URLs
-        valid = _source_urls(20)[:5]
+        valid = _source_urls(25)[:5]
         invalid = [f"https://notreal.com/{i}" for i in range(5)]
-        client = _mock_genai_success(valid + invalid)
+        mock_fn = _mock_genai_success(valid + invalid)
         refiner = _make_refiner()
 
-        state = {"research_0_google": _research_text_with_n_sources(20)}
+        state = {"research_0_google": _research_text_with_n_sources(25)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -536,23 +518,22 @@ class TestLogging:
     @pytest.mark.asyncio
     async def test_logs_source_counts(self, caplog):
         """Logs before -> after source counts."""
-        selected = _source_urls(20)[:8]
-        client = _mock_genai_success(selected)
+        selected = _source_urls(25)[:8]
+        mock_fn = _mock_genai_success(selected)
         refiner = _make_refiner()
 
-        state = {"research_0_google": _research_text_with_n_sources(20)}
+        state = {"research_0_google": _research_text_with_n_sources(25)}
         ctx = _make_ctx(state)
 
         with caplog.at_level(logging.INFO):
-            with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-                mock_genai.Client.return_value = client
+            with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
                 async for _ in refiner._run_async_impl(ctx):
                     pass
 
         # Check for before/after log line
         refined_logs = [r for r in caplog.records if "Refined topic" in r.message]
         assert len(refined_logs) == 1
-        assert "20 -> 8 sources" in refined_logs[0].message
+        assert "25 -> 8 sources" in refined_logs[0].message
 
     @pytest.mark.asyncio
     async def test_logs_skip_reason_below_minimum(self, caplog):

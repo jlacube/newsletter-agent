@@ -36,11 +36,11 @@ class TestADKDiscoveryEntryPoint:
         assert root_agent.name == "NewsletterPipeline"
 
     def test_root_agent_sub_agent_count(self):
-        """root_agent has the expected number of sub-agents (9 pipeline stages)."""
+        """root_agent has the expected number of sub-agents (10 pipeline stages)."""
         from newsletter_agent.agent import root_agent
         # ConfigLoader, ResearchPhase, ResearchValidator, PipelineAbortCheck,
-        # LinkVerifier, DeepResearchRefiner, Synthesizer, SynthesisPostProcessor,
-        # OutputPhase
+        # LinkVerifier, DeepResearchRefiner, PerTopicSynthesizer,
+        # SynthesisLinkVerifier, OutputPhase
         assert len(root_agent.sub_agents) == 9
 
     def test_root_agent_has_deep_research_refiner(self):
@@ -60,8 +60,8 @@ class TestADKDiscoveryEntryPoint:
             "PipelineAbortCheck",
             "LinkVerifier",
             "DeepResearchRefiner",
-            "Synthesizer",
-            "SynthesisPostProcessor",
+            "PerTopicSynthesizer",
+            "SynthesisLinkVerifier",
             "OutputPhase",
         ]
         assert names == expected_order

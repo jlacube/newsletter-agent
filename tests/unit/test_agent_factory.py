@@ -14,12 +14,12 @@ from newsletter_agent.agent import (
     ConfigLoaderAgent,
     PipelineAbortCheckAgent,
     ResearchValidatorAgent,
-    SynthesisPostProcessorAgent,
     build_pipeline,
     build_research_phase,
     build_synthesis_agent,
 )
-from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent
+from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent, SynthesisLinkVerifierAgent
+from newsletter_agent.tools.per_topic_synthesizer import PerTopicSynthesizerAgent
 from newsletter_agent.config.schema import (
     AppSettings,
     NewsletterConfig,
@@ -330,7 +330,7 @@ class TestModelAssignments:
 
     def test_synthesis_agent_uses_pro(self):
         config = _make_config([{"name": "AI", "query": "AI news"}])
-        agent = build_synthesis_agent(config)
+        agent = build_synthesis_agent(config, ["google", "perplexity"])
         assert agent.model == _SYNTHESIS_MODEL
 
 
@@ -364,10 +364,10 @@ class TestBuildPipeline:
         assert pipeline.sub_agents[4].name == "LinkVerifier"
         assert isinstance(pipeline.sub_agents[5], DeepResearchRefinerAgent)
         assert pipeline.sub_agents[5].name == "DeepResearchRefiner"
-        assert isinstance(pipeline.sub_agents[6], LlmAgent)
-        assert pipeline.sub_agents[6].name == "Synthesizer"
-        assert isinstance(pipeline.sub_agents[7], SynthesisPostProcessorAgent)
-        assert pipeline.sub_agents[7].name == "SynthesisPostProcessor"
+        assert isinstance(pipeline.sub_agents[6], PerTopicSynthesizerAgent)
+        assert pipeline.sub_agents[6].name == "PerTopicSynthesizer"
+        assert isinstance(pipeline.sub_agents[7], SynthesisLinkVerifierAgent)
+        assert pipeline.sub_agents[7].name == "SynthesisLinkVerifier"
         assert isinstance(pipeline.sub_agents[8], SequentialAgent)
         assert pipeline.sub_agents[8].name == "OutputPhase"
 
@@ -378,6 +378,14 @@ class TestBuildPipeline:
         assert len(output_phase.sub_agents) == 2
         assert output_phase.sub_agents[0].name == "FormatterAgent"
         assert output_phase.sub_agents[1].name == "DeliveryAgent"
+
+    def test_per_topic_synthesizer_has_topics(self):
+        config = _make_config([{"name": "AI", "query": "AI news"}])
+        pipeline = build_pipeline(config)
+        synthesizer = pipeline.sub_agents[6]
+        assert synthesizer.name == "PerTopicSynthesizer"
+        assert isinstance(synthesizer, PerTopicSynthesizerAgent)
+        assert synthesizer.topic_names == ["AI"]
 
 
 class TestConfigLoaderAgent:

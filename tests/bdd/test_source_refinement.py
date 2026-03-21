@@ -64,9 +64,7 @@ def _source_urls(n):
 def _mock_llm_selecting(urls, rationale="Selected most relevant"):
     response = MagicMock()
     response.text = json.dumps({"selected_urls": urls, "rationale": rationale})
-    client = MagicMock()
-    client.aio.models.generate_content = AsyncMock(return_value=response)
-    return client
+    return AsyncMock(return_value=response)
 
 
 # ---------------------------------------------------------------------------
@@ -76,50 +74,48 @@ def _mock_llm_selecting(urls, rationale="Selected most relevant"):
 
 class TestSourcesRefinedTo5to10:
     """
-    Given a deep-mode topic with 20 verified Google sources
+    Given a deep-mode topic with 25 verified Google sources
     When the refinement agent runs
-    Then between 5 and 10 Google sources remain
+    Then between 5 and 20 Google sources remain
     """
 
     @pytest.mark.asyncio
-    async def test_given_deep_20_sources_when_refines_then_5_to_10_remain(self):
-        # Given: a deep-mode topic with 20 verified Google sources
+    async def test_given_deep_25_sources_when_refines_then_5_to_20_remain(self):
+        # Given: a deep-mode topic with 25 verified Google sources
         topic = _make_topic(search_depth="deep")
         refiner = _make_refiner(topic_configs=[topic])
-        state = {"research_0_google": _research_text(20)}
+        state = {"research_0_google": _research_text(25)}
         ctx = _make_ctx(state)
 
-        # Mock LLM to return 8 selected sources
-        selected = _source_urls(20)[:8]
-        client = _mock_llm_selecting(selected)
+        # Mock LLM to return 15 selected sources
+        selected = _source_urls(25)[:15]
+        mock_fn = _mock_llm_selecting(selected)
 
         # When: the refinement agent runs
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
 
-        # Then: between 5 and 10 Google sources remain
+        # Then: between 5 and 20 Google sources remain
         result_urls = _extract_source_urls(ctx.session.state["research_0_google"])
-        assert 5 <= len(result_urls) <= 10
-        assert len(result_urls) == 8
+        assert 5 <= len(result_urls) <= 20
+        assert len(result_urls) == 15
         assert set(result_urls) == set(selected)
 
     @pytest.mark.asyncio
     async def test_summary_text_preserved_after_refinement(self):
-        # Given: a deep-mode topic with 20 sources and a specific summary
+        # Given: a deep-mode topic with 25 sources and a specific summary
         topic = _make_topic(search_depth="deep")
         refiner = _make_refiner(topic_configs=[topic])
-        state = {"research_0_google": _research_text(20, summary="Critical AI breakthrough")}
+        state = {"research_0_google": _research_text(25, summary="Critical AI breakthrough")}
         ctx = _make_ctx(state)
 
-        selected = _source_urls(20)[:7]
-        client = _mock_llm_selecting(selected)
+        selected = _source_urls(25)[:12]
+        mock_fn = _mock_llm_selecting(selected)
 
         # When: refinement runs
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-            mock_genai.Client.return_value = client
+        with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
@@ -128,25 +124,24 @@ class TestSourcesRefinedTo5to10:
 
     @pytest.mark.asyncio
     async def test_refinement_logs_before_after(self, caplog):
-        # Given: a deep-mode topic with 20 sources
+        # Given: a deep-mode topic with 25 sources
         topic = _make_topic(search_depth="deep")
         refiner = _make_refiner(topic_configs=[topic])
-        state = {"research_0_google": _research_text(20)}
+        state = {"research_0_google": _research_text(25)}
         ctx = _make_ctx(state)
 
-        selected = _source_urls(20)[:8]
-        client = _mock_llm_selecting(selected)
+        selected = _source_urls(25)[:15]
+        mock_fn = _mock_llm_selecting(selected)
 
         # When: refinement runs
         with caplog.at_level(logging.INFO):
-            with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-                mock_genai.Client.return_value = client
+            with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
                 async for _ in refiner._run_async_impl(ctx):
                     pass
 
         # Then: log contains before -> after counts
         log_msgs = [r.message for r in caplog.records]
-        assert any("20 -> 8 sources" in msg for msg in log_msgs)
+        assert any("25 -> 15 sources" in msg for msg in log_msgs)
 
 
 # ---------------------------------------------------------------------------
@@ -171,13 +166,13 @@ class TestFewSourcesKeptWithoutFiltering:
         ctx = _make_ctx(state)
 
         # When: the refinement agent runs
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
+        with patch("newsletter_agent.telemetry.traced_generate", new_callable=AsyncMock) as mock_fn:
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
 
             # Then: no LLM call was made
-            mock_genai.Client.assert_not_called()
+            mock_fn.assert_not_awaited()
 
         # And: all 3 sources are kept
         result_urls = _extract_source_urls(ctx.session.state["research_0_google"])
@@ -194,10 +189,10 @@ class TestFewSourcesKeptWithoutFiltering:
         state = {"research_0_google": _research_text(4)}
         ctx = _make_ctx(state)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
+        with patch("newsletter_agent.telemetry.traced_generate", new_callable=AsyncMock) as mock_fn:
             async for _ in refiner._run_async_impl(ctx):
                 pass
-            mock_genai.Client.assert_not_called()
+            mock_fn.assert_not_awaited()
 
         result_urls = _extract_source_urls(ctx.session.state["research_0_google"])
         assert len(result_urls) == 4
@@ -225,13 +220,13 @@ class TestRefinementNoOpForStandardMode:
         ctx = _make_ctx(state)
 
         # When: the refinement agent runs
-        with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
+        with patch("newsletter_agent.telemetry.traced_generate", new_callable=AsyncMock) as mock_fn:
             events = []
             async for event in refiner._run_async_impl(ctx):
                 events.append(event)
 
             # Then: no LLM call
-            mock_genai.Client.assert_not_called()
+            mock_fn.assert_not_awaited()
 
         # And: all 5 sources remain unchanged
         assert ctx.session.state["research_0_google"] == original
@@ -261,40 +256,36 @@ class TestRefinementNoOpForStandardMode:
 
 class TestGracefulDegradationOnLlmFailure:
     """
-    Given a deep-mode topic with 20 verified sources
+    Given a deep-mode topic with 25 verified sources
     And the refinement LLM call fails
     When the refinement agent runs
-    Then all 20 sources are kept
+    Then all 25 sources are kept
     And a warning is logged
     """
 
     @pytest.mark.asyncio
     async def test_given_llm_fails_when_refines_then_all_kept_and_warning_logged(self, caplog):
-        # Given: a deep-mode topic with 20 verified sources
+        # Given: a deep-mode topic with 25 verified sources
         topic = _make_topic(search_depth="deep")
         refiner = _make_refiner(topic_configs=[topic])
-        original = _research_text(20)
+        original = _research_text(25)
         state = {"research_0_google": original}
         ctx = _make_ctx(state)
 
         # And: the refinement LLM call fails
-        client = MagicMock()
-        client.aio.models.generate_content = AsyncMock(
-            side_effect=Exception("API unavailable")
-        )
+        mock_fn = AsyncMock(side_effect=Exception("API unavailable"))
 
         # When: the refinement agent runs
         with caplog.at_level(logging.WARNING):
-            with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-                mock_genai.Client.return_value = client
+            with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
                 events = []
                 async for event in refiner._run_async_impl(ctx):
                     events.append(event)
 
-        # Then: all 20 sources are kept
+        # Then: all 25 sources are kept
         assert ctx.session.state["research_0_google"] == original
         result_urls = _extract_source_urls(ctx.session.state["research_0_google"])
-        assert len(result_urls) == 20
+        assert len(result_urls) == 25
 
         # And: a warning is logged
         warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
@@ -306,18 +297,16 @@ class TestGracefulDegradationOnLlmFailure:
         # Given: LLM returns invalid JSON
         topic = _make_topic(search_depth="deep")
         refiner = _make_refiner(topic_configs=[topic])
-        original = _research_text(20)
+        original = _research_text(25)
         state = {"research_0_google": original}
         ctx = _make_ctx(state)
 
         response = MagicMock()
         response.text = "not json {"
-        client = MagicMock()
-        client.aio.models.generate_content = AsyncMock(return_value=response)
+        mock_fn = AsyncMock(return_value=response)
 
         with caplog.at_level(logging.WARNING):
-            with patch("newsletter_agent.tools.deep_research_refiner.genai") as mock_genai:
-                mock_genai.Client.return_value = client
+            with patch("newsletter_agent.telemetry.traced_generate", mock_fn):
                 async for _ in refiner._run_async_impl(ctx):
                     pass
 

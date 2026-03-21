@@ -147,8 +147,14 @@ class FormatterAgent(BaseAgent):
             "generation_time_seconds": gen_time,
         }
 
+        for s_idx, sec in enumerate(sections):
+            logger.info(
+                "[Formatter] Section %d '%s': %d sources, body=%d chars",
+                s_idx, sec.get("title", f"Topic {s_idx}"),
+                len(sec.get("sources", [])), len(sec.get("body_html", "")),
+            )
         logger.info(
-            "Newsletter formatted: %d sections, %d sources, %d chars HTML",
+            "Newsletter formatted: %d sections, %d unique sources, %d chars HTML",
             len(sections),
             len(unique_sources),
             len(newsletter_html),

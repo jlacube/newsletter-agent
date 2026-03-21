@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from newsletter_agent.agent import build_research_phase, build_synthesis_agent
+from newsletter_agent.agent import build_research_phase
 from newsletter_agent.config.schema import (
     AppSettings,
     NewsletterConfig,

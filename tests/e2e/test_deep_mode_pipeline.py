@@ -212,15 +212,15 @@ class TestE2EDeepModePipeline:
 
     @pytest.mark.asyncio
     async def test_refinement_reduces_sources_to_range(self, tmp_path):
-        """SC-003: After refinement, 5-10 curated sources remain per provider."""
+        """SC-003: After refinement, 5-20 curated sources remain per provider."""
         from newsletter_agent.tools.deep_research_refiner import (
             DeepResearchRefinerAgent,
             _extract_source_urls,
         )
 
-        # Pre-populate state with deep-mode research output (20 sources)
+        # Pre-populate state with deep-mode research output (25 sources, above _MAX_SOURCES=20)
         urls = [
-            f"- [Article {i}](https://src.example.com/a{i})" for i in range(20)
+            f"- [Article {i}](https://src.example.com/a{i})" for i in range(25)
         ]
         research_text = "SUMMARY:\nDeep findings.\n\nSOURCES:\n" + "\n".join(urls)
 
@@ -241,28 +241,23 @@ class TestE2EDeepModePipeline:
         ctx = MagicMock()
         ctx.session.state = {"research_0_google": research_text}
 
-        selected_urls = [f"https://src.example.com/a{i}" for i in range(8)]
+        selected_urls = [f"https://src.example.com/a{i}" for i in range(15)]
         mock_response = MagicMock()
         mock_response.text = (
             '{"selected_urls": ' + str(selected_urls).replace("'", '"') + ', "rationale": "test"}'
         )
-        mock_client = MagicMock()
-        mock_client.aio.models.generate_content = MagicMock(return_value=mock_response)
 
-        with patch("newsletter_agent.tools.deep_research_refiner.genai.Client", return_value=mock_client):
-            # Make generate_content an awaitable
-            import asyncio
-            future = asyncio.Future()
-            future.set_result(mock_response)
-            mock_client.aio.models.generate_content.return_value = future
+        async def fake_traced_generate(**kwargs):
+            return mock_response
 
+        with patch("newsletter_agent.telemetry.traced_generate", side_effect=fake_traced_generate):
             async for _ in refiner._run_async_impl(ctx):
                 pass
 
         final = ctx.session.state["research_0_google"]
         final_urls = _extract_source_urls(final)
-        assert 5 <= len(final_urls) <= 10, (
-            f"Expected 5-10 sources after refinement, got {len(final_urls)}"
+        assert 5 <= len(final_urls) <= 20, (
+            f"Expected 5-20 sources after refinement, got {len(final_urls)}"
         )
 
     @pytest.mark.asyncio

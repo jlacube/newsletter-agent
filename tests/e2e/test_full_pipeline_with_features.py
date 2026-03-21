@@ -73,16 +73,18 @@ def _make_session_state_with_features(output_dir: str) -> dict:
             "Cloud tech is maturing. "
             "[CNCF Report](https://example.com/cncf) highlights trends."
         ),
-        # Synthesis keys represent post-synthesis output (after verification cleaned research)
+        # Synthesis keys represent post-synthesis output (before link verification)
         "synthesis_0": {
             "title": "AI Frameworks",
             "body_markdown": (
                 "## AI Frameworks\n\n"
                 "The AI framework landscape evolves. "
-                "[ADK Docs](https://example.com/adk) show updates."
+                "[ADK Docs](https://example.com/adk) show updates.\n\n"
+                "[Dead Link](https://broken.example.com/gone) was removed."
             ),
             "sources": [
                 {"url": "https://example.com/adk", "title": "ADK Docs"},
+                {"url": "https://broken.example.com/gone", "title": "Dead Link"},
             ],
         },
         "synthesis_1": {
@@ -136,21 +138,22 @@ class TestPipelineBuildWithFeatures:
         config_path, _ = test_config_with_features_file
         config = load_config(config_path)
         phase = build_research_phase(config)
+        from tests.conftest import get_instruction_text
         # Topic 0 inherits global "last_week"
         for sub in phase.sub_agents[0].sub_agents:
-            assert "week" in sub.instruction.lower()
+            assert "week" in get_instruction_text(sub).lower()
         # Topic 1 overrides to "last_month"
         for sub in phase.sub_agents[1].sub_agents:
-            assert "month" in sub.instruction.lower()
+            assert "month" in get_instruction_text(sub).lower()
 
 
 class TestFormatterWithVerifiedLinks:
-    """Formatter produces correct HTML after link verification removes broken links."""
+    """Formatter produces correct HTML after link verification removes broken links from research."""
 
     @pytest.mark.asyncio
     @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
-    async def test_formatter_after_link_verification(self, mock_verify, tmp_path):
-        """Full path: link verify -> format -> delivery produces clean HTML."""
+    async def test_link_verifier_cleans_research_keys(self, mock_verify, tmp_path):
+        """Link verification cleans broken URLs from research state keys."""
         output_dir = str(tmp_path / "output")
         state = _make_session_state_with_features(output_dir)
 
@@ -169,7 +172,7 @@ class TestFormatterWithVerifiedLinks:
             ),
         }
 
-        # Step 1: Link verification on research data
+        # Link verification on research data (pre-synthesis)
         verifier = LinkVerifierAgent(
             name="LinkVerifier", topic_count=2, providers=["google"],
         )
@@ -178,10 +181,30 @@ class TestFormatterWithVerifiedLinks:
         async for _ in verifier._run_async_impl(ctx):
             pass
 
-        # Broken link should be removed from research text
-        assert "[Dead Link](https://broken.example.com/gone)" not in state["research_0_google"]
+        # Broken link should be removed from research entry
+        assert "https://broken.example.com/gone" not in state["research_0_google"]
+        # Valid link should remain in research entry
+        assert "https://example.com/adk" in state["research_0_google"]
 
-        # Step 2: Format (reads synthesis data which is already clean)
+    @pytest.mark.asyncio
+    async def test_formatter_produces_clean_html(self, tmp_path):
+        """Formatter produces correct HTML from clean synthesis data."""
+        output_dir = str(tmp_path / "output")
+        state = _make_session_state_with_features(output_dir)
+        # Simulate post-verification: research is clean, synthesis was generated from clean research
+        # Remove the broken link from synthesis (as would happen in real pipeline)
+        state["synthesis_0"]["body_markdown"] = (
+            "## AI Frameworks\n\n"
+            "The AI framework landscape evolves. "
+            "[ADK Docs](https://example.com/adk) show updates."
+        )
+        state["synthesis_0"]["sources"] = [
+            {"url": "https://example.com/adk", "title": "ADK Docs"},
+        ]
+
+        ctx = MagicMock()
+        ctx.session.state = state
+
         formatter = FormatterAgent(name="FormatterAgent")
         async for _ in formatter._run_async_impl(ctx):
             pass
@@ -190,8 +213,6 @@ class TestFormatterWithVerifiedLinks:
         assert "Feature Test Newsletter" in html
         assert "AI Frameworks" in html
         assert "Cloud Native" in html
-        # Broken link markdown should not appear in HTML
-        assert "[Dead Link](https://broken.example.com/gone)" not in html
         assert "broken.example.com/gone" not in html
 
     @pytest.mark.asyncio
@@ -219,12 +240,22 @@ class TestFormatterWithVerifiedLinks:
         ctx = MagicMock()
         ctx.session.state = state
 
-        # Link verify on research data
+        # Link verify on research data (pre-synthesis)
         verifier = LinkVerifierAgent(
             name="LinkVerifier", topic_count=2, providers=["google"],
         )
         async for _ in verifier._run_async_impl(ctx):
             pass
+
+        # Simulate clean synthesis (broken link removed by synthesizer processing clean research)
+        state["synthesis_0"]["body_markdown"] = (
+            "## AI Frameworks\n\n"
+            "The AI framework landscape evolves. "
+            "[ADK Docs](https://example.com/adk) show updates."
+        )
+        state["synthesis_0"]["sources"] = [
+            {"url": "https://example.com/adk", "title": "ADK Docs"},
+        ]
 
         # Format
         formatter = FormatterAgent(name="FormatterAgent")

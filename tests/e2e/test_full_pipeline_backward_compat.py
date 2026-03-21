@@ -94,7 +94,8 @@ class TestOldFormatConfigLoads:
         phase = build_research_phase(config)
         for topic_agent in phase.sub_agents:
             for sub in topic_agent.sub_agents:
-                assert "time constraint" not in sub.instruction.lower()
+                from tests.conftest import get_instruction_text
+                assert "time constraint" not in get_instruction_text(sub).lower()
 
 
 class TestBackwardCompatPipeline:
@@ -113,14 +114,14 @@ class TestBackwardCompatPipeline:
         with patch(
             "newsletter_agent.tools.link_verifier_agent.verify_urls"
         ) as mock_verify:
-            verifier = LinkVerifierAgent(name="LinkVerifier")
+            verifier = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
             async for _ in verifier._run_async_impl(ctx):
                 pass
 
             # Should NOT have been called
             mock_verify.assert_not_called()
 
-        # Sources should be unchanged
+        # Synthesis sources should be unchanged
         assert len(state["synthesis_0"]["sources"]) == 2
 
     @pytest.mark.asyncio
@@ -133,7 +134,7 @@ class TestBackwardCompatPipeline:
         ctx.session.state = state
 
         # Link verifier (should no-op)
-        verifier = LinkVerifierAgent(name="LinkVerifier")
+        verifier = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         async for _ in verifier._run_async_impl(ctx):
             pass
 
@@ -159,7 +160,7 @@ class TestBackwardCompatPipeline:
         ctx.session.state = state
 
         # Full path
-        verifier = LinkVerifierAgent(name="LinkVerifier")
+        verifier = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         async for _ in verifier._run_async_impl(ctx):
             pass
 

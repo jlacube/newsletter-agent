@@ -19,7 +19,7 @@ from newsletter_agent.tools.link_verifier import verify_urls
 class TestLinkVerificationPerformance:
     @pytest.mark.asyncio
     async def test_40_urls_under_30_seconds(self, respx_mock):
-        """40 URLs with 2s delay each complete within 30s (proves concurrency)."""
+        """40 URLs with 0.5s delay each complete within 30s (proves concurrency)."""
         urls = [f"https://perf-test.example.com/{i}" for i in range(40)]
 
         concurrent_count = 0
@@ -34,10 +34,13 @@ class TestLinkVerificationPerformance:
             await asyncio.sleep(0.5)  # Simulate latency (0.5s for test speed)
             async with lock:
                 concurrent_count -= 1
-            return httpx.Response(200)
+            return httpx.Response(
+                200,
+                html="<html><head><title>Test Article</title></head><body>ok</body></html>",
+            )
 
         for url in urls:
-            respx_mock.head(url).mock(side_effect=delayed_response)
+            respx_mock.get(url).mock(side_effect=delayed_response)
 
         start = time.monotonic()
         results = await verify_urls(urls, timeout=10.0, max_concurrent=10)
@@ -70,10 +73,13 @@ class TestLinkVerificationPerformance:
             await asyncio.sleep(0.1)
             async with lock:
                 concurrent_count -= 1
-            return httpx.Response(200)
+            return httpx.Response(
+                200,
+                html="<html><head><title>Article</title></head><body>ok</body></html>",
+            )
 
         for url in urls:
-            respx_mock.head(url).mock(side_effect=slow_response)
+            respx_mock.get(url).mock(side_effect=slow_response)
 
         await verify_urls(urls, max_concurrent=5)
         assert max_concurrent_seen <= 5

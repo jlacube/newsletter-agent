@@ -70,6 +70,9 @@ class TestSetupLogging:
             args=None,
             exc_info=None,
         )
+        # Apply the TraceContextFilter so trace_id/span_id are present
+        for f in logger.filters:
+            f.filter(record)
         formatted = handler.formatter.format(record)
         assert "INFO" in formatted
         assert "newsletter_agent.test" in formatted

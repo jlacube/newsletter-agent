@@ -49,28 +49,30 @@ def _make_config_with_timeframes():
 class TestConfigResearchTimeframeIntegration:
     def test_global_timeframe_in_research_instructions(self):
         """Topic 0 inherits global timeframe; instructions contain date clause."""
+        from tests.conftest import get_instruction_text
         config = _make_config_with_timeframes()
         phase = build_research_phase(config)
 
         # Topic 0 (AI News) gets global "last_week"
         topic0 = phase.sub_agents[0]
         for sub in topic0.sub_agents:
-            instruction = sub.instruction.lower()
+            instruction = get_instruction_text(sub).lower()
             assert "last week" in instruction or "week" in instruction, (
-                f"Expected date clause in topic 0 instruction: {sub.instruction}"
+                f"Expected date clause in topic 0 instruction: {get_instruction_text(sub)}"
             )
 
     def test_per_topic_override_in_research_instructions(self):
         """Topic 1 overrides to last_month; instructions reflect override."""
+        from tests.conftest import get_instruction_text
         config = _make_config_with_timeframes()
         phase = build_research_phase(config)
 
         # Topic 1 (Cloud Updates) overrides to "last_month"
         topic1 = phase.sub_agents[1]
         for sub in topic1.sub_agents:
-            instruction = sub.instruction.lower()
+            instruction = get_instruction_text(sub).lower()
             assert "month" in instruction, (
-                f"Expected 'month' in topic 1 instruction: {sub.instruction}"
+                f"Expected 'month' in topic 1 instruction: {get_instruction_text(sub)}"
             )
 
     @pytest.mark.asyncio
@@ -95,6 +97,7 @@ class TestConfigResearchTimeframeIntegration:
 
     def test_no_timeframe_means_no_date_clause(self):
         """When no timeframe configured, instructions have no date text."""
+        from tests.conftest import get_instruction_text
         config = NewsletterConfig(
             newsletter=NewsletterSettings(
                 title="No TF Test",
@@ -107,4 +110,4 @@ class TestConfigResearchTimeframeIntegration:
         phase = build_research_phase(config)
         topic0 = phase.sub_agents[0]
         for sub in topic0.sub_agents:
-            assert "time constraint" not in sub.instruction.lower()
+            assert "time constraint" not in get_instruction_text(sub).lower()

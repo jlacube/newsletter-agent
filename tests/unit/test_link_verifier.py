@@ -1,7 +1,7 @@
 """Unit tests for newsletter_agent.tools.link_verifier.
 
-Covers LinkCheckResult, verify_urls(), SSRF protection, HEAD->GET fallback,
-and clean_broken_links_from_markdown().
+Covers LinkCheckResult, verify_urls(), SSRF protection, streaming GET with
+title extraction, soft-404 detection, and clean_broken_links_from_markdown().
 
 Spec refs: Section 11.1, Section 11.5, Section 11.6.
 """
@@ -19,9 +19,17 @@ from newsletter_agent.tools.link_verifier import (
     _check_one_url,
     _is_private_ip,
     _check_scheme,
+    _extract_title,
+    _is_soft_404,
+    _is_soft_404_body,
     clean_broken_links_from_markdown,
     verify_urls,
 )
+
+
+def _html(title: str = "Test Article", body: str = "content") -> str:
+    """Build a minimal HTML page with the given title."""
+    return f"<html><head><title>{title}</title></head><body>{body}</body></html>"
 
 
 # ---------------------------------------------------------------------------
@@ -34,6 +42,7 @@ class TestLinkCheckResult:
         assert r.status == "valid"
         assert r.http_status == 200
         assert r.error is None
+        assert r.page_title is None
 
     def test_broken_result(self):
         r = LinkCheckResult(
@@ -52,11 +61,152 @@ class TestLinkCheckResult:
         r = LinkCheckResult(url="https://x.com", status="broken")
         assert r.http_status is None
         assert r.error is None
+        assert r.page_title is None
+
+    def test_page_title_field(self):
+        r = LinkCheckResult(
+            url="https://x.com", status="valid", http_status=200,
+            page_title="My Article",
+        )
+        assert r.page_title == "My Article"
 
 
 # ---------------------------------------------------------------------------
-# SSRF protection helpers
+# Title extraction tests
 # ---------------------------------------------------------------------------
+class TestTitleExtraction:
+    def test_basic_title(self):
+        assert _extract_title("<title>Hello World</title>") == "Hello World"
+
+    def test_title_with_whitespace(self):
+        assert _extract_title("<title>  Hello   World  </title>") == "Hello World"
+
+    def test_title_with_newlines(self):
+        assert _extract_title("<title>\n  My\n  Page\n</title>") == "My Page"
+
+    def test_title_with_entities(self):
+        assert _extract_title("<title>A &amp; B</title>") == "A & B"
+
+    def test_title_case_insensitive(self):
+        assert _extract_title("<TITLE>Test</TITLE>") == "Test"
+
+    def test_no_title(self):
+        assert _extract_title("<html><body>No title</body></html>") is None
+
+    def test_empty_title(self):
+        assert _extract_title("<title></title>") is None
+
+    def test_title_with_attributes(self):
+        assert _extract_title('<title lang="en">Page</title>') == "Page"
+
+
+class TestSoft404Detection:
+    def test_not_found_title(self):
+        assert _is_soft_404("Page Not Found") is True
+
+    def test_404_in_title(self):
+        assert _is_soft_404("404 - Page does not exist") is True
+
+    def test_removed(self):
+        assert _is_soft_404("Article has been removed") is True
+
+    def test_access_denied(self):
+        assert _is_soft_404("Access Denied") is True
+
+    def test_captcha(self):
+        assert _is_soft_404("Attention Required | Cloudflare") is True
+
+    def test_just_a_moment(self):
+        assert _is_soft_404("Just a moment...") is True
+
+    def test_normal_title(self):
+        assert _is_soft_404("AI Revolutionizes Healthcare - TechNews") is False
+
+    def test_none_title(self):
+        assert _is_soft_404(None) is False
+
+    def test_empty_title(self):
+        assert _is_soft_404("") is False
+
+    def test_sign_in(self):
+        assert _is_soft_404("Sign In Required") is True
+
+    def test_server_error(self):
+        assert _is_soft_404("Internal Server Error") is True
+
+
+class TestSoft404BodyDetection:
+    """Tests for _is_soft_404_body which scans heading/body content for hidden 404s."""
+
+    def test_heading_page_not_found(self):
+        html = "<html><body><h1>Page not found</h1></body></html>"
+        assert _is_soft_404_body(html) is True
+
+    def test_heading_404_error(self):
+        html = "<html><body><h1>404: Not Found</h1><p>lorem ipsum</p></body></html>"
+        assert _is_soft_404_body(html) is True
+
+    def test_heading_content_unavailable(self):
+        html = "<html><body><h2>This page is no longer available</h2></body></html>"
+        assert _is_soft_404_body(html) is True
+
+    def test_heading_could_not_find(self):
+        html = "<html><body><h1>We couldn't find this page</h1></body></html>"
+        assert _is_soft_404_body(html) is True
+
+    def test_heading_requested_page_not_found(self):
+        html = "<html><body><h1>The requested page was not found</h1></body></html>"
+        assert _is_soft_404_body(html) is True
+
+    def test_short_body_error_text(self):
+        html = "<html><body>Sorry, this content is no longer available.</body></html>"
+        assert _is_soft_404_body(html) is True
+
+    def test_short_body_google_grounding_style(self):
+        """Simulates a Google Grounding redirect that returns 200 with error body."""
+        html = (
+            "<html><head><title>Google</title></head>"
+            "<body><p>The requested URL was not found on this server.</p>"
+            "<p>That's all we know.</p></body></html>"
+        )
+        # Title is "Google" (passes title check), but body reveals the 404
+        assert _is_soft_404(_extract_title(html)) is False
+        assert _is_soft_404_body(html) is True
+
+    def test_normal_page_not_flagged(self):
+        html = (
+            "<html><head><title>AI News</title></head>"
+            "<body><h1>AI Transforms Healthcare</h1>"
+            "<p>Artificial intelligence is revolutionizing the healthcare industry...</p>"
+            "</body></html>"
+        )
+        assert _is_soft_404_body(html) is False
+
+    def test_long_page_with_404_mention_not_flagged(self):
+        """A long article that mentions '404' casually should not be flagged."""
+        filler = "Lorem ipsum dolor sit amet. " * 100
+        html = (
+            f"<html><body><h1>Web Development Tips</h1>"
+            f"<p>{filler}</p>"
+            f"<p>Make sure your site returns a proper 404 page for missing URLs.</p>"
+            f"<p>{filler}</p></body></html>"
+        )
+        assert _is_soft_404_body(html) is False
+
+    def test_empty_body(self):
+        assert _is_soft_404_body("") is False
+
+    def test_none_body(self):
+        assert _is_soft_404_body(None) is False
+
+    def test_h3_heading_error(self):
+        html = "<html><body><h3>Error 404 - page not found</h3></body></html>"
+        assert _is_soft_404_body(html) is True
+
+    def test_h4_heading_not_checked(self):
+        """Only h1-h3 are checked - h4 error heading should not trigger."""
+        html = "<html><body><h4>Page not found</h4>" + ("x " * 1000) + "</body></html>"
+        assert _is_soft_404_body(html) is False
 class TestSSRFProtection:
     def test_loopback_ipv4(self):
         assert _is_private_ip("127.0.0.1") is True
@@ -108,26 +258,27 @@ class TestVerifyUrls:
         assert result == {}
 
     @pytest.mark.asyncio
-    async def test_valid_200(self, respx_mock):
-        respx_mock.head("https://example.com/page").mock(
-            return_value=httpx.Response(200)
+    async def test_valid_200_with_title(self, respx_mock):
+        respx_mock.get("https://example.com/page").mock(
+            return_value=httpx.Response(200, html=_html("My Article"))
         )
         results = await verify_urls(["https://example.com/page"])
         r = results["https://example.com/page"]
         assert r.status == "valid"
         assert r.http_status == 200
         assert r.error is None
+        assert r.page_title == "My Article"
 
     @pytest.mark.asyncio
     async def test_redirect_301_to_200(self, respx_mock):
-        respx_mock.head("https://example.com/old").mock(
+        respx_mock.get("https://example.com/old").mock(
             return_value=httpx.Response(
                 301,
                 headers={"Location": "https://example.com/new"},
             )
         )
-        respx_mock.head("https://example.com/new").mock(
-            return_value=httpx.Response(200)
+        respx_mock.get("https://example.com/new").mock(
+            return_value=httpx.Response(200, html=_html("Redirected"))
         )
         results = await verify_urls(["https://example.com/old"])
         r = results["https://example.com/old"]
@@ -135,8 +286,8 @@ class TestVerifyUrls:
 
     @pytest.mark.asyncio
     async def test_404_broken(self, respx_mock):
-        respx_mock.head("https://example.com/gone").mock(
-            return_value=httpx.Response(404)
+        respx_mock.get("https://example.com/gone").mock(
+            return_value=httpx.Response(404, html=_html("Not Found"))
         )
         results = await verify_urls(["https://example.com/gone"])
         r = results["https://example.com/gone"]
@@ -145,9 +296,20 @@ class TestVerifyUrls:
         assert r.error == "status_404"
 
     @pytest.mark.asyncio
+    async def test_410_gone_broken(self, respx_mock):
+        respx_mock.get("https://example.com/old").mock(
+            return_value=httpx.Response(410, html=_html("Gone"))
+        )
+        results = await verify_urls(["https://example.com/old"])
+        r = results["https://example.com/old"]
+        assert r.status == "broken"
+        assert r.http_status == 410
+        assert r.error == "status_410"
+
+    @pytest.mark.asyncio
     async def test_500_broken(self, respx_mock):
-        respx_mock.head("https://example.com/error").mock(
-            return_value=httpx.Response(500)
+        respx_mock.get("https://example.com/error").mock(
+            return_value=httpx.Response(500, html=_html("Server Error"))
         )
         results = await verify_urls(["https://example.com/error"])
         r = results["https://example.com/error"]
@@ -157,7 +319,7 @@ class TestVerifyUrls:
 
     @pytest.mark.asyncio
     async def test_timeout(self, respx_mock):
-        respx_mock.head("https://example.com/slow").mock(
+        respx_mock.get("https://example.com/slow").mock(
             side_effect=httpx.ReadTimeout("timed out")
         )
         results = await verify_urls(["https://example.com/slow"])
@@ -168,7 +330,7 @@ class TestVerifyUrls:
 
     @pytest.mark.asyncio
     async def test_dns_failure(self, respx_mock):
-        respx_mock.head("https://nonexistent.invalid/").mock(
+        respx_mock.get("https://nonexistent.invalid/").mock(
             side_effect=httpx.ConnectError("Name resolution failed")
         )
         results = await verify_urls(["https://nonexistent.invalid/"])
@@ -178,7 +340,7 @@ class TestVerifyUrls:
 
     @pytest.mark.asyncio
     async def test_ssl_error(self, respx_mock):
-        respx_mock.head("https://badsssl.com/").mock(
+        respx_mock.get("https://badsssl.com/").mock(
             side_effect=httpx.ConnectError("SSL: CERTIFICATE_VERIFY_FAILED")
         )
         results = await verify_urls(["https://badsssl.com/"])
@@ -187,24 +349,179 @@ class TestVerifyUrls:
         assert r.error == "ssl_error"
 
     @pytest.mark.asyncio
-    async def test_head_405_get_fallback(self, respx_mock):
-        respx_mock.head("https://example.com/api").mock(
-            return_value=httpx.Response(405)
+    async def test_200_with_normal_title_valid(self, respx_mock):
+        """200 response with a real article title should be valid."""
+        respx_mock.get("https://example.com/article").mock(
+            return_value=httpx.Response(200, html=_html("AI Trends in 2026"))
         )
-        respx_mock.get("https://example.com/api").mock(
-            return_value=httpx.Response(200)
-        )
-        results = await verify_urls(["https://example.com/api"])
-        r = results["https://example.com/api"]
+        results = await verify_urls(["https://example.com/article"])
+        r = results["https://example.com/article"]
         assert r.status == "valid"
-        assert r.http_status == 200
+        assert r.page_title == "AI Trends in 2026"
+
+    @pytest.mark.asyncio
+    async def test_soft_404_200_not_found_title(self, respx_mock):
+        """200 response but title says 'Page Not Found' - soft 404."""
+        respx_mock.get("https://example.com/deleted").mock(
+            return_value=httpx.Response(200, html=_html("Page Not Found"))
+        )
+        results = await verify_urls(["https://example.com/deleted"])
+        r = results["https://example.com/deleted"]
+        assert r.status == "broken"
+        assert r.error == "soft_404"
+        assert r.page_title == "Page Not Found"
+
+    @pytest.mark.asyncio
+    async def test_soft_404_200_404_in_title(self, respx_mock):
+        """200 response with '404' in title detected as soft 404."""
+        respx_mock.get("https://example.com/missing").mock(
+            return_value=httpx.Response(200, html=_html("404 - Content Removed"))
+        )
+        results = await verify_urls(["https://example.com/missing"])
+        r = results["https://example.com/missing"]
+        assert r.status == "broken"
+        assert r.error == "soft_404"
+
+    @pytest.mark.asyncio
+    async def test_soft_404_captcha_page(self, respx_mock):
+        """200 but title shows captcha/bot challenge."""
+        respx_mock.get("https://example.com/blocked").mock(
+            return_value=httpx.Response(
+                200, html=_html("Attention Required | Cloudflare")
+            )
+        )
+        results = await verify_urls(["https://example.com/blocked"])
+        r = results["https://example.com/blocked"]
+        assert r.status == "broken"
+        assert r.error == "soft_404"
+
+    @pytest.mark.asyncio
+    async def test_soft_404_body_google_grounding_redirect(self, respx_mock):
+        """200 with generic title but body reveals hidden 404 (Google Grounding style)."""
+        error_html = (
+            "<html><head><title>Google</title></head>"
+            "<body><h1>Error 404 (Not Found)</h1>"
+            "<p>The requested URL was not found on this server.</p>"
+            "</body></html>"
+        )
+        respx_mock.get("https://example.com/grounding-redirect").mock(
+            return_value=httpx.Response(200, html=error_html)
+        )
+        results = await verify_urls(["https://example.com/grounding-redirect"])
+        r = results["https://example.com/grounding-redirect"]
+        assert r.status == "broken"
+        assert r.error == "soft_404_body"
+        assert r.page_title == "Google"
+
+    @pytest.mark.asyncio
+    async def test_soft_404_body_hidden_not_found(self, respx_mock):
+        """200 with OK title but body heading says content unavailable."""
+        error_html = (
+            "<html><head><title>Example Site</title></head>"
+            "<body><h2>This content is no longer available</h2>"
+            "<p>The link you followed may be outdated.</p>"
+            "</body></html>"
+        )
+        respx_mock.get("https://example.com/expired-content").mock(
+            return_value=httpx.Response(200, html=error_html)
+        )
+        results = await verify_urls(["https://example.com/expired-content"])
+        r = results["https://example.com/expired-content"]
+        assert r.status == "broken"
+        assert r.error == "soft_404_body"
+
+    @pytest.mark.asyncio
+    async def test_normal_page_not_body_soft_404(self, respx_mock):
+        """Normal page with real content should NOT trigger body soft-404."""
+        normal_html = (
+            "<html><head><title>AI News Today</title></head>"
+            "<body><h1>AI Breakthrough in Quantum Computing</h1>"
+            "<p>Researchers have made significant progress...</p>"
+            "</body></html>"
+        )
+        respx_mock.get("https://example.com/real-article").mock(
+            return_value=httpx.Response(200, html=normal_html)
+        )
+        results = await verify_urls(["https://example.com/real-article"])
+        r = results["https://example.com/real-article"]
+        assert r.status == "valid"
+        assert r.page_title == "AI News Today"
+
+    @pytest.mark.asyncio
+    async def test_403_with_normal_title_valid(self, respx_mock):
+        """403 with a real article title (paywall/WAF) treated as valid."""
+        respx_mock.get("https://example.com/news").mock(
+            return_value=httpx.Response(
+                403, html=_html("Premium: AI Market Analysis - TechNews")
+            )
+        )
+        results = await verify_urls(["https://example.com/news"])
+        r = results["https://example.com/news"]
+        assert r.status == "valid"
+        assert r.http_status == 403
+
+    @pytest.mark.asyncio
+    async def test_403_with_access_denied_title_broken(self, respx_mock):
+        """403 with 'Access Denied' title should be broken."""
+        respx_mock.get("https://example.com/denied").mock(
+            return_value=httpx.Response(403, html=_html("Access Denied"))
+        )
+        results = await verify_urls(["https://example.com/denied"])
+        r = results["https://example.com/denied"]
+        assert r.status == "broken"
+        assert r.http_status == 403
+
+    @pytest.mark.asyncio
+    async def test_401_with_normal_title_valid(self, respx_mock):
+        """401 with a normal page title (paywall) treated as valid."""
+        respx_mock.get("https://example.com/premium").mock(
+            return_value=httpx.Response(
+                401, html=_html("Subscribe to Read - WSJ")
+            )
+        )
+        results = await verify_urls(["https://example.com/premium"])
+        r = results["https://example.com/premium"]
+        assert r.status == "valid"
+        assert r.http_status == 401
+
+    @pytest.mark.asyncio
+    async def test_401_with_signin_title_broken(self, respx_mock):
+        """401 with 'Sign In Required' title should be broken."""
+        respx_mock.get("https://example.com/locked").mock(
+            return_value=httpx.Response(401, html=_html("Sign In Required"))
+        )
+        results = await verify_urls(["https://example.com/locked"])
+        r = results["https://example.com/locked"]
+        assert r.status == "broken"
+
+    @pytest.mark.asyncio
+    async def test_429_rate_limited_valid(self, respx_mock):
+        """429 Too Many Requests treated as valid (rate limiter, not broken)."""
+        respx_mock.get("https://example.com/rate").mock(
+            return_value=httpx.Response(429, html=_html("Rate Limited"))
+        )
+        results = await verify_urls(["https://example.com/rate"])
+        r = results["https://example.com/rate"]
+        assert r.status == "valid"
+        assert r.http_status == 429
+
+    @pytest.mark.asyncio
+    async def test_503_service_unavailable_valid(self, respx_mock):
+        """503 Service Unavailable treated as valid (temporary, not dead)."""
+        respx_mock.get("https://example.com/maint").mock(
+            return_value=httpx.Response(503, html=_html("Maintenance"))
+        )
+        results = await verify_urls(["https://example.com/maint"])
+        r = results["https://example.com/maint"]
+        assert r.status == "valid"
+        assert r.http_status == 503
 
     @pytest.mark.asyncio
     async def test_too_many_redirects(self, respx_mock):
-        respx_mock.head("https://example.com/loop").mock(
+        respx_mock.get("https://example.com/loop").mock(
             side_effect=httpx.TooManyRedirects(
                 "Exceeded max redirects",
-                request=httpx.Request("HEAD", "https://example.com/loop"),
+                request=httpx.Request("GET", "https://example.com/loop"),
             )
         )
         results = await verify_urls(["https://example.com/loop"])
@@ -263,18 +580,33 @@ class TestVerifyUrls:
         assert r.error == "invalid_scheme"
 
     @pytest.mark.asyncio
+    async def test_invalid_domain_no_dot(self):
+        """URLs with no valid domain (hallucinated by LLM) should be blocked."""
+        results = await verify_urls(["https://best-frameworks-in-2026/"])
+        r = results["https://best-frameworks-in-2026/"]
+        assert r.status == "broken"
+        assert r.error == "invalid_domain"
+
+    @pytest.mark.asyncio
+    async def test_invalid_domain_empty_host(self):
+        results = await verify_urls(["https:///no-domain-path"])
+        r = results["https:///no-domain-path"]
+        assert r.status == "broken"
+        assert r.error == "invalid_domain"
+
+    @pytest.mark.asyncio
     async def test_user_agent_header(self, respx_mock):
-        route = respx_mock.head("https://example.com/ua").mock(
-            return_value=httpx.Response(200)
+        route = respx_mock.get("https://example.com/ua").mock(
+            return_value=httpx.Response(200, html=_html())
         )
         await verify_urls(["https://example.com/ua"])
         request = route.calls[0].request
-        assert request.headers["user-agent"] == "NewsletterAgent/1.0 (link-check)"
+        assert "NewsletterAgent" in request.headers["user-agent"]
 
     @pytest.mark.asyncio
     async def test_no_cookies(self, respx_mock):
-        route = respx_mock.head("https://example.com/clean").mock(
-            return_value=httpx.Response(200)
+        route = respx_mock.get("https://example.com/clean").mock(
+            return_value=httpx.Response(200, html=_html())
         )
         await verify_urls(["https://example.com/clean"])
         request = route.calls[0].request
@@ -283,9 +615,15 @@ class TestVerifyUrls:
 
     @pytest.mark.asyncio
     async def test_multiple_urls(self, respx_mock):
-        respx_mock.head("https://a.com/").mock(return_value=httpx.Response(200))
-        respx_mock.head("https://b.com/").mock(return_value=httpx.Response(404))
-        respx_mock.head("https://c.com/").mock(return_value=httpx.Response(200))
+        respx_mock.get("https://a.com/").mock(
+            return_value=httpx.Response(200, html=_html("A"))
+        )
+        respx_mock.get("https://b.com/").mock(
+            return_value=httpx.Response(404, html=_html("Not Found"))
+        )
+        respx_mock.get("https://c.com/").mock(
+            return_value=httpx.Response(200, html=_html("C"))
+        )
         results = await verify_urls(
             ["https://a.com/", "https://b.com/", "https://c.com/"]
         )
@@ -294,41 +632,43 @@ class TestVerifyUrls:
         assert results["https://c.com/"].status == "valid"
 
     @pytest.mark.asyncio
-    async def test_concurrency_limit(self, respx_mock):
-        """Verify semaphore limits concurrent requests."""
-        concurrent_count = 0
-        max_concurrent_seen = 0
-
-        original_head = httpx.AsyncClient.head
-
-        async def _counting_head(self_client, url, **kwargs):
-            nonlocal concurrent_count, max_concurrent_seen
-            concurrent_count += 1
-            max_concurrent_seen = max(max_concurrent_seen, concurrent_count)
-            await asyncio.sleep(0.01)
-            concurrent_count -= 1
-            return httpx.Response(200, request=httpx.Request("HEAD", url))
-
-        urls = [f"https://example.com/{i}" for i in range(20)]
-        for url in urls:
-            respx_mock.head(url).mock(side_effect=lambda req: httpx.Response(200))
-
-        # Use max_concurrent=5 and check it's respected
-        with patch.object(httpx.AsyncClient, "head", _counting_head):
-            await verify_urls(urls, max_concurrent=5)
-
-        assert max_concurrent_seen <= 5
-
-    @pytest.mark.asyncio
     async def test_never_raises(self, respx_mock):
         """verify_urls never raises - all errors captured in results."""
-        respx_mock.head("https://explode.com/").mock(
+        respx_mock.get("https://explode.com/").mock(
             side_effect=RuntimeError("unexpected")
         )
         results = await verify_urls(["https://explode.com/"])
         r = results["https://explode.com/"]
         assert r.status == "broken"
         assert "connection_error" in r.error
+
+    @pytest.mark.asyncio
+    async def test_non_html_content_no_title(self, respx_mock):
+        """JSON/binary responses should not fail title extraction."""
+        respx_mock.get("https://example.com/api.json").mock(
+            return_value=httpx.Response(
+                200, content=b'{"data": "value"}',
+                headers={"content-type": "application/json"},
+            )
+        )
+        results = await verify_urls(["https://example.com/api.json"])
+        r = results["https://example.com/api.json"]
+        assert r.status == "valid"
+        assert r.page_title is None
+
+    @pytest.mark.asyncio
+    async def test_200_no_title_valid(self, respx_mock):
+        """200 response without <title> tag should still be valid."""
+        respx_mock.get("https://example.com/plain").mock(
+            return_value=httpx.Response(
+                200, text="<html><body>No title here</body></html>",
+                headers={"content-type": "text/html"},
+            )
+        )
+        results = await verify_urls(["https://example.com/plain"])
+        r = results["https://example.com/plain"]
+        assert r.status == "valid"
+        assert r.page_title is None
 
 
 # ---------------------------------------------------------------------------

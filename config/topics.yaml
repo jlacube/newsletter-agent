@@ -11,7 +11,7 @@ newsletter:
   schedule: "0 8 * * 0"                  # Cron: Sunday 8am UTC
   recipient_emails:                       # Delivery targets (1-10 emails)
     - "jerome.lacube@gmail.com"
-    - "jerome.lacube@engie.com"
+    #- "jerome.lacube@engie.com"
 
 # Application settings
 settings:
@@ -19,6 +19,7 @@ settings:
   output_dir: "output/"                  # Where to save HTML output
   timeframe: "last_week"
   verify_links: true
+  max_research_rounds: 5
 
 # Research topics (1-20 items)
 topics:
@@ -31,7 +32,7 @@ topics:
     search_depth: "deep"
     sources:
       - google_search
-      - perplexity
+      #- perplexity
 
   - name: "Gen AI RAG"
     query: >-
@@ -40,7 +41,7 @@ topics:
     search_depth: "deep"
     sources:
       - google_search
-      - perplexity
+      #- perplexity
 
   - name: "GenAI Reasoning and Memory"
     query: >-
@@ -49,7 +50,7 @@ topics:
     search_depth: "deep"
     sources:
       - google_search
-      - perplexity
+      #- perplexity
 
   - name: "Gen AI SLMs / MMLs"
     query: >-
@@ -58,7 +59,7 @@ topics:
     search_depth: "deep"
     sources:
       - google_search
-      - perplexity
+      #- perplexity
 
   - name: "Gen AI Research"
     query: >-
@@ -66,4 +67,4 @@ topics:
     search_depth: "deep"
     sources:
       - google_search
-      - perplexity
+      #- perplexity

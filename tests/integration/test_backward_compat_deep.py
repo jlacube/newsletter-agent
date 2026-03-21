@@ -161,8 +161,7 @@ class TestStandardModeBackwardCompat:
         assert "PipelineAbortCheck" in agent_names
         assert "LinkVerifier" in agent_names
         assert "DeepResearchRefiner" in agent_names
-        assert "Synthesizer" in agent_names
-        assert "SynthesisPostProcessor" in agent_names
+        assert "PerTopicSynthesizer" in agent_names
         assert "OutputPhase" in agent_names
 
     def test_existing_test_suite_passes(self):

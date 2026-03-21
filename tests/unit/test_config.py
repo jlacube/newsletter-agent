@@ -462,10 +462,10 @@ class TestAdaptiveConfigFields:
         with pytest.raises(Exception, match="greater than or equal to 1"):
             AppSettings(max_searches_per_topic=0)
 
-    def test_max_searches_per_topic_rejects_sixteen(self):
-        """Value 16 is above maximum. FR-ADR-061."""
-        with pytest.raises(Exception, match="less than or equal to 15"):
-            AppSettings(max_searches_per_topic=16)
+    def test_max_searches_per_topic_rejects_twenty_one(self):
+        """Value 21 is above maximum. FR-ADR-061."""
+        with pytest.raises(Exception, match="less than or equal to 20"):
+            AppSettings(max_searches_per_topic=21)
 
     def test_max_searches_per_topic_rejects_non_integer(self):
         """Non-integer value rejected. FR-ADR-061."""

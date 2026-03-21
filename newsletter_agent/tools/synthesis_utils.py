@@ -63,6 +63,45 @@ def _try_parse_json(text: str) -> dict | None:
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # Try to repair truncated JSON by closing open brackets/braces
+    repaired = _try_repair_truncated_json(stripped)
+    if repaired is not None:
+        return repaired
+
+    return None
+
+
+def _try_repair_truncated_json(text: str) -> dict | None:
+    """Attempt to repair truncated JSON by closing open structures.
+
+    When the LLM output hits token limits, JSON is cut mid-stream.
+    This tries to salvage what was produced by trimming to natural
+    JSON boundaries and closing remaining open brackets/braces.
+    """
+    # Collect cut-point positions: after }, ], or " (natural JSON boundaries)
+    cut_points = []
+    for i, ch in enumerate(text):
+        if ch in ('}', ']', '"'):
+            cut_points.append(i + 1)
+
+    # Try from the end backward to find the longest valid parse
+    for pos in reversed(cut_points):
+        candidate = text[:pos].rstrip().rstrip(",")
+        open_braces = candidate.count("{") - candidate.count("}")
+        open_brackets = candidate.count("[") - candidate.count("]")
+        if open_braces < 0 or open_brackets < 0:
+            continue
+        suffix = "]" * open_brackets + "}" * open_braces
+        try:
+            result = json.loads(candidate + suffix)
+            if isinstance(result, dict):
+                logger.info(
+                    "Repaired truncated JSON (trimmed %d chars from end)",
+                    len(text) - pos,
+                )
+                return result
+        except (json.JSONDecodeError, TypeError):
+            continue
     return None
 
 
@@ -93,17 +132,27 @@ def _build_state_from_json(
     for i, topic_name in enumerate(expected_topics):
         if i < len(raw_sections) and isinstance(raw_sections[i], dict):
             section = raw_sections[i]
+            sources = _normalize_sources(section.get("sources", []))
+            body = section.get("body_markdown", "")
             state[f"synthesis_{i}"] = {
                 "title": section.get("title", topic_name),
-                "body_markdown": section.get("body_markdown", ""),
-                "sources": _normalize_sources(section.get("sources", [])),
+                "body_markdown": body,
+                "sources": sources,
             }
+            logger.info(
+                "[SynthesisParse] Topic %d '%s': %d sources, body=%d chars",
+                i, section.get("title", topic_name), len(sources), len(body),
+            )
         else:
             state[f"synthesis_{i}"] = {
                 "title": topic_name,
                 "body_markdown": "Research data was insufficient for full analysis.",
                 "sources": [],
             }
+            logger.warning(
+                "[SynthesisParse] Topic %d '%s': no section data from synthesizer",
+                i, topic_name,
+            )
 
     return state
 

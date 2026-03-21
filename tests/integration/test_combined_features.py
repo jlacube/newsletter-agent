@@ -21,17 +21,18 @@ class TestCombinedFeaturesIntegration:
 
     def test_research_instructions_contain_timeframe(self, config_with_both_features):
         """Research agents include date clause from timeframe."""
+        from tests.conftest import get_instruction_text
         phase = build_research_phase(config_with_both_features)
 
         # Topic 0 (AI News): inherits global "last_week"
         topic0 = phase.sub_agents[0]
         for sub in topic0.sub_agents:
-            assert "week" in sub.instruction.lower()
+            assert "week" in get_instruction_text(sub).lower()
 
         # Topic 1 (Cloud Updates): overrides to "last_month"
         topic1 = phase.sub_agents[1]
         for sub in topic1.sub_agents:
-            assert "month" in sub.instruction.lower()
+            assert "month" in get_instruction_text(sub).lower()
 
     @pytest.mark.asyncio
     async def test_session_state_has_both_features(self, config_with_both_features):
@@ -64,8 +65,9 @@ class TestCombinedFeaturesIntegration:
         assert link_verifier is not None
 
         # Research phase instructions should not reference link verification
+        from tests.conftest import get_instruction_text
         phase = build_research_phase(config_with_both_features)
         for topic_agent in phase.sub_agents:
             for sub in topic_agent.sub_agents:
-                assert "verify" not in sub.instruction.lower()
-                assert "link check" not in sub.instruction.lower()
+                assert "verify" not in get_instruction_text(sub).lower()
+                assert "link check" not in get_instruction_text(sub).lower()

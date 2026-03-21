@@ -2,6 +2,14 @@ import pytest
 import yaml
 
 
+def get_instruction_text(agent) -> str:
+    """Extract instruction text from an agent, handling both str and callable."""
+    instr = agent.instruction
+    if callable(instr):
+        return instr(None)
+    return instr
+
+
 @pytest.fixture
 def sample_config_data():
     """Returns a valid config dict matching spec Section 8.4 schema."""

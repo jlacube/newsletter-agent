@@ -1,17 +1,18 @@
 """Unit tests for LinkVerifierAgent.
 
 Mocks verify_urls() to return predetermined results and tests agent behavior
-for disabled verification, all-valid, some-broken, and failure scenarios.
-Tests verify the pre-synthesis mode where the agent reads research state keys.
+for disabled verification, all-valid, some-broken, all-broken, and failure
+scenarios. Tests verify the post-research mode where the agent reads
+research_{idx}_{provider} state entries (markdown text).
 
-Spec refs: Section 11.1 (LinkVerifierAgent unit tests), FR-PSV-003 through FR-PSV-006.
+Spec refs: Section 11.1, FR-016 through FR-024.
 """
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from newsletter_agent.tools.link_verifier import LinkCheckResult
-from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent
+from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent, SynthesisLinkVerifierAgent
 
 
 def _make_ctx(state: dict) -> MagicMock:
@@ -21,27 +22,27 @@ def _make_ctx(state: dict) -> MagicMock:
     return ctx
 
 
-def _research_text(links: list[tuple[str, str]]) -> str:
-    """Build research text with markdown links.
+def _research_entry(body_links: list[tuple[str, str]]) -> str:
+    """Build a research state entry (markdown string).
 
     Args:
-        links: list of (title, url) tuples.
+        body_links: list of (title, url) for markdown links.
     """
-    parts = [f"[{title}]({url})" for title, url in links]
-    return "Research findings: " + ", ".join(parts) + "."
+    body_parts = [f"[{t}]({u})" for t, u in body_links]
+    body = "Analysis: " + ", ".join(body_parts) + "."
+    sources = "\n".join(f"- [{t}]({u})" for t, u in body_links)
+    return f"SUMMARY:\n{body}\n\nSOURCES:\n{sources}"
 
 
 class TestLinkVerifierAgentDisabled:
     @pytest.mark.asyncio
     async def test_no_op_when_verify_links_false(self):
-        research_text = _research_text([("A", "http://a.com")])
+        text = _research_entry([("A", "http://a.com")])
         state = {
             "config_verify_links": False,
-            "research_0_google": research_text,
+            "research_0_google": text,
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         ctx = _make_ctx(state)
 
         events = []
@@ -49,15 +50,14 @@ class TestLinkVerifierAgentDisabled:
             events.append(event)
 
         # State unchanged
-        assert state["research_0_google"] == research_text
+        assert state["research_0_google"] == text
         assert len(events) == 1
 
     @pytest.mark.asyncio
     async def test_no_op_when_verify_links_missing(self):
-        state = {"research_0_google": "Some text"}
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
-        )
+        text = _research_entry([("A", "http://a.com")])
+        state = {"research_0_google": text}
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         ctx = _make_ctx(state)
 
         events = []
@@ -75,78 +75,50 @@ class TestLinkVerifierAgentAllValid:
             "http://a.com": LinkCheckResult(url="http://a.com", status="valid", http_status=200),
             "http://b.com": LinkCheckResult(url="http://b.com", status="valid", http_status=200),
         }
-        research_text = _research_text([("A", "http://a.com"), ("B", "http://b.com")])
+        text = _research_entry([("A", "http://a.com"), ("B", "http://b.com")])
         state = {
             "config_verify_links": True,
-            "research_0_google": research_text,
+            "research_0_google": text,
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         ctx = _make_ctx(state)
 
         async for _ in agent._run_async_impl(ctx):
             pass
 
-        # Text unchanged
-        assert state["research_0_google"] == research_text
+        # Text unchanged (no broken links to remove)
+        assert state["research_0_google"] == text
 
 
 class TestLinkVerifierAgentSomeBroken:
     @pytest.mark.asyncio
     @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
-    async def test_broken_links_removed_from_research_text(self, mock_verify):
+    async def test_broken_links_removed(self, mock_verify):
         mock_verify.return_value = {
             "http://a.com": LinkCheckResult(url="http://a.com", status="valid", http_status=200),
             "http://b.com": LinkCheckResult(url="http://b.com", status="broken", http_status=404, error="status_404"),
             "http://c.com": LinkCheckResult(url="http://c.com", status="valid", http_status=200),
         }
-        research_text = (
-            "Read [A](http://a.com), [B](http://b.com), and [C](http://c.com)."
+        text = _research_entry(
+            [("A", "http://a.com"), ("B", "http://b.com"), ("C", "http://c.com")],
         )
         state = {
             "config_verify_links": True,
-            "research_0_google": research_text,
+            "research_0_google": text,
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         ctx = _make_ctx(state)
 
         async for _ in agent._run_async_impl(ctx):
             pass
 
-        cleaned = state["research_0_google"]
+        result = state["research_0_google"]
         # Broken link removed, title text preserved
-        assert "[B](http://b.com)" not in cleaned
-        assert "B" in cleaned
+        assert "http://b.com" not in result
+        assert "B" in result
         # Valid links preserved
-        assert "[A](http://a.com)" in cleaned
-        assert "[C](http://c.com)" in cleaned
-
-    @pytest.mark.asyncio
-    @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
-    async def test_cleans_both_providers(self, mock_verify):
-        mock_verify.return_value = {
-            "http://a.com": LinkCheckResult(url="http://a.com", status="valid", http_status=200),
-            "http://bad.com": LinkCheckResult(url="http://bad.com", status="broken", http_status=404, error="status_404"),
-        }
-        state = {
-            "config_verify_links": True,
-            "research_0_google": "See [A](http://a.com) and [Bad](http://bad.com).",
-            "research_0_perplexity": "Found [Bad](http://bad.com) info.",
-        }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google", "perplexity"],
-        )
-        ctx = _make_ctx(state)
-
-        async for _ in agent._run_async_impl(ctx):
-            pass
-
-        assert "[Bad](http://bad.com)" not in state["research_0_google"]
-        assert "[Bad](http://bad.com)" not in state["research_0_perplexity"]
-        assert "[A](http://a.com)" in state["research_0_google"]
+        assert "[A](http://a.com)" in result
+        assert "[C](http://c.com)" in result
 
 
 class TestLinkVerifierAgentAllBroken:
@@ -157,23 +129,26 @@ class TestLinkVerifierAgentAllBroken:
             "http://a.com": LinkCheckResult(url="http://a.com", status="broken", http_status=404, error="status_404"),
             "http://b.com": LinkCheckResult(url="http://b.com", status="broken", http_status=500, error="status_500"),
         }
+        text = _research_entry(
+            [("A", "http://a.com"), ("B", "http://b.com")],
+        )
         state = {
             "config_verify_links": True,
-            "research_0_google": "Read [A](http://a.com) and [B](http://b.com).",
+            "research_0_google": text,
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         ctx = _make_ctx(state)
 
         async for _ in agent._run_async_impl(ctx):
             pass
 
-        cleaned = state["research_0_google"]
-        assert "[A](http://a.com)" not in cleaned
-        assert "[B](http://b.com)" not in cleaned
-        assert "A" in cleaned
-        assert "B" in cleaned
+        result = state["research_0_google"]
+        # Links removed
+        assert "http://a.com" not in result
+        assert "http://b.com" not in result
+        # Title text preserved
+        assert "A" in result
+        assert "B" in result
 
 
 class TestLinkVerifierAgentFailure:
@@ -182,14 +157,12 @@ class TestLinkVerifierAgentFailure:
     async def test_total_failure_state_unchanged(self, mock_verify):
         """If verify_urls raises, agent logs warning and proceeds."""
         mock_verify.side_effect = Exception("network completely down")
-        original_text = "See [A](http://a.com)."
+        text = _research_entry([("A", "http://a.com")])
         state = {
             "config_verify_links": True,
-            "research_0_google": original_text,
+            "research_0_google": text,
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         ctx = _make_ctx(state)
 
         events = []
@@ -197,7 +170,7 @@ class TestLinkVerifierAgentFailure:
             events.append(event)
 
         # State unchanged
-        assert state["research_0_google"] == original_text
+        assert state["research_0_google"] == text
         assert len(events) == 1
 
 
@@ -212,12 +185,14 @@ class TestLinkVerifierAgentMultipleTopics:
         }
         state = {
             "config_verify_links": True,
-            "research_0_google": "See [A](http://a.com) and [B](http://b.com).",
-            "research_1_google": "Read [C](http://c.com).",
+            "research_0_google": _research_entry(
+                [("A", "http://a.com"), ("B", "http://b.com")]
+            ),
+            "research_1_google": _research_entry(
+                [("C", "http://c.com")]
+            ),
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=2, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=2, providers=["google"])
         ctx = _make_ctx(state)
 
         async for _ in agent._run_async_impl(ctx):
@@ -225,10 +200,10 @@ class TestLinkVerifierAgentMultipleTopics:
 
         # Topic 0: A valid, B broken
         assert "[A](http://a.com)" in state["research_0_google"]
-        assert "[B](http://b.com)" not in state["research_0_google"]
+        assert "http://b.com" not in state["research_0_google"]
 
         # Topic 1: C broken
-        assert "[C](http://c.com)" not in state["research_1_google"]
+        assert "http://c.com" not in state["research_1_google"]
         assert "C" in state["research_1_google"]
 
     @pytest.mark.asyncio
@@ -242,12 +217,10 @@ class TestLinkVerifierAgentMultipleTopics:
         }
         state = {
             "config_verify_links": True,
-            "research_0_google": "[Shared](http://shared.com) info.",
-            "research_1_google": "[Shared](http://shared.com) more.",
+            "research_0_google": _research_entry([("Shared", "http://shared.com")]),
+            "research_1_google": _research_entry([("Shared", "http://shared.com")]),
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=2, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=2, providers=["google"])
         ctx = _make_ctx(state)
 
         async for _ in agent._run_async_impl(ctx):
@@ -262,11 +235,9 @@ class TestLinkVerifierAgentMultipleTopics:
     async def test_no_urls_skips_verification(self, mock_verify):
         state = {
             "config_verify_links": True,
-            "research_0_google": "No links here.",
+            "research_0_google": "SUMMARY:\nNo links.\n\nSOURCES:\n(none)",
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
-        )
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
         ctx = _make_ctx(state)
 
         async for _ in agent._run_async_impl(ctx):
@@ -276,14 +247,164 @@ class TestLinkVerifierAgentMultipleTopics:
 
     @pytest.mark.asyncio
     @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
-    async def test_skips_non_string_research_keys(self, mock_verify):
-        """Dict values (error results) should be skipped gracefully."""
+    async def test_skips_missing_research_entries(self, mock_verify):
+        """Missing research entries should be skipped gracefully."""
         state = {
             "config_verify_links": True,
-            "research_0_google": {"error": True, "message": "API failure"},
+            # research_0_google missing
         }
-        agent = LinkVerifierAgent(
-            name="LinkVerifier", topic_count=1, providers=["google"],
+        agent = LinkVerifierAgent(name="LinkVerifier", topic_count=1, providers=["google"])
+        ctx = _make_ctx(state)
+
+        async for _ in agent._run_async_impl(ctx):
+            pass
+
+        mock_verify.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# SynthesisLinkVerifierAgent tests
+# ---------------------------------------------------------------------------
+
+def _synthesis_entry(
+    title: str,
+    body_links: list[tuple[str, str]],
+    source_links: list[tuple[str, str]] | None = None,
+) -> dict:
+    """Build a synthesis state entry (dict with body_markdown, sources, title)."""
+    body_parts = [f"[{t}]({u})" for t, u in body_links]
+    body = "Analysis: " + ", ".join(body_parts) + "."
+    if source_links is None:
+        source_links = body_links
+    sources = [{"title": t, "url": u} for t, u in source_links]
+    return {"title": title, "body_markdown": body, "sources": sources}
+
+
+class TestSynthesisLinkVerifierDisabled:
+    @pytest.mark.asyncio
+    async def test_no_op_when_verify_links_false(self):
+        section = _synthesis_entry("AI", [("A", "http://a.com")])
+        state = {
+            "config_verify_links": False,
+            "synthesis_0": section,
+        }
+        agent = SynthesisLinkVerifierAgent(
+            name="SynthesisLinkVerifier", topic_count=1
+        )
+        ctx = _make_ctx(state)
+
+        events = []
+        async for event in agent._run_async_impl(ctx):
+            events.append(event)
+
+        assert state["synthesis_0"] == section
+        assert len(events) == 1
+
+
+class TestSynthesisLinkVerifierAllValid:
+    @pytest.mark.asyncio
+    @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
+    async def test_all_valid_state_unchanged(self, mock_verify):
+        mock_verify.return_value = {
+            "http://a.com": LinkCheckResult(url="http://a.com", status="valid", http_status=200),
+            "http://b.com": LinkCheckResult(url="http://b.com", status="valid", http_status=200),
+        }
+        section = _synthesis_entry(
+            "AI", [("A", "http://a.com"), ("B", "http://b.com")]
+        )
+        state = {
+            "config_verify_links": True,
+            "synthesis_0": section,
+        }
+        agent = SynthesisLinkVerifierAgent(
+            name="SynthesisLinkVerifier", topic_count=1
+        )
+        ctx = _make_ctx(state)
+
+        async for _ in agent._run_async_impl(ctx):
+            pass
+
+        assert "[A](http://a.com)" in state["synthesis_0"]["body_markdown"]
+        assert len(state["synthesis_0"]["sources"]) == 2
+
+
+class TestSynthesisLinkVerifierBroken:
+    @pytest.mark.asyncio
+    @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
+    async def test_broken_links_removed_from_body_and_sources(self, mock_verify):
+        mock_verify.return_value = {
+            "http://a.com": LinkCheckResult(url="http://a.com", status="valid", http_status=200),
+            "http://broken.com": LinkCheckResult(
+                url="http://broken.com", status="broken", http_status=404, error="status_404"
+            ),
+        }
+        section = _synthesis_entry(
+            "AI",
+            [("A", "http://a.com"), ("Broken", "http://broken.com")],
+        )
+        state = {
+            "config_verify_links": True,
+            "synthesis_0": section,
+        }
+        agent = SynthesisLinkVerifierAgent(
+            name="SynthesisLinkVerifier", topic_count=1
+        )
+        ctx = _make_ctx(state)
+
+        async for _ in agent._run_async_impl(ctx):
+            pass
+
+        # Body: broken link removed (converted to plain text)
+        assert "[A](http://a.com)" in state["synthesis_0"]["body_markdown"]
+        assert "http://broken.com" not in state["synthesis_0"]["body_markdown"]
+        assert "Broken" in state["synthesis_0"]["body_markdown"]
+
+        # Sources: broken URL removed
+        source_urls = [s["url"] for s in state["synthesis_0"]["sources"]]
+        assert "http://a.com" in source_urls
+        assert "http://broken.com" not in source_urls
+
+    @pytest.mark.asyncio
+    @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
+    async def test_multiple_topics_processed(self, mock_verify):
+        mock_verify.return_value = {
+            "http://a.com": LinkCheckResult(url="http://a.com", status="valid", http_status=200),
+            "http://bad1.com": LinkCheckResult(
+                url="http://bad1.com", status="broken", error="dns_error"
+            ),
+            "http://bad2.com": LinkCheckResult(
+                url="http://bad2.com", status="broken", error="soft_404"
+            ),
+        }
+        state = {
+            "config_verify_links": True,
+            "synthesis_0": _synthesis_entry("AI", [("A", "http://a.com"), ("Bad", "http://bad1.com")]),
+            "synthesis_1": _synthesis_entry("Cloud", [("Bad2", "http://bad2.com")]),
+        }
+        agent = SynthesisLinkVerifierAgent(
+            name="SynthesisLinkVerifier", topic_count=2
+        )
+        ctx = _make_ctx(state)
+
+        async for _ in agent._run_async_impl(ctx):
+            pass
+
+        assert "[A](http://a.com)" in state["synthesis_0"]["body_markdown"]
+        assert "http://bad1.com" not in state["synthesis_0"]["body_markdown"]
+        assert "http://bad2.com" not in state["synthesis_1"]["body_markdown"]
+        assert len(state["synthesis_1"]["sources"]) == 0
+
+
+class TestSynthesisLinkVerifierNoUrls:
+    @pytest.mark.asyncio
+    @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
+    async def test_no_urls_skips_verification(self, mock_verify):
+        state = {
+            "config_verify_links": True,
+            "synthesis_0": {"title": "AI", "body_markdown": "No links here.", "sources": []},
+        }
+        agent = SynthesisLinkVerifierAgent(
+            name="SynthesisLinkVerifier", topic_count=1
         )
         ctx = _make_ctx(state)
 
@@ -291,3 +412,28 @@ class TestLinkVerifierAgentMultipleTopics:
             pass
 
         mock_verify.assert_not_called()
+
+
+class TestSynthesisLinkVerifierFailure:
+    @pytest.mark.asyncio
+    @patch("newsletter_agent.tools.link_verifier_agent.verify_urls")
+    async def test_exception_gracefully_handled(self, mock_verify):
+        mock_verify.side_effect = RuntimeError("network failure")
+        section = _synthesis_entry("AI", [("A", "http://a.com")])
+        original_body = section["body_markdown"]
+        state = {
+            "config_verify_links": True,
+            "synthesis_0": section,
+        }
+        agent = SynthesisLinkVerifierAgent(
+            name="SynthesisLinkVerifier", topic_count=1
+        )
+        ctx = _make_ctx(state)
+
+        events = []
+        async for event in agent._run_async_impl(ctx):
+            events.append(event)
+
+        # State unchanged on failure
+        assert state["synthesis_0"]["body_markdown"] == original_body
+        assert len(events) == 1

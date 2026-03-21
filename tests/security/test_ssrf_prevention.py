@@ -102,14 +102,19 @@ class TestSSRFRedirectProtection:
         """A public URL that redirects to 127.0.0.1 is marked broken.
 
         Directly calls _check_one_url with a mock client that returns
-        a response whose .url points to 127.0.0.1 (simulating redirect).
+        a streaming response whose .url points to 127.0.0.1 (simulating redirect).
         """
         # Build a fake response whose .url is the private redirect target
-        final_request = httpx.Request("HEAD", "http://127.0.0.1/admin")
+        final_request = httpx.Request("GET", "http://127.0.0.1/admin")
         fake_response = httpx.Response(200, request=final_request)
 
+        # Mock the async context manager for client.stream()
+        stream_ctx = MagicMock()
+        stream_ctx.__aenter__ = AsyncMock(return_value=fake_response)
+        stream_ctx.__aexit__ = AsyncMock(return_value=False)
+
         mock_client = MagicMock()
-        mock_client.head = AsyncMock(return_value=fake_response)
+        mock_client.stream = MagicMock(return_value=stream_ctx)
 
         sem = asyncio.Semaphore(10)
         result = await _check_one_url(
@@ -132,7 +137,7 @@ class TestSSRFHeaderLeakage:
             captured_headers.update(dict(request.headers))
             return httpx.Response(200)
 
-        respx_mock.head("https://check-headers.example.com/page").mock(
+        respx_mock.get("https://check-headers.example.com/page").mock(
             side_effect=capture_request
         )
 
@@ -150,7 +155,7 @@ class TestSSRFHeaderLeakage:
             captured_headers.update(dict(request.headers))
             return httpx.Response(200)
 
-        respx_mock.head("https://check-cookies.example.com/page").mock(
+        respx_mock.get("https://check-cookies.example.com/page").mock(
             side_effect=capture_request
         )
 
@@ -167,7 +172,7 @@ class TestSSRFHeaderLeakage:
             captured_headers.update(dict(request.headers))
             return httpx.Response(200)
 
-        respx_mock.head("https://check-ua.example.com/page").mock(
+        respx_mock.get("https://check-ua.example.com/page").mock(
             side_effect=capture_request
         )
 
@@ -199,9 +204,13 @@ class TestSSRFViaLinkVerifierAgent:
         state = {
             "config_verify_links": True,
             "research_0_google": (
+                "SUMMARY:\n"
                 "## Security\n\n"
                 "See [Good](https://good.example.com) and "
-                "[Internal](http://192.168.1.1/admin)."
+                "[Internal](http://192.168.1.1/admin).\n\n"
+                "SOURCES:\n"
+                "- [Good](https://good.example.com)\n"
+                "- [Internal](http://192.168.1.1/admin)"
             ),
         }
 
@@ -214,6 +223,6 @@ class TestSSRFViaLinkVerifierAgent:
         async for _ in agent._run_async_impl(ctx):
             pass
 
-        # SSRF URL removed from research text
-        assert "[Internal](http://192.168.1.1/admin)" not in state["research_0_google"]
+        # SSRF URL removed from research entry
+        assert "http://192.168.1.1/admin" not in state["research_0_google"]
         assert "[Good](https://good.example.com)" in state["research_0_google"]

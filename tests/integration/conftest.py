@@ -69,20 +69,29 @@ def config_old_format(tmp_path):
 def synthesis_state_with_mixed_urls():
     """Research state with some valid and some broken URLs.
 
-    Uses research_N_{provider} keys matching the refactored
-    LinkVerifierAgent (WP10).
+    Uses research_{idx}_{provider} keys matching the post-research
+    LinkVerifierAgent (FR-020, FR-025).
     """
     return {
         "config_verify_links": True,
         "research_0_google": (
+            "SUMMARY:\n"
             "## AI News\n\n"
             "See [Good Link](https://good.example.com/ai) for details. "
             "Also check [Broken Link](https://broken.example.com/gone).\n\n"
-            "More at [Another Good](https://good2.example.com)."
+            "More at [Another Good](https://good2.example.com).\n\n"
+            "SOURCES:\n"
+            "- [Good Link](https://good.example.com/ai)\n"
+            "- [Broken Link](https://broken.example.com/gone)\n"
+            "- [Another Good](https://good2.example.com)"
         ),
         "research_1_google": (
+            "SUMMARY:\n"
             "## Cloud Updates\n\n"
             "The [Cloud Doc](https://cloud.example.com) is comprehensive.\n\n"
-            "See also [Dead Page](https://dead.example.com/404) for history."
+            "See also [Dead Page](https://dead.example.com/404) for history.\n\n"
+            "SOURCES:\n"
+            "- [Cloud Doc](https://cloud.example.com)\n"
+            "- [Dead Page](https://dead.example.com/404)"
         ),
     }

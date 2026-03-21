@@ -155,14 +155,49 @@ The number of research agents is determined at startup by the topic count in `co
 
 ## Logging
 
-Logs use the format: `{timestamp} {level} {logger_name} {message}`
+Logs use the format: `{timestamp} {level} {logger_name} [trace={trace_id} span={span_id}] {message}`
 
 - `INFO` and below go to stdout
 - `ERROR` and above go to stderr
 - Third-party loggers are suppressed to WARNING
 - Log level is configurable via the `LOG_LEVEL` environment variable
+- Every log record includes `trace_id` (32-char hex) and `span_id` (16-char hex) injected by `TraceContextFilter` for correlation with OTel spans
+- When no active span or OTel is disabled, zero IDs are used (`0` * 32 / `0` * 16)
+- JSON log format (`_CloudJsonFormatter`) also includes `trace_id` and `span_id` fields
 
-Pipeline timing is instrumented via ADK `before_agent_callback` / `after_agent_callback`, which log per-phase and total execution time.
+Pipeline timing is instrumented via ADK `before_agent_callback` / `after_agent_callback`, which log per-phase and total execution time and create OTel spans.
+
+### Span Hierarchy
+
+When OTel is enabled, `timing.py` creates a span for every agent execution via the ADK callbacks. Spans form a parent-child tree that mirrors the agent execution hierarchy:
+
+```
+NewsletterPipeline (root)
+  ConfigLoader
+  ResearchPhase
+    Topic0Research
+      DeepResearch_0_google
+        AdaptivePlanner_0_google
+        DeepSearchRound_0_google_r0
+        ...
+    Topic1Research
+      ...
+  ResearchValidator
+  LinkVerifier
+  DeepResearchRefiner
+  PerTopicSynthesizer
+  OutputPhase
+    FormatterAgent
+    DeliveryAgent
+```
+
+Span attributes include:
+- All agents: `newsletter.agent.name`, `newsletter.invocation_id`, `newsletter.duration_seconds`
+- Root agent: `newsletter.topic_count`, `newsletter.dry_run`, `newsletter.pipeline_start_time`
+- Topic-scoped agents: `newsletter.topic.index`, `newsletter.topic.name`
+- LlmAgent-based agents: `gen_ai.tokens_available: false` (token tracking not available in P1)
+
+At pipeline completion, a `cost_summary` span event is recorded on the root span and a structured JSON cost summary is logged at INFO level. Cost data is also stored in session state (`run_cost_usd`, `cost_summary`).
 
 ## Telemetry (OpenTelemetry)
 

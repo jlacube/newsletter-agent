@@ -1,7 +1,7 @@
 """DeepResearchRefinerAgent - LLM-based source refinement for deep-mode topics.
 
 After multi-round research and link verification, evaluates all verified
-sources for deep-mode topics and selects the 5-10 most relevant per
+sources for deep-mode topics and selects the 5-20 most relevant per
 provider using LLM-based relevance scoring.
 
 Spec refs: FR-REF-001 through FR-REF-007, Section 4.4, Section 8.3.
@@ -15,7 +15,6 @@ from collections.abc import AsyncGenerator
 from google.adk.agents import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
-from google import genai
 from google.genai import types
 
 from newsletter_agent.prompts.refinement import get_refinement_instruction
@@ -25,14 +24,14 @@ logger = logging.getLogger(__name__)
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^\)]+)\)")
 _REFINEMENT_MODEL = "gemini-2.5-flash"
 _MIN_SOURCES = 5
-_MAX_SOURCES = 10
+_MAX_SOURCES = 20
 
 
 class DeepResearchRefinerAgent(BaseAgent):
     """Selects the most relevant sources per deep-mode topic after verification.
 
-    For each deep-mode topic-provider combination with more than 10 sources,
-    calls the LLM to evaluate and select the best 5-10 sources. Updates
+    For each deep-mode topic-provider combination with more than 20 sources,
+    calls the LLM to evaluate and select the best 5-20 sources. Updates
     the research state key in-place, removing non-selected source references.
 
     Standard-mode topics are passed through without modification (no-op).
@@ -68,7 +67,7 @@ class DeepResearchRefinerAgent(BaseAgent):
                     continue
 
                 refined = await self._refine_sources(
-                    topic.name, provider, key, research_text, state
+                    topic.name, provider, key, research_text, state, idx
                 )
                 any_refined = any_refined or refined
 
@@ -95,6 +94,7 @@ class DeepResearchRefinerAgent(BaseAgent):
         state_key: str,
         research_text: str,
         state: dict,
+        topic_index: int = 0,
     ) -> bool:
         """Refine sources for a single topic-provider combination.
 
@@ -128,7 +128,7 @@ class DeepResearchRefinerAgent(BaseAgent):
 
         target_count = min(_MAX_SOURCES, source_count)
         selected_urls = await self._call_refinement_llm(
-            topic_name, research_text, urls, target_count
+            topic_name, research_text, urls, target_count, topic_index
         )
 
         if selected_urls is None:
@@ -154,6 +154,7 @@ class DeepResearchRefinerAgent(BaseAgent):
         research_text: str,
         urls: list[str],
         target_count: int,
+        topic_index: int = 0,
     ) -> list[str] | None:
         """Call the LLM for source evaluation. Returns selected URLs or None on failure."""
         summary_text, sources_text = _split_summary_sources(research_text)
@@ -167,10 +168,15 @@ class DeepResearchRefinerAgent(BaseAgent):
         )
 
         try:
-            client = genai.Client()
-            response = await client.aio.models.generate_content(
+            from newsletter_agent.telemetry import traced_generate
+
+            response = await traced_generate(
                 model=_REFINEMENT_MODEL,
                 contents=prompt,
+                agent_name="DeepResearchRefiner",
+                phase="refinement",
+                topic_name=topic_name,
+                topic_index=topic_index,
             )
             raw_text = response.text
         except Exception:
@@ -202,7 +208,7 @@ class DeepResearchRefinerAgent(BaseAgent):
         url_set = set(urls)
         valid_selected = [u for u in parsed if u in url_set]
 
-        # FR-REF-005: clamp to [5, 10] range
+        # FR-REF-005: clamp to [5, 20] range
         if len(valid_selected) < _MIN_SOURCES:
             logger.warning(
                 "[Refinement] LLM selected fewer than %d valid URLs for topic %s, keeping all sources",

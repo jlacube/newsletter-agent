@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from newsletter_agent.config.schema import load_config, NewsletterConfig
 from newsletter_agent.agent import build_research_phase, build_synthesis_agent
+from newsletter_agent.tools.per_topic_synthesizer import PerTopicSynthesizerAgent
 from newsletter_agent.tools.formatter import FormatterAgent, render_newsletter
 from newsletter_agent.tools.delivery import DeliveryAgent
 
@@ -103,7 +104,7 @@ class TestPipelineBuildsCorrectly:
     def test_synthesis_agent_builds(self, test_config_file):
         config_path, _ = test_config_file
         config = load_config(config_path)
-        agent = build_synthesis_agent(config)
+        agent = build_synthesis_agent(config, ["google", "perplexity"])
         assert "pro" in agent.model.lower()
 
 

@@ -35,11 +35,13 @@ class TestBackwardCompatibility:
 
     def test_research_instructions_no_date_clause(self, config_old_format):
         """No timeframe = no date clause in research instructions."""
+        from tests.conftest import get_instruction_text
         phase = build_research_phase(config_old_format)
         for topic_agent in phase.sub_agents:
             for sub in topic_agent.sub_agents:
-                assert "time constraint" not in sub.instruction.lower(), (
-                    f"Unexpected date clause: {sub.instruction}"
+                instr = get_instruction_text(sub)
+                assert "time constraint" not in instr.lower(), (
+                    f"Unexpected date clause: {instr}"
                 )
 
     @pytest.mark.asyncio
@@ -60,12 +62,7 @@ class TestBackwardCompatibility:
         """LinkVerifierAgent does nothing when verify_links=false."""
         state = {
             "config_verify_links": False,
-            "config_topic_count": 1,
-            "synthesis_0": {
-                "topic_name": "Tech",
-                "body_markdown": "See [Link](https://example.com).",
-                "sources": [{"title": "Link", "url": "https://example.com"}],
-            },
+            "research_0_google": "SUMMARY:\nSee [Link](https://example.com).\n\nSOURCES:\n- [Link](https://example.com)",
         }
         agent = LinkVerifierAgent(
             name="LinkVerifier", topic_count=1, providers=["google"],
@@ -77,8 +74,7 @@ class TestBackwardCompatibility:
             pass
 
         # State unchanged
-        assert len(state["synthesis_0"]["sources"]) == 1
-        assert state["synthesis_0"]["body_markdown"] == "See [Link](https://example.com)."
+        assert "[Link](https://example.com)" in state["research_0_google"]
 
     def test_existing_config_keys_preserved(self, config_old_format):
         """Existing session state keys still populated correctly."""

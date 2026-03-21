@@ -22,12 +22,13 @@ from newsletter_agent.config.schema import NewsletterConfig, load_config
 from newsletter_agent.config.timeframe import resolve_timeframe
 from newsletter_agent.prompts.research_google import get_google_search_instruction
 from newsletter_agent.prompts.research_perplexity import get_perplexity_search_instruction
-from newsletter_agent.prompts.synthesis import get_synthesis_instruction
+from newsletter_agent.prompts.synthesis import build_synthesis_instruction_fn, get_synthesis_instruction
+from newsletter_agent.tools.per_topic_synthesizer import PerTopicSynthesizerAgent
 from newsletter_agent.tools.delivery import DeliveryAgent
 from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
 from newsletter_agent.tools.deep_research_refiner import DeepResearchRefinerAgent
 from newsletter_agent.tools.formatter import FormatterAgent
-from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent
+from newsletter_agent.tools.link_verifier_agent import LinkVerifierAgent, SynthesisLinkVerifierAgent
 from newsletter_agent.tools.perplexity_search import perplexity_search_tool, search_perplexity
 from newsletter_agent.tools.synthesis_utils import parse_synthesis_output
 from newsletter_agent.timing import after_agent_callback, before_agent_callback
@@ -92,13 +93,14 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
                     tools=[google_search],
                 )
             else:
+                _g_instr = get_google_search_instruction(
+                    topic.name, topic.query, topic.search_depth,
+                    timeframe_instruction=tf_instruction,
+                )
                 google_agent = LlmAgent(
                     name=f"GoogleSearcher_{idx}",
                     model=_RESEARCH_MODEL,
-                    instruction=get_google_search_instruction(
-                        topic.name, topic.query, topic.search_depth,
-                        timeframe_instruction=tf_instruction,
-                    ),
+                    instruction=lambda ctx, _s=_g_instr: _s,
                     tools=[google_search],
                     output_key=f"research_{idx}_google",
                 )
@@ -120,13 +122,14 @@ def build_research_phase(config: NewsletterConfig) -> ParallelAgent:
                     tools=[_make_perplexity_tool(pf)],
                 )
             else:
+                _p_instr = get_perplexity_search_instruction(
+                    topic.name, topic.query, topic.search_depth,
+                    timeframe_instruction=tf_instruction,
+                )
                 perplexity_agent = LlmAgent(
                     name=f"PerplexitySearcher_{idx}",
                     model=_RESEARCH_MODEL,
-                    instruction=get_perplexity_search_instruction(
-                        topic.name, topic.query, topic.search_depth,
-                        timeframe_instruction=tf_instruction,
-                    ),
+                    instruction=lambda ctx, _s=_p_instr: _s,
                     tools=[_make_perplexity_tool(pf)],
                     output_key=f"research_{idx}_perplexity",
                 )
@@ -192,6 +195,21 @@ class ConfigLoaderAgent(BaseAgent):
                 self.config.settings.dry_run,
                 self.config.settings.verify_links,
             )
+
+            # Initialize cost tracking if telemetry is enabled
+            from newsletter_agent.telemetry import is_enabled
+
+            if is_enabled():
+                from newsletter_agent.cost_tracker import ModelPricing, init_cost_tracker
+
+                pricing = {
+                    name: ModelPricing(
+                        input_per_million=pc.input_per_million,
+                        output_per_million=pc.output_per_million,
+                    )
+                    for name, pc in self.config.settings.pricing.models.items()
+                }
+                init_cost_tracker(pricing, self.config.settings.pricing.cost_budget_usd)
         yield Event(
             author=self.name,
             content=types.Content(
@@ -326,21 +344,31 @@ class SynthesisPostProcessorAgent(BaseAgent):
         )
 
 
-def build_synthesis_agent(config: NewsletterConfig) -> LlmAgent:
+def build_synthesis_agent(config: NewsletterConfig, providers: list[str]) -> LlmAgent:
     """Build the synthesis LlmAgent from config.
 
     The synthesis agent reads research state keys and produces a JSON
     blob with executive summary and per-topic analysis. The raw output
     is stored in session state via output_key for post-processing.
+
+    Research data is injected directly into the instruction from session
+    state to ensure the model receives it regardless of how the ADK
+    forwards conversation events across model backends.
     """
     topic_names = [t.name for t in config.topics]
-    instruction = get_synthesis_instruction(topic_names, len(topic_names))
+    instruction_fn = build_synthesis_instruction_fn(topic_names, providers)
 
     return LlmAgent(
         name="Synthesizer",
         model=_SYNTHESIS_MODEL,
-        instruction=instruction,
+        instruction=instruction_fn,
         output_key="synthesis_raw",
+        generate_content_config=types.GenerateContentConfig(
+            max_output_tokens=65536,
+            thinking_config=types.ThinkingConfig(
+                thinking_budget=2048,
+            ),
+        ),
     )
 
 
@@ -384,20 +412,17 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
 
     abort_check = PipelineAbortCheckAgent(name="PipelineAbortCheck")
 
-    synthesis_agent = build_synthesis_agent(config)
-
     topic_names = [t.name for t in config.topics]
-    synthesis_post_processor = SynthesisPostProcessorAgent(
-        name="SynthesisPostProcessor",
+
+    per_topic_synthesizer = PerTopicSynthesizerAgent(
+        name="PerTopicSynthesizer",
         topic_names=topic_names,
+        providers=sorted(all_providers),
     )
 
-    output_phase = SequentialAgent(
-        name="OutputPhase",
-        sub_agents=[
-            build_formatter_agent(),
-            build_delivery_agent(),
-        ],
+    synthesis_link_verifier = SynthesisLinkVerifierAgent(
+        name="SynthesisLinkVerifier",
+        topic_count=len(config.topics),
     )
 
     link_verifier = LinkVerifierAgent(
@@ -419,6 +444,14 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
         _ROOT_AGENT_NAME,
     )
 
+    output_phase = SequentialAgent(
+        name="OutputPhase",
+        sub_agents=[
+            build_formatter_agent(),
+            build_delivery_agent(),
+        ],
+    )
+
     return SequentialAgent(
         name=_ROOT_AGENT_NAME,
         sub_agents=[
@@ -428,8 +461,8 @@ def build_pipeline(config: NewsletterConfig) -> SequentialAgent:
             abort_check,
             link_verifier,
             deep_research_refiner,
-            synthesis_agent,
-            synthesis_post_processor,
+            per_topic_synthesizer,
+            synthesis_link_verifier,
             output_phase,
         ],
         before_agent_callback=before_agent_callback,

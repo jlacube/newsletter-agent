@@ -1,7 +1,6 @@
 ---
 description: "Use when reviewing implemented code against specifications, plans, and documentation. Triggers on: review this, check adherence, audit code, verify implementation, review WP, does the code match the spec, quality check. Reads specs/, plans/, docs/ and compares against actual implementation to produce an honest adherence report."
 name: "5. Reviewer"
-model: Claude Opus 4.6 (copilot)
 tools: [vscode/askQuestions, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, execute/createAndRunTask, execute/runInTerminal, execute/runTests, execute/runNotebookCell, execute/testFailure, read/terminalSelection, read/terminalLastCommand, read/getNotebookSummary, read/problems, read/readFile, agent/runSubagent, edit/createDirectory, edit/createFile, edit/createJupyterNotebook, edit/editFiles, edit/editNotebook, edit/rename, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch, search/usages, web, web/fetch, web/githubRepo, vscode.mermaid-chat-features/renderMermaidDiagram, todo]
 handoffs:
   - label: Fix Findings

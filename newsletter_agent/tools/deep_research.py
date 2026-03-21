@@ -24,6 +24,10 @@ from newsletter_agent.prompts.reasoning import (
     get_analysis_instruction,
     get_planning_instruction,
 )
+from newsletter_agent.tools.link_verifier import (
+    clean_broken_links_from_markdown,
+    verify_urls,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,17 @@ _DEFAULT_ASPECTS = [
     "industry implications",
     "emerging trends",
 ]
+
+
+def _remove_broken_source_lines(text: str, broken_urls: set[str]) -> str:
+    """Remove lines from SOURCES sections that reference broken URLs."""
+    lines = text.split("\n")
+    cleaned = []
+    for line in lines:
+        if any(url in line for url in broken_urls):
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
 
 
 class DeepResearchOrchestrator(BaseAgent):
@@ -127,12 +142,58 @@ class DeepResearchOrchestrator(BaseAgent):
             # Read round output
             latest_key = f"deep_research_latest_{idx}_{prov}"
             round_output = state.get(latest_key, "")
-            round_key = f"research_{idx}_{prov}_round_{round_idx}"
-            state[round_key] = round_output
             round_count += 1
             searches_done += 1
 
-            # Track URLs
+            logger.info(
+                "[AdaptiveResearch] Topic %s/%s round %d: output length=%d chars",
+                self.topic_name, prov, round_idx, len(round_output),
+            )
+
+            # --- Per-round link verification (if enabled) ---
+            if state.get("config_verify_links", False) and round_output:
+                round_urls = list(self._extract_urls(round_output))
+                if round_urls:
+                    try:
+                        check_results = await verify_urls(round_urls)
+                        broken = {
+                            url for url, r in check_results.items()
+                            if r.status == "broken"
+                        }
+                        if broken:
+                            logger.info(
+                                "[AdaptiveResearch] Topic %s/%s round %d: %d/%d URLs broken, cleaning",
+                                self.topic_name, prov, round_idx,
+                                len(broken), len(round_urls),
+                            )
+                            for url in sorted(broken):
+                                r = check_results[url]
+                                title_info = f", title='{r.page_title}'" if r.page_title else ""
+                                logger.info(
+                                    "[AdaptiveResearch]   broken: %s (%s%s)",
+                                    url, r.error, title_info,
+                                )
+                            round_output = clean_broken_links_from_markdown(
+                                round_output, broken
+                            )
+                            round_output = _remove_broken_source_lines(
+                                round_output, broken
+                            )
+                        else:
+                            logger.info(
+                                "[AdaptiveResearch] Topic %s/%s round %d: all %d URLs valid",
+                                self.topic_name, prov, round_idx, len(round_urls),
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "[AdaptiveResearch] Topic %s/%s round %d: link verification failed: %s",
+                            self.topic_name, prov, round_idx, exc,
+                        )
+
+            round_key = f"research_{idx}_{prov}_round_{round_idx}"
+            state[round_key] = round_output
+
+            # Track URLs (only verified/surviving URLs reach the accumulator)
             new_urls = self._extract_urls(round_output)
             prev_total = len(accumulated_urls)
             accumulated_urls.update(new_urls)
@@ -251,6 +312,12 @@ class DeepResearchOrchestrator(BaseAgent):
         merged = self._merge_rounds(state, round_count)
         state[f"research_{idx}_{prov}"] = merged
 
+        merged_source_count = len(_MARKDOWN_LINK_RE.findall(merged.split("SOURCES:", 1)[1] if "SOURCES:" in merged else ""))
+        logger.info(
+            "[AdaptiveResearch] Topic %s/%s: merged result: %d chars, %d sources in SOURCES section",
+            self.topic_name, prov, len(merged), merged_source_count,
+        )
+
         # --- Cleanup intermediate keys ---
         self._cleanup_state(state, round_count)
 
@@ -279,10 +346,11 @@ class DeepResearchOrchestrator(BaseAgent):
         idx = self.topic_idx
         prov = self.provider
 
+        _planning_instr = get_planning_instruction(self.query, self.topic_name)
         planner = LlmAgent(
             name=f"AdaptivePlanner_{idx}_{prov}",
             model=self.model,
-            instruction=get_planning_instruction(self.query, self.topic_name),
+            instruction=lambda ctx, _s=_planning_instr: _s,
             output_key=f"adaptive_plan_{idx}_{prov}",
         )
 
@@ -348,19 +416,20 @@ class DeepResearchOrchestrator(BaseAgent):
         idx = self.topic_idx
         prov = self.provider
 
+        _analysis_instr = get_analysis_instruction(
+            topic_name=topic_name,
+            query=query,
+            key_aspects=key_aspects,
+            prior_rounds_summary=prior_rounds_summary,
+            latest_results=latest_results,
+            round_idx=round_idx,
+            current_query=current_query,
+            remaining_searches=remaining_searches,
+        )
         analyzer = LlmAgent(
             name=f"AdaptiveAnalyzer_{idx}_{prov}_r{round_idx}",
             model=self.model,
-            instruction=get_analysis_instruction(
-                topic_name=topic_name,
-                query=query,
-                key_aspects=key_aspects,
-                prior_rounds_summary=prior_rounds_summary,
-                latest_results=latest_results,
-                round_idx=round_idx,
-                current_query=current_query,
-                remaining_searches=remaining_searches,
-            ),
+            instruction=lambda ctx, _s=_analysis_instr: _s,
             output_key=f"adaptive_analysis_{idx}_{prov}",
         )
 
@@ -468,7 +537,7 @@ class DeepResearchOrchestrator(BaseAgent):
         return LlmAgent(
             name=f"DeepSearchRound_{idx}_{prov}_r{round_idx}",
             model=self.model,
-            instruction=instruction,
+            instruction=lambda ctx, _s=instruction: _s,
             tools=list(self.tools),
             output_key=f"deep_research_latest_{idx}_{prov}",
         )

@@ -14,6 +14,11 @@ __pycache__/
 dist/
 build/
 *.egg
+.coverage
+htmlcov/
+
+# === ADK Runtime ===
+.adk/
 
 # === Virtual Environments ===
 venv/

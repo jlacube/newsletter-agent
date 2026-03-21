@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: doing
+review_status: acknowledged
 ---
 
 # WP20 - Cost Tracking & LLM Instrumentation
@@ -53,6 +53,15 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
   - `timestamp` format: `datetime.now(timezone.utc).isoformat()` -- generated at record creation time
   - All numeric fields should be non-negative by convention (enforced by CostTracker logic, not dataclass validators)
 
+#### Spec Compliance Checklist (T20-01)
+- [x] ModelPricing: frozen=True, input_per_million, output_per_million (Section 7.1b)
+- [x] LlmCallRecord: frozen=True, 13 fields per Section 7.4
+- [x] CostSummary: all fields per Section 7.5 (per_topic/per_phase use ModelCostDetail - deliberate enhancement, documented)
+- [x] ModelCostDetail: all fields per Section 7.6
+- [x] phase accepts "research", "synthesis", "refinement", "unknown"
+- [x] Uses stdlib dataclasses only (Decision 3)
+- [x] timestamp: datetime.now(timezone.utc).isoformat()
+
 ### T20-02 - Implement CostTracker class
 
 - **Description**: Implement the `CostTracker` class with `record_llm_call()` and `get_summary()` methods per the implementation contract in Section 4.4.
@@ -84,6 +93,19 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
   - Logging: `logger = logging.getLogger("newsletter_agent.cost_tracker")`
   - Known pitfall: floating-point accumulation. For cost summaries in the $0.01-$1.00 range, float precision is sufficient. No need for `Decimal`.
 
+#### Spec Compliance Checklist (T20-02)
+- [x] __init__ accepts pricing: dict[str, ModelPricing] and cost_budget_usd: float | None (Section 4.4)
+- [x] Internal state: _calls, _lock, _total_cost (FR-405)
+- [x] record_llm_call() thread-safe via threading.Lock (FR-405)
+- [x] Cost formula matches spec exactly (FR-401, Decision 5)
+- [x] Unknown model: WARNING log + zero pricing (FR-404)
+- [x] Budget exceeded: WARNING when _total_cost > cost_budget_usd (FR-406)
+- [x] Budget None: no warning (FR-406)
+- [x] get_summary() thread-safe, correct per_model/per_topic/per_phase aggregation
+- [x] get_calls() returns shallow copy
+- [x] Returns created LlmCallRecord from record_llm_call()
+- [x] has_pricing() method for FR-404 span attribute support
+
 ### T20-03 - Implement module-level init, get, reset functions
 
 - **Description**: Implement `init_cost_tracker()`, `get_cost_tracker()`, and `reset_cost_tracker()` module-level functions in `cost_tracker.py`.
@@ -110,6 +132,13 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
             return []
     ```
     Or simply: `_tracker: CostTracker | None = None` and `get_cost_tracker()` returns `_tracker or _NoOpCostTracker()`.
+
+#### Spec Compliance Checklist (T20-03)
+- [x] init_cost_tracker() creates and stores module-level CostTracker (Section 8.2)
+- [x] get_cost_tracker() returns active tracker if initialized
+- [x] get_cost_tracker() returns _NoOpCostTracker when not initialized - never raises
+- [x] reset_cost_tracker() sets _tracker to None
+- [x] No-op tracker silently discards calls, returns zero CostSummary
 
 ### T20-04 - Implement traced_generate() in telemetry.py
 
@@ -162,6 +191,22 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
   - Known pitfall: `genai.Client()` reads `GOOGLE_API_KEY` from env. The function creates a new client each call (matching existing pattern in the codebase).
   - For the unknown pricing model case: `traced_generate` does not need to handle this -- it passes model name to `record_llm_call()` which handles the fallback.
 
+#### Spec Compliance Checklist (T20-04)
+- [x] Function signature matches Section 8.1
+- [x] Creates child span "llm.generate:{model}" (FR-303)
+- [x] Creates genai.Client() internally and calls aio.models.generate_content
+- [x] Extracts token counts from usage_metadata using getattr pattern (A1 mitigation)
+- [x] Sets gen_ai.* span attributes per FR-301
+- [x] Sets newsletter.cost.* span attributes per FR-402
+- [x] Sets context attributes: newsletter.agent.name, newsletter.phase, topic.name, topic.index
+- [x] Calls get_cost_tracker().record_llm_call()
+- [x] Missing usage_metadata: WARNING, tokens default to 0 (FR-303)
+- [x] Individual None fields default to 0
+- [x] API exception: span status ERROR, records exception, re-raises
+- [x] is_enabled()==False: calls LLM directly without span (User Flow 6.3)
+- [x] Returns original response unchanged
+- [x] Sets newsletter.cost.pricing_missing=True for unknown models (FR-404)
+
 ### T20-05 - Modify per_topic_synthesizer.py to use traced_generate()
 
 - **Description**: Replace the direct `genai.Client().aio.models.generate_content()` call in `per_topic_synthesizer.py` with `traced_generate()`.
@@ -188,6 +233,12 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
   - Known pitfall: The function needs access to `topic_name` and `topic_index`. Check the function signature and local variables to determine how to pass these. They may come from the iteration context in the synthesizer.
   - Update existing unit test mocks to patch `newsletter_agent.telemetry.traced_generate` instead of `genai.Client`.
 
+#### Spec Compliance Checklist (T20-05)
+- [x] per_topic_synthesizer uses traced_generate() instead of direct genai.Client (FR-302)
+- [x] Passes agent_name="PerTopicSynthesizer", phase="synthesis", topic_name, topic_index
+- [x] Response consumed identically to before
+- [x] Existing functionality preserved
+
 ### T20-06 - Modify deep_research_refiner.py to use traced_generate()
 
 - **Description**: Replace the direct `genai.Client().aio.models.generate_content()` call in `deep_research_refiner.py` with `traced_generate()`.
@@ -205,6 +256,12 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
   - The refiner processes multiple topics, so `topic_name` and `topic_index` should be available from the iteration context.
   - Update existing unit test mocks: `@patch("newsletter_agent.tools.deep_research_refiner.traced_generate")` instead of `@patch("newsletter_agent.tools.deep_research_refiner.genai.Client")`.
   - Also update E2E test at `tests/e2e/test_deep_mode_pipeline.py` line ~252 which patches `genai.Client`.
+
+#### Spec Compliance Checklist (T20-06)
+- [x] deep_research_refiner uses traced_generate() instead of direct genai.Client (FR-302)
+- [x] Passes agent_name="DeepResearchRefiner", phase="refinement", topic_name, topic_index
+- [x] Response consumed identically to before
+- [x] Existing functionality preserved
 
 ### T20-07 - Modify ConfigLoaderAgent to initialize CostTracker
 
@@ -236,6 +293,13 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
         init_cost_tracker(pricing, settings.pricing.cost_budget_usd)
     ```
   - Known pitfall: The ConfigLoaderAgent runs early in the pipeline (first agent). CostTracker must be initialized before any LLM calls happen. This is guaranteed because synthesis and refinement run after research.
+
+#### Spec Compliance Checklist (T20-07)
+- [x] ConfigLoaderAgent calls init_cost_tracker() after config parsing (FR-208)
+- [x] Pydantic ModelPricingConfig converted to ModelPricing frozen dataclass
+- [x] cost_budget_usd passed through from settings.pricing
+- [x] Skips init when OTEL_ENABLED=false (no-op fallback handles calls)
+- [x] Existing ConfigLoaderAgent behavior unchanged
 
 ### T20-08 - Unit tests for CostTracker
 
@@ -270,6 +334,20 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
   - Use `caplog` fixture to assert WARNING log messages
   - Use `reset_cost_tracker()` in test teardown fixture
   - Budget exceeded test: create tracker with `cost_budget_usd=0.01`, record a call that costs $0.02, assert WARNING in caplog
+
+#### Spec Compliance Checklist (T20-08)
+- [x] Test: correct cost for known model (FR-401)
+- [x] Test: zero cost and WARNING for unknown model (FR-404)
+- [x] Test: get_summary() aggregation per_model/per_topic/per_phase
+- [x] Test: thread safety with 10 concurrent threads (FR-405)
+- [x] Test: budget exceeded WARNING (FR-406)
+- [x] Test: budget None no warning (FR-406)
+- [x] Test: get_cost_tracker() returns no-op when not initialized
+- [x] Test: reset_cost_tracker() clears global state
+- [x] Test: no-op tracker returns zero CostSummary
+- [x] Test: get_calls() returns all recorded calls
+- [x] Test: has_pricing() returns correct results
+- [x] Coverage >= 80% code, >= 90% branch for cost_tracker.py
 
 ### T20-09 - Unit tests for traced_generate()
 
@@ -312,6 +390,18 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
     ```
   - Each test needs cost_tracker initialized for cost recording. Use `init_cost_tracker()` in setup and `reset_cost_tracker()` in teardown.
 
+#### Spec Compliance Checklist (T20-09)
+- [x] Test: span named "llm.generate:{model}" with correct attributes
+- [x] Test: extracts usage_metadata and sets gen_ai.usage.* attributes
+- [x] Test: missing usage_metadata defaults tokens to 0, WARNING logged
+- [x] Test: individual missing fields default to 0
+- [x] Test: records cost in CostTracker
+- [x] Test: re-raises API exceptions after recording on span
+- [x] Test: is_enabled()==False still calls LLM, no span
+- [x] Test: pricing_missing=True set for unknown model (FR-404)
+- [x] Test: pricing_missing NOT set for known model
+- [x] All tests use mocked genai.Client
+
 ### T20-10 - Unit tests for no-op CostTracker behavior when disabled
 
 - **Description**: Test that when telemetry is disabled or CostTracker is not initialized, the system behaves correctly without errors.
@@ -328,6 +418,14 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
 - **Implementation Guidance**:
   - Ensure `reset_cost_tracker()` is called before each test in this group
   - Verify no warnings are logged by no-op operations (they should be truly silent)
+
+#### Spec Compliance Checklist (T20-10)
+- [x] Test: get_cost_tracker() returns no-op when not initialized
+- [x] Test: no-op record_llm_call() does not raise, returns zeroed LlmCallRecord
+- [x] Test: no-op get_summary() returns CostSummary with all zeros
+- [x] Test: no-op get_calls() returns empty list
+- [x] Test: after reset_cost_tracker(), get_cost_tracker() returns no-op
+- [x] Test: no warnings logged by no-op operations
 
 ## Implementation Notes
 
@@ -353,6 +451,7 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
 
 - 2025-07-18T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-21T12:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
+- 2026-03-21T14:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04)
 
 ## Review
 

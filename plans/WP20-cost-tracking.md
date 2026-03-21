@@ -1,5 +1,5 @@
 ---
-lane: doing
+lane: for_review
 review_status: acknowledged
 ---
 
@@ -452,6 +452,7 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
 - 2025-07-18T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-21T12:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
 - 2026-03-21T14:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04)
+- 2026-03-21T14:30:00Z - coder - lane=for_review - All FB items resolved, submitted for re-review
 
 ## Review
 
@@ -468,10 +469,10 @@ Changes Required. Three FAIL findings block approval: (1) missing `newsletter.co
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: `traced_generate()` in [telemetry.py](newsletter_agent/telemetry.py) does not set `newsletter.cost.pricing_missing: true` span attribute when the model is not in the pricing config (FR-404). The `CostTracker.record_llm_call()` correctly warns and zero-prices, but the return value is not checked by `traced_generate()` to detect unknown-model cases. Add logic: if the model is not in the tracker's pricing dict, set `span.set_attribute("newsletter.cost.pricing_missing", True)`. Add a test for this case.
-- [ ] **FB-02**: `CostSummary.per_topic` is typed `dict[str, ModelCostDetail]` but spec Section 7.5 defines it as `dict[str, float]` (topic_name -> cost_usd). Same for `per_phase`. Either align with the spec contract (use `dict[str, float]`) or document the deviation as a deliberate enhancement. Current tests and aggregation code use `ModelCostDetail` consistently, so if keeping `ModelCostDetail`, update the spec or add a clear comment.
-- [ ] **FB-03**: No Spec Compliance Checklist (Step 2b) exists in the WP file for any task. No Activity Log entries exist for coder lane transitions. No git commits exist for any WP20 task. Add the Spec Compliance Checklist per task, update the activity log, and commit per task.
-- [ ] **FB-04**: Documentation files do not mention `cost_tracker.py`, `traced_generate()`, or `CostTracker`. Update [architecture.md](docs/architecture.md) (add cost tracking subsection under Telemetry), [api-reference.md](docs/api-reference.md) (add cost_tracker.py public API), and [developer-guide.md](docs/developer-guide.md) (add `cost_tracker.py` to project structure listing).
+- [x] **FB-01**: `traced_generate()` in [telemetry.py](newsletter_agent/telemetry.py) does not set `newsletter.cost.pricing_missing: true` span attribute when the model is not in the pricing config (FR-404). The `CostTracker.record_llm_call()` correctly warns and zero-prices, but the return value is not checked by `traced_generate()` to detect unknown-model cases. Add logic: if the model is not in the tracker's pricing dict, set `span.set_attribute("newsletter.cost.pricing_missing", True)`. Add a test for this case.
+- [x] **FB-02**: `CostSummary.per_topic` is typed `dict[str, ModelCostDetail]` but spec Section 7.5 defines it as `dict[str, float]` (topic_name -> cost_usd). Same for `per_phase`. Either align with the spec contract (use `dict[str, float]`) or document the deviation as a deliberate enhancement. Current tests and aggregation code use `ModelCostDetail` consistently, so if keeping `ModelCostDetail`, update the spec or add a clear comment.
+- [x] **FB-03**: No Spec Compliance Checklist (Step 2b) exists in the WP file for any task. No Activity Log entries exist for coder lane transitions. No git commits exist for any WP20 task. Add the Spec Compliance Checklist per task, update the activity log, and commit per task.
+- [x] **FB-04**: Documentation files do not mention `cost_tracker.py`, `traced_generate()`, or `CostTracker`. Update [architecture.md](docs/architecture.md) (add cost tracking subsection under Telemetry), [api-reference.md](docs/api-reference.md) (add cost_tracker.py public API), and [developer-guide.md](docs/developer-guide.md) (add `cost_tracker.py` to project structure listing).
 
 ### Findings
 

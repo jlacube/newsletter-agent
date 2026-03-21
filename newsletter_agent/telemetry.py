@@ -128,7 +128,7 @@ def shutdown_telemetry() -> None:
 
         provider = trace.get_tracer_provider()
         if hasattr(provider, "shutdown"):
-            provider.shutdown()
+            provider.shutdown(timeout_millis=5000)
     except Exception:
         logger.warning("Telemetry shutdown error", exc_info=True)
 

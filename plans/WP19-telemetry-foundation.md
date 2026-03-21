@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP19 - Telemetry Foundation: Dependencies, OTel Init & Config Schema
@@ -46,6 +46,13 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] No version conflicts with existing dependencies (google-adk, pydantic, etc.)
 - **Test requirements**: none (manual verification via pip install)
 - **Depends on**: none
+
+#### Spec Compliance Checklist (T19-01)
+- [x] Section 9.2: `opentelemetry-api>=1.20.0` in requirements.txt
+- [x] Section 9.2: `opentelemetry-sdk>=1.20.0` in requirements.txt
+- [x] Section 9.2: `opentelemetry-exporter-otlp-proto-grpc>=1.20.0` in requirements.txt
+- [x] No version conflicts with existing dependencies
+
 - **Implementation Guidance**:
   - Official docs: https://opentelemetry.io/docs/languages/python/getting-started/
   - Add under a new `# Observability` comment section in requirements.txt, after the existing `# HTTP client` section
@@ -72,6 +79,23 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] `is_enabled()` returns `_initialized`
 - **Test requirements**: unit (T19-07)
 - **Depends on**: T19-01
+
+#### Spec Compliance Checklist (T19-02)
+- [x] FR-101: TracerProvider initialized at import time (via __init__.py call)
+- [x] FR-101 error: ImportError logs WARNING, sets _initialized=False, returns
+- [x] FR-102: OTEL_ENABLED=false (case-insensitive) sets NoOpTracerProvider
+- [x] FR-103: Resource service.name from OTEL_SERVICE_NAME (default "newsletter-agent")
+- [x] FR-104: Resource service.version from package version (fallback "0.1.0")
+- [x] FR-105: deployment.environment = "production" if K_SERVICE set, else "development"
+- [x] FR-106: shutdown_telemetry() calls provider.shutdown(timeout_millis=5000); never raises
+- [x] FR-602: OTLP endpoint set -> BatchSpanProcessor(OTLPSpanExporter(endpoint=...))
+- [x] FR-603: No OTLP endpoint -> BatchSpanProcessor(ConsoleSpanExporter)
+- [x] FR-604: Dev mode + OTLP -> also SimpleSpanProcessor(ConsoleSpanExporter)
+- [x] Section 8.1: init_telemetry() is idempotent
+- [x] Section 8.1: get_tracer(name) returns tracer if initialized, NoOp otherwise
+- [x] Section 8.1: is_enabled() returns _initialized
+- [x] General exception: logs WARNING with traceback, sets _initialized=False
+
 - **Implementation Guidance**:
   - Official docs: https://opentelemetry.io/docs/languages/python/instrumentation/
   - Exporter docs: https://opentelemetry.io/docs/languages/python/exporters/
@@ -114,6 +138,19 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] The entire `pricing` section is optional in YAML config (AppSettings default handles it)
 - **Test requirements**: unit (T19-08)
 - **Depends on**: T19-01
+
+#### Spec Compliance Checklist (T19-03)
+- [x] FR-601: PricingConfig field added to AppSettings with default_factory
+- [x] Section 7.1: ModelPricingConfig has input_per_million: float (ge=0.0) and output_per_million: float (ge=0.0)
+- [x] Section 7.2: PricingConfig has models: dict[str, ModelPricingConfig] with min_length=1
+- [x] Section 7.2: PricingConfig has cost_budget_usd: float | None = Field(default=None, ge=0.0)
+- [x] Section 7.2: Default models include gemini-2.5-flash (0.30/2.50) and gemini-2.5-pro (1.25/10.00)
+- [x] Section 7.3: AppSettings.pricing field present with correct default
+- [x] ConfigDict(extra="forbid") on both new models
+- [x] PricingConfig(models={}) raises validation error
+- [x] Negative pricing values raise validation error
+- [x] Pricing section optional in YAML config
+
 - **Implementation Guidance**:
   - Add models BEFORE the `AppSettings` class definition in schema.py
   - Use `ConfigDict(extra="forbid")` on both new models to match existing convention
@@ -145,6 +182,12 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] `trace.get_tracer_provider()` returns the configured provider after `import newsletter_agent`
 - **Test requirements**: unit (verified as part of T19-07)
 - **Depends on**: T19-02
+
+#### Spec Compliance Checklist (T19-04)
+- [x] FR-101: init_telemetry() called in __init__.py after load_dotenv() and before agent import
+- [x] FR-101: If init_telemetry() fails, agent import still proceeds
+- [x] trace.get_tracer_provider() returns configured provider after import newsletter_agent
+
 - **Implementation Guidance**:
   - Current `__init__.py` content:
     ```python
@@ -171,6 +214,13 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] Existing behavior of both entry points is preserved
 - **Test requirements**: unit (verified as part of T19-07)
 - **Depends on**: T19-02
+
+#### Spec Compliance Checklist (T19-05)
+- [x] FR-106: shutdown_telemetry() called in finally block in __main__.py
+- [x] FR-106: shutdown_telemetry() called in finally block in http_handler.py
+- [x] Both success and error paths covered
+- [x] Existing behavior of both entry points preserved
+
 - **Implementation Guidance**:
   - In `__main__.py`, the `main()` function (or `run_pipeline()`) should wrap the pipeline execution in try/finally:
     ```python
@@ -201,6 +251,14 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] Variables are under a new `# --- OpenTelemetry ---` section header with descriptive comments
 - **Test requirements**: none (documentation)
 - **Depends on**: none
+
+#### Spec Compliance Checklist (T19-06)
+- [x] FR-605: OTEL_ENABLED=true documented (commented)
+- [x] FR-605: OTEL_SERVICE_NAME=newsletter-agent documented (commented)
+- [x] FR-605: OTEL_EXPORTER_OTLP_ENDPOINT= documented (commented, empty default)
+- [x] FR-605: OTEL_EXPORTER_OTLP_HEADERS= documented (commented, empty default)
+- [x] Variables under # --- OpenTelemetry --- section header
+
 - **Implementation Guidance**:
   - Add after the existing `# --- Logging ---` section
   - Format:
@@ -236,6 +294,20 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] Minimum 80% code coverage, 90% branch coverage for `telemetry.py`
 - **Test requirements**: unit (pytest)
 - **Depends on**: T19-02
+
+#### Spec Compliance Checklist (T19-07)
+- [x] SC-004: Test OTLP exporter configuration with endpoint set
+- [x] SC-007: Test OTEL_ENABLED=false results in NoOpTracerProvider
+- [x] FR-101: Test import failure logs WARNING
+- [x] FR-102: Test kill switch disables tracing
+- [x] FR-103/104/105: Test resource attributes (service.name, version, deployment.environment)
+- [x] FR-106: Test shutdown does not raise
+- [x] FR-602: Test OTLP exporter path
+- [x] FR-603: Test console exporter path
+- [x] FR-604: Test dev mode dual export
+- [x] Tests use monkeypatch/mock for env vars and reset global state
+- [x] Coverage >= 80% code, >= 90% branch for telemetry.py
+
 - **Implementation Guidance**:
   - Use `opentelemetry.sdk.trace.export.in_memory_span_exporter.InMemorySpanExporter` for assertions about span export
   - Reset global OTel state between tests:
@@ -281,6 +353,18 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] Minimum 80% code coverage, 90% branch coverage for new models
 - **Test requirements**: unit (pytest)
 - **Depends on**: T19-03
+
+#### Spec Compliance Checklist (T19-08)
+- [x] FR-601: Test AppSettings includes pricing field with defaults
+- [x] Section 7.1: Test ModelPricingConfig validation (ge=0.0 on both fields)
+- [x] Section 7.2: Test PricingConfig defaults (2 models, correct prices)
+- [x] Section 7.2: Test cost_budget_usd: None valid, 0.0 valid, negative invalid
+- [x] Section 7.2: Test models dict min_length=1 (empty raises)
+- [x] Section 7.3: Test AppSettings.pricing field and defaults
+- [x] Test YAML config without pricing section produces defaults
+- [x] Test YAML config with custom pricing populates correctly
+- [x] Coverage >= 80% code, >= 90% branch for pricing models
+
 - **Implementation Guidance**:
   - Follow existing test patterns in the project (check `tests/` for config test examples)
   - Use `pytest.raises(ValidationError)` for negative tests
@@ -298,6 +382,12 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] Coverage configuration (if using pyproject.toml or .coveragerc) includes the new modules
 - **Test requirements**: none (configuration)
 - **Depends on**: T19-07, T19-08
+
+#### Spec Compliance Checklist (T19-09)
+- [x] Section 11.1: pytest --cov=newsletter_agent.telemetry --cov-branch reports >= 80% code / >= 90% branch
+- [x] Section 11.1: Pricing model coverage adequate
+- [x] Coverage config includes new modules
+
 - **Implementation Guidance**:
   - Check existing coverage config in `pyproject.toml` or `.coveragerc`
   - If no coverage tooling exists yet, add `pytest-cov` to dev dependencies
@@ -331,6 +421,8 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 - 2025-07-18T12:00:00Z - coder - lane=doing - Begin implementation of WP19 tasks
 - 2025-07-18T13:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
 - 2025-07-18T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
+- 2026-03-21T12:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03). Process deviation noted: WP19 tasks were committed in a single commit (f5c3648) instead of one commit per task. This cannot be retroactively fixed. Future WPs will use per-task commits.
+- 2026-03-21T12:30:00Z - coder - lane=for_review - All feedback items resolved, submitted for re-review
 
 ## Review
 
@@ -346,9 +438,9 @@ Changes Required. Three FAILs found: (1) `shutdown_telemetry()` does not pass `t
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: `shutdown_telemetry()` in `newsletter_agent/telemetry.py` line ~131 calls `provider.shutdown()` without `timeout_millis=5000`. The spec implementation contract (Section 8.1, line 74 of spec) explicitly requires `TracerProvider.shutdown(timeout_millis=5000)`. The docstring says "5-second timeout" but the parameter is not passed. Fix: change `provider.shutdown()` to `provider.shutdown(timeout_millis=5000)`.
-- [ ] **FB-02**: Add Spec Compliance Checklists (Step 2b) for each task T19-01 through T19-09 in the WP file. This is a required process step per the Coder workflow.
-- [ ] **FB-03**: Commit history shows a single commit `f5c3648` for all WP19 tasks. The process requires one commit per task. Since this cannot be retroactively fixed, document this as a process deviation in the Activity Log and ensure future WPs use per-task commits.
+- [x] **FB-01**: `shutdown_telemetry()` in `newsletter_agent/telemetry.py` line ~131 calls `provider.shutdown()` without `timeout_millis=5000`. The spec implementation contract (Section 8.1, line 74 of spec) explicitly requires `TracerProvider.shutdown(timeout_millis=5000)`. The docstring says "5-second timeout" but the parameter is not passed. Fix: change `provider.shutdown()` to `provider.shutdown(timeout_millis=5000)`.
+- [x] **FB-02**: Add Spec Compliance Checklists (Step 2b) for each task T19-01 through T19-09 in the WP file. This is a required process step per the Coder workflow.
+- [x] **FB-03**: Commit history shows a single commit `f5c3648` for all WP19 tasks. The process requires one commit per task. Since this cannot be retroactively fixed, document this as a process deviation in the Activity Log and ensure future WPs use per-task commits.
 
 ### Findings
 

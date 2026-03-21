@@ -1,5 +1,6 @@
 ---
-lane: planned
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP20 - Cost Tracking & LLM Instrumentation
@@ -351,3 +352,191 @@ Implement the cost tracking infrastructure (`cost_tracker.py`) and the LLM call 
 ## Activity Log
 
 - 2025-07-18T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-21T12:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (3 FAILs) -- awaiting remediation
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-21
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Changes Required. Three FAIL findings block approval: (1) missing `newsletter.cost.pricing_missing` span attribute required by FR-404, (2) `CostSummary.per_topic` and `per_phase` deviate from spec data types, and (3) Spec Compliance Checklist (Step 2b) was not completed and no commits exist for WP20. Documentation does not mention `cost_tracker.py`, `traced_generate()`, or `CostTracker` in architecture, API reference, or developer guide. All functional tests pass with 99.6% coverage.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: `traced_generate()` in [telemetry.py](newsletter_agent/telemetry.py) does not set `newsletter.cost.pricing_missing: true` span attribute when the model is not in the pricing config (FR-404). The `CostTracker.record_llm_call()` correctly warns and zero-prices, but the return value is not checked by `traced_generate()` to detect unknown-model cases. Add logic: if the model is not in the tracker's pricing dict, set `span.set_attribute("newsletter.cost.pricing_missing", True)`. Add a test for this case.
+- [ ] **FB-02**: `CostSummary.per_topic` is typed `dict[str, ModelCostDetail]` but spec Section 7.5 defines it as `dict[str, float]` (topic_name -> cost_usd). Same for `per_phase`. Either align with the spec contract (use `dict[str, float]`) or document the deviation as a deliberate enhancement. Current tests and aggregation code use `ModelCostDetail` consistently, so if keeping `ModelCostDetail`, update the spec or add a clear comment.
+- [ ] **FB-03**: No Spec Compliance Checklist (Step 2b) exists in the WP file for any task. No Activity Log entries exist for coder lane transitions. No git commits exist for any WP20 task. Add the Spec Compliance Checklist per task, update the activity log, and commit per task.
+- [ ] **FB-04**: Documentation files do not mention `cost_tracker.py`, `traced_generate()`, or `CostTracker`. Update [architecture.md](docs/architecture.md) (add cost tracking subsection under Telemetry), [api-reference.md](docs/api-reference.md) (add cost_tracker.py public API), and [developer-guide.md](docs/developer-guide.md) (add `cost_tracker.py` to project structure listing).
+
+### Findings
+
+#### FAIL - Process Compliance
+- **Requirement**: Step 2b Spec Compliance Checklist
+- **Status**: Missing
+- **Detail**: No Spec Compliance Checklist exists for any of T20-01 through T20-10. No Activity Log entries from coder. No git commits for WP20 implementation — all changes are uncommitted in working tree.
+- **Evidence**: `plans/WP20-cost-tracking.md` Activity Log has only the planner entry. `git log` shows no WP20 commits.
+
+#### PASS - Spec Adherence (FR-401: Cost calculation formula)
+- **Requirement**: FR-401
+- **Status**: Compliant
+- **Detail**: Cost formula exactly matches spec: `input_cost = prompt_tokens * input_per_million / 1_000_000; output_cost = (completion_tokens + thinking_tokens) * output_per_million / 1_000_000`.
+- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py#L113-L118), verified by `test_correct_cost_for_known_model` with exact values ($0.0125, $0.025, $0.0375).
+
+#### PASS - Spec Adherence (FR-402: Cost span attributes)
+- **Requirement**: FR-402
+- **Status**: Compliant
+- **Detail**: `traced_generate()` sets `newsletter.cost.input_usd`, `newsletter.cost.output_usd`, `newsletter.cost.total_usd` on span.
+- **Evidence**: [telemetry.py](newsletter_agent/telemetry.py#L228-L230), verified by `test_sets_cost_attributes`.
+
+#### PASS - Spec Adherence (FR-403: Default pricing)
+- **Requirement**: FR-403
+- **Status**: Compliant
+- **Detail**: `PricingConfig` in schema.py provides default pricing matching spec: Flash 0.30/2.50, Pro 1.25/10.00.
+- **Evidence**: `newsletter_agent/config/schema.py` PricingConfig default_factory.
+
+#### FAIL - Spec Adherence (FR-404: pricing_missing attribute)
+- **Requirement**: FR-404
+- **Status**: Partial
+- **Detail**: Unknown model gets zero pricing and WARNING log (compliant), but span attribute `newsletter.cost.pricing_missing: true` is never set. Spec says "The span SHALL include attribute `newsletter.cost.pricing_missing: true`". No test exists for this span attribute.
+- **Evidence**: `traced_generate()` in [telemetry.py](newsletter_agent/telemetry.py#L215-L230) does not set this attribute. `grep` for `pricing_missing` returns zero matches in implementation and test files.
+
+#### PASS - Spec Adherence (FR-405: Thread safety)
+- **Requirement**: FR-405
+- **Status**: Compliant
+- **Detail**: `CostTracker` uses `threading.Lock` in `record_llm_call()` and `get_summary()`. Thread safety verified by 10-thread concurrent test.
+- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py#L137-L149), `test_concurrent_calls_produce_correct_count`, `test_concurrent_cost_accumulation`.
+
+#### PASS - Spec Adherence (FR-406: Budget warning)
+- **Requirement**: FR-406
+- **Status**: Compliant
+- **Detail**: Budget exceeded logs WARNING with correct format. Budget None produces no warning.
+- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py#L141-L148), `test_budget_exceeded_logs_warning`, `test_budget_none_no_warning`.
+
+#### PASS - Spec Adherence (FR-301: Token extraction)
+- **Requirement**: FR-301
+- **Status**: Compliant
+- **Detail**: `traced_generate()` extracts `prompt_token_count`, `candidates_token_count`, `thoughts_token_count` from `usage_metadata` using `getattr(..., 0) or 0` pattern. Sets all `gen_ai.usage.*` span attributes.
+- **Evidence**: [telemetry.py](newsletter_agent/telemetry.py#L199-L213), `test_sets_span_attributes`.
+
+#### PASS - Spec Adherence (FR-303: Missing usage_metadata)
+- **Requirement**: FR-303
+- **Status**: Compliant
+- **Detail**: When `usage_metadata` is None, logs WARNING, tokens default to 0. Individual None fields also default to 0.
+- **Evidence**: `test_missing_usage_metadata`, `test_individual_missing_fields_default_to_zero`.
+
+#### PASS - Spec Adherence (FR-302: Call site instrumentation)
+- **Requirement**: FR-302
+- **Status**: Compliant
+- **Detail**: Both `per_topic_synthesizer.py` and `deep_research_refiner.py` use `traced_generate()` instead of direct `genai.Client()` calls. Agent names and phases match spec.
+- **Evidence**: [per_topic_synthesizer.py](newsletter_agent/tools/per_topic_synthesizer.py#L168-L178), [deep_research_refiner.py](newsletter_agent/tools/deep_research_refiner.py#L171-L180).
+
+#### PASS - Spec Adherence (FR-208: ConfigLoaderAgent CostTracker init)
+- **Requirement**: FR-208
+- **Status**: Compliant
+- **Detail**: ConfigLoaderAgent calls `init_cost_tracker()` with pricing converted from Pydantic `ModelPricingConfig` to frozen dataclass `ModelPricing`, passing `cost_budget_usd`. Skips when `is_enabled()` is False.
+- **Evidence**: [agent.py](newsletter_agent/agent.py#L200-L212).
+
+#### WARN - Spec Adherence (Section 8.2: get_cost_tracker behavior)
+- **Requirement**: Section 8.2 / Section 4.4 contract
+- **Status**: Deviating (deliberate)
+- **Detail**: Spec contract says `get_cost_tracker()` "Raises RuntimeError if not initialized". Implementation returns a `_NoOpCostTracker` instance instead, which is documented in the WP plan (T20-03) as the preferred approach aligning with US-07 Scenario 2. This is a deliberate improvement over the spec.
+- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py#L253-L255), WP plan T20-03 acceptance criteria.
+
+#### FAIL - Data Model Adherence (Section 7.5: CostSummary types)
+- **Requirement**: Section 7.5
+- **Status**: Deviating
+- **Detail**: `CostSummary.per_topic` is `dict[str, ModelCostDetail]` but spec says `dict[str, float]` (topic_name -> cost_usd). Same for `per_phase`: implementation is `dict[str, ModelCostDetail]`, spec says `dict[str, float]`. This provides more data than the spec requires but breaks the defined contract.
+- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py#L72-L73) vs spec Section 7.5.
+
+#### PASS - API / Interface Adherence (Section 8.1: traced_generate)
+- **Requirement**: Section 8.1
+- **Status**: Compliant
+- **Detail**: Function signature matches spec: `async def traced_generate(model, contents, config=None, *, agent_name, topic_name=None, topic_index=None, phase)`. Returns response unchanged. Handles errors correctly.
+- **Evidence**: [telemetry.py](newsletter_agent/telemetry.py#L151-L162).
+
+#### WARN - API / Interface Adherence (Section 4.4: record_llm_call signature)
+- **Requirement**: Section 4.4 contract
+- **Status**: Deviating (minor)
+- **Detail**: Spec contract shows `record_llm_call(self, model, prompt_tokens, completion_tokens, thinking_tokens, agent_name, phase, ...)` with positional parameters. Implementation uses keyword-only (`*,`). Functionally equivalent and arguably safer, but deviates from the contract.
+- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py#L101-L110).
+
+#### PASS - Architecture Adherence
+- **Requirement**: Section 9.4 Decisions 2, 3, 5
+- **Status**: Compliant
+- **Detail**: Uses stdlib `dataclasses` for internal structures (Decision 3). Module-level init/get/reset pattern matches OTel approach (Decision 3). Cost formula includes thinking tokens at output rate (Decision 5). `genai.Client()` created inside `traced_generate()` matching existing pattern (Decision 2).
+- **Evidence**: [cost_tracker.py](newsletter_agent/cost_tracker.py), [telemetry.py](newsletter_agent/telemetry.py#L191).
+
+#### PASS - Test Coverage Adherence
+- **Requirement**: Section 11.1, T20-08, T20-09, T20-10
+- **Status**: Compliant
+- **Detail**: All required tests implemented: cost calculation (FR-401), unknown model (FR-404), summary aggregation, thread safety (FR-405), budget warnings (FR-406), traced_generate span attributes, missing usage_metadata (FR-303), API exceptions, disabled mode, no-op tracker. All 62 tests pass.
+- **Evidence**: `pytest` output shows 62 passed. Coverage: `cost_tracker.py` 100%, `telemetry.py` 99%.
+
+#### PASS - Non-Functional: Security
+- **Requirement**: Section 10
+- **Status**: Compliant
+- **Detail**: No secrets in code. No SQL injection, XSS, or CSRF vectors. API key read from environment by `genai.Client()` internally, not exposed. No user input handling in cost tracking code.
+
+#### PASS - Performance
+- **Requirement**: Section 10
+- **Status**: Compliant
+- **Detail**: No N+1 patterns, no unbounded fetching. `threading.Lock` scope is minimal (only around list append and cost accumulation). No synchronous blocking in async path except the lock (acceptable for in-memory list operations).
+
+#### WARN - Documentation Accuracy
+- **Requirement**: docs/ accuracy
+- **Status**: Partial
+- **Detail**: The configuration guide correctly documents the `pricing` section. However, `cost_tracker.py` is not listed in the developer guide project structure, `traced_generate()` is not mentioned in architecture or API reference docs, and the architecture telemetry section only describes init/shutdown/get_tracer/is_enabled but omits `traced_generate()` and cost tracking.
+- **Evidence**: `grep` for `cost_tracker` and `traced_generate` in `docs/` returns zero matches.
+
+#### PASS - Success Criteria (SC-001)
+- **Requirement**: SC-001
+- **Status**: Verifiable
+- **Detail**: SC-001 requires that every `genai.Client()` call records token counts as span attributes and accumulates in cost tracker. Unit tests `test_sets_span_attributes` and `test_records_cost_in_tracker` verify this with mock LLM calls.
+- **Evidence**: Tests in [test_telemetry.py](tests/unit/test_telemetry.py#L307-L370).
+
+#### PASS - Coverage Thresholds
+- **Requirement**: 80% code, 90% branch
+- **Status**: Compliant
+- **Detail**: `cost_tracker.py` has 100% statement and 100% branch coverage. `telemetry.py` has 99% coverage with 1 partial branch (line 91->90, an innocuous edge).
+- **Evidence**: `pytest --cov` output: 99.6% total, 100%/99%.
+
+#### PASS - Scope Discipline
+- **Requirement**: No scope creep
+- **Status**: Compliant
+- **Detail**: WP20 files match the plan exactly: `cost_tracker.py` (new), `telemetry.py` (traced_generate added), `per_topic_synthesizer.py` (call site), `deep_research_refiner.py` (call site), `agent.py` (ConfigLoaderAgent init), corresponding test files. No unspecified features or abstractions added. The `_NoOpCostTracker` is specified in the WP plan T20-03.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, curly apostrophes
+- **Status**: Compliant
+- **Detail**: All WP20-created/modified files checked for UTF-8 violations. None found.
+- **Evidence**: PowerShell regex check on 4 core implementation/test files returned all OK.
+
+### Statistics
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 0 | 1 |
+| Spec Adherence | 8 | 1 | 1 |
+| Data Model | 0 | 0 | 1 |
+| API / Interface | 1 | 1 | 0 |
+| Architecture | 1 | 0 | 0 |
+| Test Coverage | 1 | 0 | 0 |
+| Non-Functional | 1 | 0 | 0 |
+| Performance | 1 | 0 | 0 |
+| Documentation | 0 | 1 | 0 |
+| Success Criteria | 1 | 0 | 0 |
+| Coverage Thresholds | 1 | 0 | 0 |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. **(FB-01)** Add `newsletter.cost.pricing_missing: true` span attribute in `traced_generate()` when the model is not in the CostTracker's pricing config. Add a corresponding test. This requires either exposing pricing info from the tracker or checking pricing before calling `record_llm_call()`.
+2. **(FB-02)** Align `CostSummary.per_topic` and `per_phase` types with spec Section 7.5 (`dict[str, float]`), or document the deviation in the WP plan as a deliberate enhancement and add a comment in code.
+3. **(FB-03)** Add Spec Compliance Checklists for all tasks (T20-01 through T20-10), update the Activity Log with coder lane transitions, and commit WP20 changes with per-task granularity.
+4. **(FB-04)** Update documentation: add `cost_tracker.py` to developer guide project structure, add cost tracking subsection to architecture.md telemetry section, add `cost_tracker.py` and `traced_generate()` public API to api-reference.md.

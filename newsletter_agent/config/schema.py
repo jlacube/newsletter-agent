@@ -147,6 +147,26 @@ class NewsletterSettings(BaseModel):
         return self
 
 
+class ModelPricingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    input_per_million: float = Field(ge=0.0)
+    output_per_million: float = Field(ge=0.0)
+
+
+class PricingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    models: dict[str, ModelPricingConfig] = Field(
+        default_factory=lambda: {
+            "gemini-2.5-flash": ModelPricingConfig(input_per_million=0.30, output_per_million=2.50),
+            "gemini-2.5-pro": ModelPricingConfig(input_per_million=1.25, output_per_million=10.00),
+        },
+        min_length=1,
+    )
+    cost_budget_usd: float | None = Field(default=None, ge=0.0)
+
+
 class AppSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -155,8 +175,9 @@ class AppSettings(BaseModel):
     timeframe: TimeframeValue = None
     verify_links: bool = False
     max_research_rounds: int = Field(default=3, ge=1, le=5)
-    max_searches_per_topic: int | None = Field(default=None, ge=1, le=15)
+    max_searches_per_topic: int | None = Field(default=None, ge=1, le=20)
     min_research_rounds: int = Field(default=2, ge=1, le=3)
+    pricing: PricingConfig = Field(default_factory=PricingConfig)
 
     @model_validator(mode="after")
     def resolve_adaptive_defaults(self) -> AppSettings:

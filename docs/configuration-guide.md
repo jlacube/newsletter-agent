@@ -64,6 +64,31 @@ topics:
 | `max_research_rounds` | integer | No | `3` | Number of research rounds for deep-mode topics (1-5). Only affects topics with `search_depth: deep`. Standard-mode topics always perform 1 round. |
 | `max_searches_per_topic` | integer | No | Same as `max_research_rounds` | Maximum search API calls per topic (1-15). Defaults to `max_research_rounds` if omitted. |
 | `min_research_rounds` | integer | No | `2` | Minimum rounds before saturation exit is allowed (1-3). Must be <= `max_research_rounds`. |
+| `pricing` | object | No | See below | Model pricing configuration for cost tracking |
+
+#### Pricing Configuration
+
+The `pricing` sub-section configures model cost tracking. It is entirely optional -- defaults are provided for supported Gemini models.
+
+```yaml
+settings:
+  pricing:
+    models:
+      gemini-2.5-flash:
+        input_per_million: 0.30
+        output_per_million: 2.50
+      gemini-2.5-pro:
+        input_per_million: 1.25
+        output_per_million: 10.00
+    cost_budget_usd: null  # Optional: set a USD budget limit
+```
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `pricing.models` | dict | No | Flash + Pro defaults | Map of model name to pricing (USD per million tokens) |
+| `pricing.models.<name>.input_per_million` | float | Yes (per model) | -- | Input token cost per million tokens (>= 0) |
+| `pricing.models.<name>.output_per_million` | float | Yes (per model) | -- | Output token cost per million tokens (>= 0) |
+| `pricing.cost_budget_usd` | float or null | No | `null` | Optional USD budget cap; `null` means no limit |
 
 ### Section: `topics`
 
@@ -195,6 +220,15 @@ All secrets and API keys are configured via environment variables, typically in 
 |----------|---------|-------------|
 | `LOG_LEVEL` | `INFO` | Python logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 | `LOG_FORMAT_JSON` | `false` | Set to `true` to emit JSON-structured logs (auto-enabled on Cloud Run) |
+
+### OpenTelemetry Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OTEL_ENABLED` | `true` | Set to `false` to disable all tracing and cost tracking |
+| `OTEL_SERVICE_NAME` | `newsletter-agent` | Service name for trace identification |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | (empty) | OTLP gRPC endpoint for trace export; empty uses console output |
+| `OTEL_EXPORTER_OTLP_HEADERS` | (empty) | Auth headers for OTLP endpoint (e.g., `Authorization=Bearer token`) |
 
 ### .env File Template
 

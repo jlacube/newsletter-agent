@@ -115,6 +115,10 @@ def run_pipeline():
 
         return jsonify({"status": "error", "message": error_msg, "elapsed_seconds": round(elapsed, 1)}), 500
 
+    finally:
+        from newsletter_agent.telemetry import shutdown_telemetry
+        shutdown_telemetry()
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080)

@@ -1,5 +1,5 @@
 ---
-lane: planned
+lane: doing
 ---
 
 # WP19 - Telemetry Foundation: Dependencies, OTel Init & Config Schema
@@ -327,3 +327,4 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 ## Activity Log
 
 - 2025-07-18T00:00:00Z - planner - lane=planned - Work package created
+- 2025-07-18T12:00:00Z - coder - lane=doing - Begin implementation of WP19 tasks

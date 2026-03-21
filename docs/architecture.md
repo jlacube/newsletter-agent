@@ -163,3 +163,17 @@ Logs use the format: `{timestamp} {level} {logger_name} {message}`
 - Log level is configurable via the `LOG_LEVEL` environment variable
 
 Pipeline timing is instrumented via ADK `before_agent_callback` / `after_agent_callback`, which log per-phase and total execution time.
+
+## Telemetry (OpenTelemetry)
+
+The `newsletter_agent/telemetry.py` module provides OpenTelemetry tracing infrastructure:
+
+- **`init_telemetry()`**: Called at import time in `__init__.py`. Configures a `TracerProvider` with resource attributes (`service.name`, `service.version`, `deployment.environment`). Reads `OTEL_ENABLED`, `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_ENDPOINT`, and `OTEL_EXPORTER_OTLP_HEADERS` from the environment.
+- **`shutdown_telemetry()`**: Called in `__main__.py` (finally block) and `http_handler.py` (after each `/run` request) to flush pending spans.
+- **`get_tracer(name)`**: Returns an OTel tracer for span creation.
+- **`is_enabled()`**: Returns whether telemetry initialized successfully.
+
+Export behavior:
+- With `OTEL_EXPORTER_OTLP_ENDPOINT` set: OTLP gRPC export (plus console in development)
+- Without endpoint: Console span export only
+- With `OTEL_ENABLED=false`: No-op (no spans, no overhead)

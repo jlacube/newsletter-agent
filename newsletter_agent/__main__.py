@@ -98,7 +98,6 @@ def main() -> int:
         elapsed = time.monotonic() - start
         logger.error("[CLI] Pipeline failed after %.1fs: %s: %s", elapsed, type(e).__name__, e)
 
-        # Log sub-exceptions from ExceptionGroup (e.g. ParallelAgent failures)
         if isinstance(e, BaseExceptionGroup):
             for i, sub in enumerate(e.exceptions):
                 logger.error("[CLI]   Sub-exception %d: %s: %s", i + 1, type(sub).__name__, sub)
@@ -109,6 +108,10 @@ def main() -> int:
         }
         print(json.dumps(summary))
         return 1
+
+    finally:
+        from newsletter_agent.telemetry import shutdown_telemetry
+        shutdown_telemetry()
 
 
 if __name__ == "__main__":

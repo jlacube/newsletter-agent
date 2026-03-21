@@ -347,3 +347,15 @@ echo -n "NEW_VALUE" | gcloud secrets versions add SECRET_NAME --data-file=-
 ```
 
 Cloud Run automatically picks up the latest secret version on the next cold start.
+
+## OpenTelemetry Configuration
+
+The pipeline supports OpenTelemetry tracing. By default, spans are exported to console output. To send traces to an OTLP-compatible backend (e.g., GCP Cloud Trace):
+
+```bash
+gcloud run services update newsletter-agent \
+  --region=us-central1 \
+  --set-env-vars="OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector:4317"
+```
+
+Set `OTEL_ENABLED=false` to disable tracing entirely. On Cloud Run, `deployment.environment` is automatically set to `production` (detected via `K_SERVICE`).

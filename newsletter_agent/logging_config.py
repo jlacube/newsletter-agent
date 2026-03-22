@@ -111,6 +111,7 @@ def setup_logging() -> None:
     if use_json:
         handler = logging.StreamHandler(sys.stdout)
         handler.setFormatter(_CloudJsonFormatter())
+        handler.addFilter(TraceContextFilter())
         logger.addHandler(handler)
     else:
         formatter = logging.Formatter(_TEXT_FORMAT, datefmt=_DATE_FORMAT)
@@ -119,12 +120,14 @@ def setup_logging() -> None:
         stdout_handler = logging.StreamHandler(sys.stdout)
         stdout_handler.setLevel(logging.DEBUG)
         stdout_handler.setFormatter(formatter)
+        stdout_handler.addFilter(TraceContextFilter())
         stdout_handler.addFilter(lambda record: record.levelno < logging.ERROR)
 
         # stderr handler for ERROR and above
         stderr_handler = logging.StreamHandler(sys.stderr)
         stderr_handler.setLevel(logging.ERROR)
         stderr_handler.setFormatter(formatter)
+        stderr_handler.addFilter(TraceContextFilter())
 
         logger.addHandler(stdout_handler)
         logger.addHandler(stderr_handler)

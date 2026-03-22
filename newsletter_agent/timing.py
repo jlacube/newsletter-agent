@@ -16,7 +16,7 @@ import re
 import time
 from datetime import datetime, timezone
 
-from newsletter_agent.telemetry import get_tracer, is_enabled
+from newsletter_agent.telemetry import is_enabled
 
 logger = logging.getLogger("newsletter_agent.timing")
 
@@ -65,7 +65,7 @@ def before_agent_callback(callback_context) -> None:
     if is_enabled():
         from opentelemetry import context, trace
 
-        tracer = get_tracer("newsletter_agent.timing")
+        tracer = trace.get_tracer("newsletter_agent.timing")
         span = tracer.start_span(name=agent_name)
         span.set_attribute("newsletter.agent.name", agent_name)
         span.set_attribute(

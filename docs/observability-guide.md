@@ -169,6 +169,9 @@ All project logs use trace correlation:
 ```
 
 When no active span exists, zero IDs are emitted.
+Handler-level trace filtering ensures child loggers under the `newsletter_agent`
+namespace also receive `trace_id` and `span_id` fields consistently during tests
+and normal runtime execution.
 
 ### Practical Debug Flow
 

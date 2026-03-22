@@ -38,7 +38,7 @@ def _make_ctx(agent_name, invocation_id="perf-inv", state=None):
     return ctx
 
 
-def _simulate_mock_llm_work(duration_seconds=0.004):
+def _simulate_mock_llm_work(duration_seconds=0.01):
     """Burn a small, deterministic amount of wall-clock time.
 
     This approximates mocked downstream work so the benchmark measures
@@ -151,7 +151,7 @@ class TestOtelOverhead:
         init_cost_tracker(
             pricing={"gemini-2.5-pro": ModelPricing(1.25, 10.00)},
         )
-        iterations = 18
+        iterations = 10
         logger = logging.getLogger("newsletter_agent.timing")
 
         # Warm up

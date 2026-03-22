@@ -88,7 +88,7 @@ class TestBackwardCompatibility:
             return ctx.session.state
 
         import asyncio
-        state = asyncio.get_event_loop().run_until_complete(_run())
+        state = asyncio.run(_run())
 
         assert state["config_newsletter_title"] == "Legacy Config Test"
         assert state["config_recipient_email"] == "test@example.com"

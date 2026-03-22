@@ -6,7 +6,7 @@ Spec refs: Section 11.2 Feature: Autonomous CLI Execution, US-01.
 """
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -50,13 +50,13 @@ def _success_state(dry_run=False, output_file=None, topic_count=3):
 class TestSuccessfulPipelineRun:
     """BDD Scenario: Successful pipeline run via CLI."""
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
     def test_given_valid_config_when_executed_then_exits_zero(
-        self, mock_logging, mock_run, capsys
+        self, mock_logging, mock_run_pipeline, capsys
     ):
         # Given valid config with dry_run true
-        mock_run.return_value = _success_state(
+        mock_run_pipeline.return_value = _success_state(
             dry_run=True,
             output_file="output/2025-03-15-newsletter.html",
         )
@@ -67,13 +67,13 @@ class TestSuccessfulPipelineRun:
         # Then the process exits with code 0
         assert exit_code == 0
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
     def test_given_dry_run_when_executed_then_json_summary_has_output_file(
-        self, mock_logging, mock_run, capsys
+        self, mock_logging, mock_run_pipeline, capsys
     ):
         # Given valid config with dry_run true
-        mock_run.return_value = _success_state(
+        mock_run_pipeline.return_value = _success_state(
             dry_run=True,
             output_file="output/2025-03-15-newsletter.html",
         )
@@ -86,13 +86,13 @@ class TestSuccessfulPipelineRun:
         summary = json.loads(captured.out.strip())
         assert summary["output_file"] == "output/2025-03-15-newsletter.html"
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
     def test_given_valid_config_when_executed_then_json_summary_status_success(
-        self, mock_logging, mock_run, capsys
+        self, mock_logging, mock_run_pipeline, capsys
     ):
         # Given valid config with dry_run true
-        mock_run.return_value = _success_state(dry_run=True, output_file="output/x.html")
+        mock_run_pipeline.return_value = _success_state(dry_run=True, output_file="output/x.html")
 
         # When python -m newsletter_agent is executed
         _run_main()
@@ -118,13 +118,13 @@ class TestSuccessfulPipelineRun:
 class TestConfigError:
     """BDD Scenario: CLI handles config error."""
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
     def test_given_bad_config_when_executed_then_exits_one(
-        self, mock_logging, mock_run, capsys
+        self, mock_logging, mock_run_pipeline, capsys
     ):
         # Given config with missing required field (raises at pipeline startup)
-        mock_run.side_effect = FileNotFoundError("Config file not found: config/topics.yaml")
+        mock_run_pipeline.side_effect = FileNotFoundError("Config file not found: config/topics.yaml")
 
         # When python -m newsletter_agent is executed
         exit_code = _run_main()
@@ -132,13 +132,13 @@ class TestConfigError:
         # Then the process exits with code 1
         assert exit_code == 1
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
     def test_given_bad_config_when_executed_then_error_logged(
-        self, mock_logging, mock_run, capsys
+        self, mock_logging, mock_run_pipeline, capsys
     ):
         # Given config with missing required field
-        mock_run.side_effect = FileNotFoundError("Config file not found")
+        mock_run_pipeline.side_effect = FileNotFoundError("Config file not found")
 
         # When python -m newsletter_agent is executed
         _run_main()
@@ -164,13 +164,13 @@ class TestConfigError:
 class TestPipelineFailure:
     """BDD Scenario: CLI handles pipeline failure."""
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
     def test_given_pipeline_failure_when_executed_then_exits_one(
-        self, mock_logging, mock_run, capsys
+        self, mock_logging, mock_run_pipeline, capsys
     ):
         # Given valid config and all research providers fail
-        mock_run.side_effect = RuntimeError("All search providers failed")
+        mock_run_pipeline.side_effect = RuntimeError("All search providers failed")
 
         # When python -m newsletter_agent is executed
         exit_code = _run_main()
@@ -178,13 +178,13 @@ class TestPipelineFailure:
         # Then the process exits with code 1
         assert exit_code == 1
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
     def test_given_pipeline_failure_when_executed_then_error_logged(
-        self, mock_logging, mock_run, capsys
+        self, mock_logging, mock_run_pipeline, capsys
     ):
         # Given valid config and all research providers fail
-        mock_run.side_effect = RuntimeError("All search providers failed")
+        mock_run_pipeline.side_effect = RuntimeError("All search providers failed")
 
         # When python -m newsletter_agent is executed
         _run_main()

@@ -9,7 +9,7 @@ Spec refs: FR-CLI-002, FR-CLI-004, FR-CLI-005, Section 11.3 (WP14 T14-03).
 import json
 import pytest
 from io import StringIO
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from newsletter_agent.__main__ import main
 
@@ -24,7 +24,7 @@ class TestCLIRunnerIntegration:
             "newsletter_metadata": {"topic_count": 2},
         }
 
-        with patch("newsletter_agent.__main__.run_pipeline", return_value=mock_state):
+        with patch("newsletter_agent.__main__.run_pipeline", new=AsyncMock(return_value=mock_state)):
             with patch("newsletter_agent.__main__.setup_logging"):
                 with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                     exit_code = main()
@@ -38,7 +38,7 @@ class TestCLIRunnerIntegration:
         """main() returns exit code 1 when pipeline raises an exception."""
         with patch(
             "newsletter_agent.__main__.run_pipeline",
-            side_effect=RuntimeError("Pipeline exploded"),
+            new=AsyncMock(side_effect=RuntimeError("Pipeline exploded")),
         ):
             with patch("newsletter_agent.__main__.setup_logging"):
                 with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
@@ -57,7 +57,7 @@ class TestCLIRunnerIntegration:
             "newsletter_metadata": {"topic_count": 3},
         }
 
-        with patch("newsletter_agent.__main__.run_pipeline", return_value=mock_state):
+        with patch("newsletter_agent.__main__.run_pipeline", new=AsyncMock(return_value=mock_state)):
             with patch("newsletter_agent.__main__.setup_logging"):
                 with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                     main()
@@ -76,7 +76,7 @@ class TestCLIRunnerIntegration:
             "newsletter_metadata": {"topic_count": 1},
         }
 
-        with patch("newsletter_agent.__main__.run_pipeline", return_value=mock_state):
+        with patch("newsletter_agent.__main__.run_pipeline", new=AsyncMock(return_value=mock_state)):
             with patch("newsletter_agent.__main__.setup_logging"):
                 with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                     main()
@@ -92,7 +92,7 @@ class TestCLIRunnerIntegration:
             "newsletter_metadata": {"topic_count": 2},
         }
 
-        with patch("newsletter_agent.__main__.run_pipeline", return_value=mock_state):
+        with patch("newsletter_agent.__main__.run_pipeline", new=AsyncMock(return_value=mock_state)):
             with patch("newsletter_agent.__main__.setup_logging"):
                 with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                     main()
@@ -108,7 +108,7 @@ class TestCLIRunnerIntegration:
             "newsletter_metadata": {"topic_count": 5},
         }
 
-        with patch("newsletter_agent.__main__.run_pipeline", return_value=mock_state):
+        with patch("newsletter_agent.__main__.run_pipeline", new=AsyncMock(return_value=mock_state)):
             with patch("newsletter_agent.__main__.setup_logging"):
                 with patch("sys.stdout", new_callable=StringIO) as mock_stdout:
                     main()

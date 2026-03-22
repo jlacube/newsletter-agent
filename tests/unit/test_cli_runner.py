@@ -51,11 +51,11 @@ def _make_success_state(topic_count=3, dry_run=False, output_file=None):
 
 class TestMainSuccess:
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_exit_code_zero_on_success(self, mock_logging, mock_asyncio_run, capsys):
+    def test_exit_code_zero_on_success(self, mock_logging, mock_run_pipeline, capsys):
         """main() returns 0 on successful pipeline completion. FR-CLI-004."""
-        mock_asyncio_run.return_value = _make_success_state()
+        mock_run_pipeline.return_value = _make_success_state()
 
         from newsletter_agent.__main__ import main
         exit_code = main()
@@ -63,11 +63,11 @@ class TestMainSuccess:
         assert exit_code == 0
         mock_logging.assert_called_once()
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_json_summary_on_success(self, mock_logging, mock_asyncio_run, capsys):
+    def test_json_summary_on_success(self, mock_logging, mock_run_pipeline, capsys):
         """main() prints JSON summary with required fields. FR-CLI-005."""
-        mock_asyncio_run.return_value = _make_success_state(topic_count=5)
+        mock_run_pipeline.return_value = _make_success_state(topic_count=5)
 
         from newsletter_agent.__main__ import main
         main()
@@ -79,11 +79,11 @@ class TestMainSuccess:
         assert summary["topics_processed"] == 5
         assert "email_sent" in summary
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_email_sent_true_when_sent(self, mock_logging, mock_asyncio_run, capsys):
+    def test_email_sent_true_when_sent(self, mock_logging, mock_run_pipeline, capsys):
         """email_sent is True when delivery status is 'sent'. FR-CLI-005."""
-        mock_asyncio_run.return_value = _make_success_state()
+        mock_run_pipeline.return_value = _make_success_state()
 
         from newsletter_agent.__main__ import main
         main()
@@ -92,11 +92,11 @@ class TestMainSuccess:
         summary = json.loads(captured.out.strip())
         assert summary["email_sent"] is True
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_dry_run_includes_output_file(self, mock_logging, mock_asyncio_run, capsys):
+    def test_dry_run_includes_output_file(self, mock_logging, mock_run_pipeline, capsys):
         """Dry run includes output_file in summary. FR-CLI-005."""
-        mock_asyncio_run.return_value = _make_success_state(
+        mock_run_pipeline.return_value = _make_success_state(
             dry_run=True, output_file="output/2025-01-01-newsletter.html"
         )
 
@@ -109,11 +109,11 @@ class TestMainSuccess:
         assert summary["output_file"] == "output/2025-01-01-newsletter.html"
         assert summary["email_sent"] is False
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_newsletter_date_is_iso_format(self, mock_logging, mock_asyncio_run, capsys):
+    def test_newsletter_date_is_iso_format(self, mock_logging, mock_run_pipeline, capsys):
         """newsletter_date is ISO YYYY-MM-DD format. FR-CLI-005."""
-        mock_asyncio_run.return_value = _make_success_state()
+        mock_run_pipeline.return_value = _make_success_state()
 
         from newsletter_agent.__main__ import main
         main()
@@ -130,22 +130,22 @@ class TestMainSuccess:
 
 class TestMainFailure:
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_exit_code_one_on_exception(self, mock_logging, mock_asyncio_run, capsys):
+    def test_exit_code_one_on_exception(self, mock_logging, mock_run_pipeline, capsys):
         """main() returns 1 on pipeline exception. FR-CLI-004."""
-        mock_asyncio_run.side_effect = RuntimeError("LLM quota exceeded")
+        mock_run_pipeline.side_effect = RuntimeError("LLM quota exceeded")
 
         from newsletter_agent.__main__ import main
         exit_code = main()
 
         assert exit_code == 1
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_error_summary_on_exception(self, mock_logging, mock_asyncio_run, capsys):
+    def test_error_summary_on_exception(self, mock_logging, mock_run_pipeline, capsys):
         """main() prints error JSON summary on failure. FR-CLI-005."""
-        mock_asyncio_run.side_effect = RuntimeError("LLM quota exceeded")
+        mock_run_pipeline.side_effect = RuntimeError("LLM quota exceeded")
 
         from newsletter_agent.__main__ import main
         main()
@@ -157,11 +157,11 @@ class TestMainFailure:
         assert "RuntimeError" in summary["message"]
         assert "LLM quota exceeded" in summary["message"]
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_error_summary_on_config_error(self, mock_logging, mock_asyncio_run, capsys):
+    def test_error_summary_on_config_error(self, mock_logging, mock_run_pipeline, capsys):
         """main() returns 1 on config error. FR-CLI-004."""
-        mock_asyncio_run.side_effect = FileNotFoundError("Config file not found: config/topics.yaml")
+        mock_run_pipeline.side_effect = FileNotFoundError("Config file not found: config/topics.yaml")
 
         from newsletter_agent.__main__ import main
         exit_code = main()
@@ -276,11 +276,11 @@ class TestRunPipeline:
 
 class TestLogging:
 
-    @patch("newsletter_agent.__main__.asyncio.run")
+    @patch("newsletter_agent.__main__.run_pipeline", new_callable=AsyncMock)
     @patch("newsletter_agent.__main__.setup_logging")
-    def test_setup_logging_called(self, mock_logging, mock_asyncio_run):
+    def test_setup_logging_called(self, mock_logging, mock_run_pipeline):
         """main() calls setup_logging before running pipeline. FR-CLI-003."""
-        mock_asyncio_run.return_value = _make_success_state()
+        mock_run_pipeline.return_value = _make_success_state()
 
         from newsletter_agent.__main__ import main
         main()

@@ -9,6 +9,7 @@ Spec refs: FR-101 through FR-106, FR-602, FR-603, FR-604, Section 8.1.
 
 import logging
 import os
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -137,12 +138,12 @@ def init_telemetry() -> None:
             # In development, also log to console for local debugging
             if not is_production:
                 provider.add_span_processor(
-                    SimpleSpanProcessor(ConsoleSpanExporter())
+                    SimpleSpanProcessor(ConsoleSpanExporter(out=sys.__stdout__))
                 )
         else:
             # No OTLP endpoint: console output only
             provider.add_span_processor(
-                BatchSpanProcessor(ConsoleSpanExporter())
+                BatchSpanProcessor(ConsoleSpanExporter(out=sys.__stdout__))
             )
 
         trace.set_tracer_provider(provider)

@@ -53,7 +53,7 @@ class TestCLISubprocessExecution:
             import json
             import logging
             import sys
-            from unittest.mock import patch
+            from unittest.mock import AsyncMock, patch
 
             # Suppress all logging to avoid polluting stdout
             logging.disable(logging.CRITICAL)
@@ -63,7 +63,7 @@ class TestCLISubprocessExecution:
                 "newsletter_metadata": {"topic_count": 2},
             }
 
-            with patch("newsletter_agent.__main__.run_pipeline", return_value=mock_state):
+            with patch("newsletter_agent.__main__.run_pipeline", new=AsyncMock(return_value=mock_state)):
                 with patch("newsletter_agent.__main__.setup_logging"):
                     from newsletter_agent.__main__ import main
                     sys.exit(main())
@@ -85,13 +85,13 @@ class TestCLISubprocessExecution:
         script.write_text(textwrap.dedent("""\
             import logging
             import sys
-            from unittest.mock import patch
+            from unittest.mock import AsyncMock, patch
 
             logging.disable(logging.CRITICAL)
 
             with patch(
                 "newsletter_agent.__main__.run_pipeline",
-                side_effect=RuntimeError("Config error"),
+                new=AsyncMock(side_effect=RuntimeError("Config error")),
             ):
                 with patch("newsletter_agent.__main__.setup_logging"):
                     from newsletter_agent.__main__ import main
@@ -112,7 +112,7 @@ class TestCLISubprocessExecution:
         script.write_text(textwrap.dedent("""\
             import logging
             import sys
-            from unittest.mock import patch
+            from unittest.mock import AsyncMock, patch
 
             logging.disable(logging.CRITICAL)
 
@@ -121,7 +121,7 @@ class TestCLISubprocessExecution:
                 "newsletter_metadata": {"topic_count": 1},
             }
 
-            with patch("newsletter_agent.__main__.run_pipeline", return_value=mock_state):
+            with patch("newsletter_agent.__main__.run_pipeline", new=AsyncMock(return_value=mock_state)):
                 with patch("newsletter_agent.__main__.setup_logging"):
                     from newsletter_agent.__main__ import main
                     sys.exit(main())

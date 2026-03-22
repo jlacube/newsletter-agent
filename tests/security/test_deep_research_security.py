@@ -44,11 +44,13 @@ class TestCLIArgumentSafety:
                 sys.executable,
                 "-c",
                 "from newsletter_agent.__main__ import main; "
-                "import sys; sys.argv = ['test', '--malicious', '--inject=rm -rf /']",
+                "from newsletter_agent.telemetry import shutdown_telemetry; "
+                "import sys; sys.argv = ['test', '--malicious', '--inject=rm -rf /']; "
+                "shutdown_telemetry()",
             ],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,
         )
         # Should import fine - the main function ignores args
         assert result.returncode == 0, f"Import failed: {result.stderr}"

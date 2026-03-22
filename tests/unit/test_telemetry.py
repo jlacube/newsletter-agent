@@ -210,6 +210,29 @@ class TestShutdownTelemetry:
         """shutdown_telemetry() does not raise when not initialized."""
         tel.shutdown_telemetry()  # Should not raise
 
+    def test_shutdown_uses_force_flush_timeout_and_no_arg_shutdown(self):
+        """shutdown_telemetry() uses a timed force_flush and SDK-compatible shutdown call."""
+
+        class _ProviderWithUntimedShutdown:
+            def __init__(self):
+                self.force_flush_calls = []
+                self.shutdown_calls = 0
+
+            def force_flush(self, timeout_millis=30000):
+                self.force_flush_calls.append(timeout_millis)
+                return True
+
+            def shutdown(self):
+                self.shutdown_calls += 1
+
+        provider = _ProviderWithUntimedShutdown()
+
+        with patch("opentelemetry.trace.get_tracer_provider", return_value=provider):
+            tel.shutdown_telemetry()
+
+        assert provider.force_flush_calls == [5000]
+        assert provider.shutdown_calls == 1
+
     def test_shutdown_on_exception(self, caplog):
         """shutdown_telemetry() logs warning but does not raise on error."""
         with caplog.at_level(logging.WARNING):
@@ -217,6 +240,29 @@ class TestShutdownTelemetry:
                 mock_prov.return_value.shutdown.side_effect = RuntimeError("timeout")
                 tel.shutdown_telemetry()
         assert "Telemetry shutdown error" in caplog.text
+
+    def test_shutdown_falls_back_when_shutdown_supports_timeout(self):
+        """shutdown_telemetry() still passes timeout_millis when the provider accepts it."""
+
+        class _ProviderWithTimedShutdown:
+            def __init__(self):
+                self.force_flush_calls = []
+                self.shutdown_calls = []
+
+            def force_flush(self, timeout_millis=30000):
+                self.force_flush_calls.append(timeout_millis)
+                return True
+
+            def shutdown(self, timeout_millis=30000):
+                self.shutdown_calls.append(timeout_millis)
+
+        provider = _ProviderWithTimedShutdown()
+
+        with patch("opentelemetry.trace.get_tracer_provider", return_value=provider):
+            tel.shutdown_telemetry()
+
+        assert provider.force_flush_calls == [5000]
+        assert provider.shutdown_calls == [5000]
 
 
 class TestGetTracer:

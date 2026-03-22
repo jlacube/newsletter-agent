@@ -9,6 +9,7 @@ Spec refs: FR-101 through FR-106, FR-602, FR-603, FR-604, Section 8.1.
 
 import logging
 import os
+import inspect
 import sys
 
 logger = logging.getLogger(__name__)
@@ -157,15 +158,28 @@ def init_telemetry() -> None:
 def shutdown_telemetry() -> None:
     """Flush pending spans and shut down the TracerProvider.
 
-    Uses a 5-second timeout. Never raises.
+    Uses a 5-second flush timeout when supported by the installed SDK.
+    The installed OpenTelemetry API may expose the timeout on force_flush()
+    rather than shutdown(). Never raises.
     Spec ref: FR-106.
     """
     try:
         from opentelemetry import trace
 
         provider = trace.get_tracer_provider()
+        if hasattr(provider, "force_flush"):
+            force_flush_params = inspect.signature(provider.force_flush).parameters
+            if "timeout_millis" in force_flush_params:
+                provider.force_flush(timeout_millis=5000)
+            else:
+                provider.force_flush()
+
         if hasattr(provider, "shutdown"):
-            provider.shutdown(timeout_millis=5000)
+            shutdown_params = inspect.signature(provider.shutdown).parameters
+            if "timeout_millis" in shutdown_params:
+                provider.shutdown(timeout_millis=5000)
+            else:
+                provider.shutdown()
     except Exception:
         logger.warning("Telemetry shutdown error", exc_info=True)
 

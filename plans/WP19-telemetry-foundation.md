@@ -1,6 +1,6 @@
 ---
-lane: done
-review_status:
+lane: for_review
+review_status: acknowledged
 ---
 
 # WP19 - Telemetry Foundation: Dependencies, OTel Init & Config Schema
@@ -74,7 +74,7 @@ Establish the foundational telemetry infrastructure that all subsequent observab
   - [ ] `init_telemetry()` is idempotent -- second call is a no-op
   - [ ] On `ImportError` for OTel packages: logs WARNING `"OpenTelemetry SDK not available. Install opentelemetry-sdk to enable tracing."`, sets `_initialized = False`, returns (FR-101 error)
   - [ ] On any other exception: logs WARNING with traceback, sets `_initialized = False`, returns
-  - [ ] `shutdown_telemetry()` calls `TracerProvider.shutdown(timeout_millis=5000)`. On timeout: logs WARNING, returns. Never raises. (FR-106)
+    - [ ] `shutdown_telemetry()` honors the 5-second shutdown budget using the timeout-bearing API exposed by the installed OTel SDK and never raises. (FR-106)
   - [ ] `get_tracer(name)` returns `trace.get_tracer(name)` if `_initialized` else a `NoOpTracer` equivalent
   - [ ] `is_enabled()` returns `_initialized`
 - **Test requirements**: unit (T19-07)
@@ -87,7 +87,7 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 - [x] FR-103: Resource service.name from OTEL_SERVICE_NAME (default "newsletter-agent")
 - [x] FR-104: Resource service.version from package version (fallback "0.1.0")
 - [x] FR-105: deployment.environment = "production" if K_SERVICE set, else "development"
-- [x] FR-106: shutdown_telemetry() calls provider.shutdown(timeout_millis=5000); never raises
+- [x] FR-106: shutdown_telemetry() honors the 5-second shutdown budget via `force_flush(timeout_millis=5000)` and then calls the SDK-compatible `shutdown()` entry point; never raises
 - [x] FR-602: OTLP endpoint set -> BatchSpanProcessor(OTLPSpanExporter(endpoint=...))
 - [x] FR-603: No OTLP endpoint -> BatchSpanProcessor(ConsoleSpanExporter)
 - [x] FR-604: Dev mode + OTLP -> also SimpleSpanProcessor(ConsoleSpanExporter)
@@ -95,6 +95,9 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 - [x] Section 8.1: get_tracer(name) returns tracer if initialized, NoOp otherwise
 - [x] Section 8.1: is_enabled() returns _initialized
 - [x] General exception: logs WARNING with traceback, sets _initialized=False
+
+- **Technical Deviation Note**:
+  The spec and the earlier review text assumed `TracerProvider.shutdown(timeout_millis=5000)`. In the installed `opentelemetry-sdk 1.38.0`, `shutdown()` has signature `(self) -> None` while `force_flush()` carries the timeout argument. The implementation therefore uses `force_flush(timeout_millis=5000)` followed by a compatible `shutdown()` call to preserve the intended 5-second flush behavior without raising a runtime `TypeError`.
 
 - **Implementation Guidance**:
   - Official docs: https://opentelemetry.io/docs/languages/python/instrumentation/
@@ -424,6 +427,8 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 - 2026-03-21T12:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03). Process deviation noted: WP19 tasks were committed in a single commit (f5c3648) instead of one commit per task. This cannot be retroactively fixed. Future WPs will use per-task commits.
 - 2026-03-21T12:30:00Z - coder - lane=for_review - All feedback items resolved, submitted for re-review
 - 2026-03-21T13:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
+- 2026-03-22T08:01:19Z - coder - lane=doing - Addressing runtime OTel shutdown incompatibility discovered against installed opentelemetry-sdk 1.38.0
+- 2026-03-22T08:01:19Z - coder - lane=for_review - Runtime shutdown compatibility fix implemented and validated; ready for re-review
 
 ## Review
 
@@ -630,3 +635,15 @@ All three FAILs from the initial review are resolved. No regressions detected. T
 ### Surviving WARNs (from initial review)
 - **WARN** - Coverage Thresholds: `branch = true` still not in pyproject.toml. Does not block correctness.
 - **WARN** - Scope Discipline: Test files in `tests/unit/` vs plan-declared `tests/`. Correct for project convention.
+
+## Post-Approval Remediation
+
+### Summary
+
+A runtime incompatibility was discovered after approval: the installed `opentelemetry-sdk 1.38.0` does not accept `timeout_millis` on `TracerProvider.shutdown()`. `shutdown_telemetry()` has been updated to use `force_flush(timeout_millis=5000)` followed by the SDK-compatible `shutdown()` call, and the telemetry unit tests plus a runtime smoke check now pass. A full CLI run no longer emits the previous telemetry shutdown keyword-argument error; the observed `503 UNAVAILABLE` failure is unrelated to telemetry shutdown.
+
+### Validation
+
+- `pytest tests/unit/test_telemetry.py -q` -> `35 passed`
+- `python -c "from newsletter_agent.telemetry import init_telemetry, shutdown_telemetry; init_telemetry(); shutdown_telemetry(); print('telemetry-smoke-ok')"` -> `telemetry-smoke-ok`
+- `python -m newsletter_agent` -> no `Telemetry shutdown error`; unrelated `503 UNAVAILABLE` observed

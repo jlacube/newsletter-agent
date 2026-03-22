@@ -70,6 +70,9 @@ _HEADING_RE = re.compile(r"<h[1-3][^>]*>(.*?)</h[1-3]>", re.IGNORECASE | re.DOTA
 # Regex to strip all HTML tags
 _TAG_RE = re.compile(r"<[^>]+>")
 
+_GOOGLE_GROUNDING_HOST = "vertexaisearch.cloud.google.com"
+_GOOGLE_GROUNDING_PATH_PREFIX = "/grounding-api-redirect/"
+
 
 @dataclass(frozen=True)
 class LinkCheckResult:
@@ -109,6 +112,17 @@ def _check_scheme(url: str) -> bool:
     """Return True if URL uses an allowed scheme (http or https)."""
     parsed = urlparse(url)
     return parsed.scheme.lower() in _ALLOWED_SCHEMES
+
+
+def _is_google_grounding_redirect(url: str) -> bool:
+    """Return True for Google grounding redirect URLs emitted by google_search."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return (
+        parsed.scheme.lower() == "https"
+        and host == _GOOGLE_GROUNDING_HOST
+        and parsed.path.startswith(_GOOGLE_GROUNDING_PATH_PREFIX)
+    )
 
 
 def _extract_title(html_snippet: str) -> str | None:
@@ -160,6 +174,9 @@ async def _check_one_url(
     semaphore: asyncio.Semaphore,
 ) -> LinkCheckResult:
     """Verify a single URL with streaming GET, title extraction, and soft-404 detection."""
+    if _is_google_grounding_redirect(url):
+        return LinkCheckResult(url=url, status="valid", http_status=200)
+
     # Pre-flight: scheme check
     if not _check_scheme(url):
         return LinkCheckResult(url=url, status="broken", error="invalid_scheme")

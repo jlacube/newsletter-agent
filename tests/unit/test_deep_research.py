@@ -36,6 +36,7 @@ def _make_orchestrator(**overrides) -> DeepResearchOrchestrator:
         provider="google",
         query="AI news latest developments",
         topic_name="Artificial Intelligence",
+        timeframe_instruction=None,
         max_rounds=3,
         search_depth="deep",
         model="gemini-2.5-flash",
@@ -159,6 +160,28 @@ class TestURLExtraction:
         assert "https://example.com/article1" in urls
         assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ" in urls
         assert len(urls) == 2
+
+    def test_extracts_titled_parenthetical_urls(self):
+        text = (
+            "SOURCES:\n"
+            "- LLM Benchmarks 2026 - Complete Evaluation Suite "
+            "(https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123)\n"
+            "- Another Source (https://example.com/article)\n"
+        )
+        urls = DeepResearchOrchestrator._extract_urls(text)
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123" in urls
+        assert "https://example.com/article" in urls
+        assert len(urls) == 2
+
+    def test_extracts_html_anchor_urls(self):
+        text = (
+            '<div class="carousel">'
+            '<a class="chip" href="https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC">'
+            'AI agent frameworks adoption trends 2026</a>'
+            '</div>'
+        )
+        urls = DeepResearchOrchestrator._extract_urls(text)
+        assert urls == {"https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC"}
 
     def test_does_not_double_count_markdown_urls(self):
         text = "[Title](https://example.com/page)"
@@ -303,6 +326,44 @@ class TestMergeRounds:
         assert "https://example.com/article1" in sources
         assert "vertexaisearch.cloud.google.com/grounding-api-redirect/XYZ" in sources
 
+    def test_merges_titled_parenthetical_sources(self):
+        state = {
+            "research_0_google_round_0": (
+                "SUMMARY:\nParenthetical sources.\n\n"
+                "SOURCES:\n"
+                "- LLM Benchmarks 2026 - Complete Evaluation Suite "
+                "(https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123)\n"
+                "- Another Source (https://example.com/article)\n"
+            ),
+        }
+        orch = _make_orchestrator()
+        merged = orch._merge_rounds(state, 1)
+        sources = merged.split("SOURCES:")[1]
+        assert "LLM Benchmarks 2026 - Complete Evaluation Suite" in sources
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123" in sources
+        assert "Another Source" in sources
+        assert "https://example.com/article" in sources
+
+    def test_merges_html_anchor_sources(self):
+        state = {
+            "research_0_google_round_0": (
+                "SUMMARY:\nHTML sources.\n\n"
+                '<div class="carousel">'
+                '<a class="chip" href="https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC">'
+                'AI agent frameworks adoption trends 2026</a>'
+                '<a class="chip" href="https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEF">'
+                'Google ADK new developments March 2026</a>'
+                '</div>'
+            ),
+        }
+        orch = _make_orchestrator()
+        merged = orch._merge_rounds(state, 1)
+        sources = merged.split("SOURCES:")[1]
+        assert "AI agent frameworks adoption trends 2026" in sources
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC" in sources
+        assert "Google ADK new developments March 2026" in sources
+        assert "https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEF" in sources
+
 
 # ---------------------------------------------------------------------------
 # Test: State cleanup (T12-07)
@@ -397,6 +458,18 @@ class TestOrchestratorRun:
         assert "DeepSearchRound" in agent.name
         assert agent.output_key == "deep_research_latest_0_google"
 
+    def test_google_search_agent_includes_timeframe_instruction(self):
+        """Deep Google rounds keep the configured timeframe in the prompt."""
+        orch = _make_orchestrator(
+            provider="google",
+            timeframe_instruction="Focus on results from the past month.",
+        )
+
+        agent = orch._make_search_agent(0, "test query")
+        instruction = agent.instruction(None)
+
+        assert "Focus on results from the past month." in instruction
+
 
 # ---------------------------------------------------------------------------
 # Test: _parse_planning_output
@@ -450,6 +523,17 @@ class TestParsePlanningOutput:
         raw = '```json\n{"initial_search_query": "test", "key_aspects": ["x", "y", "z"]}\n```'
         query, aspects = orch._parse_planning_output(raw)
         assert query == "test"
+
+    def test_wrapped_json_parsed(self):
+        orch = _make_orchestrator()
+        raw = (
+            "Here is the plan:\n"
+            '{"initial_search_query": "wrapped", "key_aspects": ["x", "y", "z"]}\n'
+            "Use it carefully."
+        )
+        query, aspects = orch._parse_planning_output(raw)
+        assert query == "wrapped"
+        assert aspects == ["x", "y", "z"]
 
     def test_non_dict_json_returns_fallback(self):
         orch = _make_orchestrator()
@@ -555,6 +639,18 @@ class TestParseAnalysisOutput:
         result = orch._parse_analysis_output(raw, round_idx=0)
         assert result["saturated"] is True
 
+    def test_wrapped_analysis_json_parsed(self):
+        orch = _make_orchestrator()
+        raw = (
+            "Analysis result follows:\n"
+            '{"findings_summary":"F","knowledge_gaps":["g1"],"coverage_assessment":"good","saturated":false,"next_query":"next","next_query_rationale":"because"}\n'
+            "End of report."
+        )
+        result = orch._parse_analysis_output(raw, round_idx=0)
+        assert result["findings_summary"] == "F"
+        assert result["knowledge_gaps"] == ["g1"]
+        assert result["next_query"] == "next"
+
     def test_non_dict_json_returns_fallback(self):
         orch = _make_orchestrator()
         result = orch._parse_analysis_output("[1, 2, 3]", round_idx=0)
@@ -579,6 +675,20 @@ class TestStripCodeFences:
     def test_non_string_input(self):
         result = DeepResearchOrchestrator._strip_code_fences(42)
         assert isinstance(result, str)
+
+
+class TestExtractJsonObject:
+
+    def test_returns_full_json_when_clean(self):
+        raw = '{"key": "value"}'
+        assert DeepResearchOrchestrator._extract_json_object(raw) == raw
+
+    def test_extracts_json_from_wrapper_text(self):
+        raw = 'prefix\n{"key": "value"}\nsuffix'
+        assert DeepResearchOrchestrator._extract_json_object(raw) == '{"key": "value"}'
+
+    def test_returns_none_when_missing(self):
+        assert DeepResearchOrchestrator._extract_json_object("no json here") is None
 
 
 # ---------------------------------------------------------------------------
@@ -640,3 +750,20 @@ class TestCollectBareUrls:
         seen = {}
         DeepResearchOrchestrator._collect_bare_urls(text, seen)
         assert "https://example.com/md" not in seen
+
+    def test_collects_titled_parenthetical_url_on_same_line(self):
+        text = "- My Article (https://example.com/article)"
+        seen = {}
+        DeepResearchOrchestrator._collect_bare_urls(text, seen)
+        assert seen == {"https://example.com/article": "My Article"}
+
+    def test_collects_html_anchor_urls(self):
+        text = (
+            '<a class="chip" href="https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC">'
+            'AI agent frameworks adoption trends 2026</a>'
+        )
+        seen = {}
+        DeepResearchOrchestrator._collect_bare_urls(text, seen)
+        assert seen == {
+            "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC": "AI agent frameworks adoption trends 2026"
+        }

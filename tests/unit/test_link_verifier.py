@@ -18,6 +18,7 @@ from newsletter_agent.tools.link_verifier import (
     LinkCheckResult,
     _check_one_url,
     _is_private_ip,
+    _is_google_grounding_redirect,
     _check_scheme,
     _extract_title,
     _is_soft_404,
@@ -248,6 +249,16 @@ class TestSSRFProtection:
         assert _check_scheme("file:///etc/passwd") is False
 
 
+class TestGoogleGroundingRedirects:
+    def test_detects_google_grounding_redirect(self):
+        url = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123"
+        assert _is_google_grounding_redirect(url) is True
+
+    def test_non_grounding_url_not_detected(self):
+        url = "https://example.com/grounding-api-redirect/ABC123"
+        assert _is_google_grounding_redirect(url) is False
+
+
 # ---------------------------------------------------------------------------
 # verify_urls() tests
 # ---------------------------------------------------------------------------
@@ -268,6 +279,14 @@ class TestVerifyUrls:
         assert r.http_status == 200
         assert r.error is None
         assert r.page_title == "My Article"
+
+    @pytest.mark.asyncio
+    async def test_google_grounding_redirect_is_preserved(self):
+        url = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123"
+        results = await verify_urls([url])
+        r = results[url]
+        assert r.status == "valid"
+        assert r.http_status == 200
 
     @pytest.mark.asyncio
     async def test_redirect_301_to_200(self, respx_mock):

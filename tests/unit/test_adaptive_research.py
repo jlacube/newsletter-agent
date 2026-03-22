@@ -157,6 +157,17 @@ class TestPlanningOutputParsing:
         query, aspects = orch._parse_planning_output(raw)
         assert query == "fenced q"
 
+    def test_wrapped_json_is_parsed(self):
+        orch = _make_orchestrator()
+        raw = (
+            "Planner output follows:\n"
+            f"{_planning_json('wrapped q', ['a', 'b', 'c'])}\n"
+            "Thanks"
+        )
+        query, aspects = orch._parse_planning_output(raw)
+        assert query == "wrapped q"
+        assert aspects[:3] == ["a", "b", "c"]
+
     def test_empty_key_aspects_padded(self):
         orch = _make_orchestrator()
         raw = json.dumps({
@@ -252,6 +263,14 @@ class TestAnalysisOutputParsing:
         raw = f"```json\n{_analysis_json(saturated=True, next_query=None)}\n```"
         result = orch._parse_analysis_output(raw, round_idx=0)
         assert result["saturated"] is True
+
+    def test_wrapped_analysis_json_is_parsed(self):
+        orch = _make_orchestrator()
+        raw = f"Analysis output:\n{_analysis_json(saturated=False, next_query='wrapped next', gaps=['g1'])}\nDone"
+        result = orch._parse_analysis_output(raw, round_idx=0)
+        assert result["saturated"] is False
+        assert result["next_query"] == "wrapped next"
+        assert result["knowledge_gaps"] == ["g1"]
 
     def test_non_list_knowledge_gaps_becomes_empty(self):
         orch = _make_orchestrator()

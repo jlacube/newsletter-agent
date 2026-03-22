@@ -246,6 +246,21 @@ class TestDeepModeResearchPhase:
         assert isinstance(agent, DeepResearchOrchestrator)
         assert agent.min_rounds == 1
 
+    def test_orchestrator_receives_timeframe_instruction(self):
+        from newsletter_agent.tools.deep_research import DeepResearchOrchestrator
+        topics = [TopicConfig(name="AI", query="AI news", search_depth="deep", sources=["google_search"])]
+        config = NewsletterConfig(
+            newsletter=NewsletterSettings(
+                title="Test", schedule="0 0 * * 0", recipient_email="a@b.com"
+            ),
+            settings=AppSettings(timeframe="last_month"),
+            topics=topics,
+        )
+        phase = build_research_phase(config)
+        agent = phase.sub_agents[0].sub_agents[0]
+        assert isinstance(agent, DeepResearchOrchestrator)
+        assert agent.timeframe_instruction == "Focus on results from the past month."
+
     def test_orchestrator_defaults_for_adaptive_params(self):
         """When config omits new fields, defaults flow correctly."""
         from newsletter_agent.tools.deep_research import DeepResearchOrchestrator

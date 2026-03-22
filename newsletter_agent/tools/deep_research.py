@@ -14,6 +14,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncGenerator
+from html import unescape
 
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -33,6 +34,14 @@ logger = logging.getLogger(__name__)
 
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^\)]+)\)")
 _BARE_URL_RE = re.compile(r"(?<!\()(https?://[^\s\)\]>\"]+)")
+_TITLED_PAREN_URL_LINE_RE = re.compile(
+    r"^\s*[-*]?\s*(?P<title>.+?)\s*\((?P<url>https?://[^\s)]+)\)\s*$",
+    re.MULTILINE,
+)
+_HTML_LINK_RE = re.compile(
+    r"<a\b[^>]*\bhref=[\"'](?P<url>https?://[^\"']+)[\"'][^>]*>(?P<title>.*?)</a>",
+    re.IGNORECASE,
+)
 
 _FALLBACK_SUFFIXES = [
     "trends and developments",
@@ -77,6 +86,7 @@ class DeepResearchOrchestrator(BaseAgent):
     provider: str = ""
     query: str = ""
     topic_name: str = ""
+    timeframe_instruction: str | None = None
     max_rounds: int = 3
     max_searches: int = 3
     min_rounds: int = 2
@@ -363,8 +373,10 @@ class DeepResearchOrchestrator(BaseAgent):
 
     def _parse_planning_output(self, raw: str) -> tuple[str, list[str]]:
         """Parse PlanningAgent JSON output with fallback."""
-        cleaned = self._strip_code_fences(raw)
+        cleaned = self._extract_json_object(raw)
         try:
+            if cleaned is None:
+                raise ValueError("Missing JSON object")
             parsed = json.loads(cleaned)
             if not isinstance(parsed, dict):
                 raise ValueError("Expected JSON object")
@@ -442,8 +454,10 @@ class DeepResearchOrchestrator(BaseAgent):
 
     def _parse_analysis_output(self, raw: str, round_idx: int) -> dict:
         """Parse AnalysisAgent JSON output with fallback."""
-        cleaned = self._strip_code_fences(raw)
+        cleaned = self._extract_json_object(raw)
         try:
+            if cleaned is None:
+                raise ValueError("Missing JSON object")
             parsed = json.loads(cleaned)
             if not isinstance(parsed, dict):
                 raise ValueError("Expected JSON object")
@@ -500,6 +514,22 @@ class DeepResearchOrchestrator(BaseAgent):
             cleaned = "\n".join(lines)
         return cleaned.strip()
 
+    @classmethod
+    def _extract_json_object(cls, raw: str) -> str | None:
+        """Extract a JSON object from model output, tolerating wrapper text."""
+        cleaned = cls._strip_code_fences(raw)
+        if not cleaned:
+            return None
+
+        if cleaned.startswith("{") and cleaned.endswith("}"):
+            return cleaned
+
+        match = re.search(r"\{[\s\S]*\}", cleaned)
+        if match:
+            return match.group(0).strip()
+
+        return None
+
     @staticmethod
     def _format_prior_rounds(rounds: list[dict]) -> str:
         """Format prior rounds into a summary string for the AnalysisAgent."""
@@ -527,11 +557,17 @@ class DeepResearchOrchestrator(BaseAgent):
 
         if prov == "google":
             instruction = get_google_search_instruction(
-                self.topic_name, query, self.search_depth
+                self.topic_name,
+                query,
+                self.search_depth,
+                timeframe_instruction=self.timeframe_instruction,
             )
         else:
             instruction = get_perplexity_search_instruction(
-                self.topic_name, query, self.search_depth
+                self.topic_name,
+                query,
+                self.search_depth,
+                timeframe_instruction=self.timeframe_instruction,
             )
 
         return LlmAgent(
@@ -549,6 +585,10 @@ class DeepResearchOrchestrator(BaseAgent):
             return set()
         # Markdown links: [title](url)
         urls = {match.group(2) for match in _MARKDOWN_LINK_RE.finditer(text)}
+        # Source lines like: - Title (https://example.com/article)
+        urls.update(match.group("url") for match in _TITLED_PAREN_URL_LINE_RE.finditer(text))
+        # HTML anchors from Google search entrypoint payloads
+        urls.update(match.group("url") for match in _HTML_LINK_RE.finditer(text))
         # Bare URLs on their own (not already inside a markdown link)
         urls.update(_BARE_URL_RE.findall(text))
         return urls
@@ -605,8 +645,22 @@ class DeepResearchOrchestrator(BaseAgent):
         # Get all URLs already captured from markdown links
         md_urls = {m.group(2) for m in _MARKDOWN_LINK_RE.finditer(text)}
 
+        for match in _HTML_LINK_RE.finditer(text):
+            url = match.group("url")
+            if url in seen_urls or url in md_urls:
+                continue
+            title = re.sub(r"<[^>]+>", "", match.group("title"))
+            seen_urls[url] = unescape(title).strip() or url
+
         lines = text.split("\n")
         for i, line in enumerate(lines):
+            titled_match = _TITLED_PAREN_URL_LINE_RE.match(line.strip())
+            if titled_match:
+                url = titled_match.group("url")
+                if url not in seen_urls and url not in md_urls:
+                    seen_urls[url] = titled_match.group("title").strip()
+                continue
+
             bare_match = _BARE_URL_RE.search(line.strip())
             if not bare_match:
                 continue

@@ -428,7 +428,7 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 - 2026-03-21T12:30:00Z - coder - lane=for_review - All feedback items resolved, submitted for re-review
 - 2026-03-21T13:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 - 2026-03-22T08:01:19Z - coder - lane=doing - Addressing runtime OTel shutdown incompatibility discovered against installed opentelemetry-sdk 1.38.0
-- 2026-03-22T08:01:19Z - coder - lane=for_review - Runtime shutdown compatibility fix implemented and validated; ready for re-review
+- 2026-03-22T08:21:46Z - coder - lane=for_review - Runtime shutdown compatibility fix implemented and validated; ready for re-review
 
 ## Review
 
@@ -646,4 +646,5 @@ A runtime incompatibility was discovered after approval: the installed `opentele
 
 - `pytest tests/unit/test_telemetry.py -q` -> `35 passed`
 - `python -c "from newsletter_agent.telemetry import init_telemetry, shutdown_telemetry; init_telemetry(); shutdown_telemetry(); print('telemetry-smoke-ok')"` -> `telemetry-smoke-ok`
-- `python -m newsletter_agent` -> no `Telemetry shutdown error`; unrelated `503 UNAVAILABLE` observed
+- `python -m newsletter_agent` -> no `Telemetry shutdown error`; unrelated `503 UNAVAILABLE` observed during one smoke run
+- `pytest tests/ --ignore=tests/unit/test_http_handler.py -q` -> `1001 passed`

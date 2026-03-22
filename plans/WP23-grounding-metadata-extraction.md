@@ -1,6 +1,5 @@
 ---
-lane: for_review
-review_status: remediated
+lane: done
 ---
 
 # WP23 - Grounding Metadata Extraction
@@ -386,6 +385,7 @@ Grounding-sourced citations must render correctly in the final newsletter HTML e
 - 2026-03-22T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (10 FAILs) -- awaiting remediation
 - 2026-03-22T15:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01 through FB-08)
 - 2026-03-22T16:00:00Z - coder - lane=for_review - All feedback items resolved, re-submitted for review
+- 2026-03-22T17:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 
 ## Self-Review
 
@@ -629,7 +629,7 @@ Verdict: Changes Required. The core grounding capture, parsing, merge, cleanup, 
 | Scope Discipline | 1 | 0 | 0 |
 | Encoding (UTF-8) | 1 | 0 | 0 |
 
-### Recommended Actions
+### Recommended Actions (Round 1)
 
 1. **FB-01** (FR-GME-030/031/032): Add conditional in the URL tracking block (~L343): when `prov == "google" and grounding_for_round.has_metadata`, set `new_urls` from grounding sources instead of `_extract_urls`. Update the URL count log accordingly.
 2. **FB-02** (FR-GME-050/051): Add `grounding_source_count` to the `adaptive_context["rounds"].append({...})` dict. Pass the count into AnalysisAgent input.
@@ -638,3 +638,86 @@ Verdict: Changes Required. The core grounding capture, parsing, merge, cleanup, 
 5. **FB-07**: Add BDD tests for all 5 grounding scenarios from spec Section 11.2.
 6. **FB-08**: Add integration tests IT-001, IT-002, IT-003 from spec Section 11.3.
 7. Check off all per-task acceptance criteria in T23-01 through T23-10.
+
+---
+
+## Re-Review (Round 2)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-22
+> **Verdict**: Approved with Findings
+> **review_status**: (empty)
+
+### Summary
+
+All 8 feedback items from Round 1 resolved. Code fixes (FB-01/02/03) correctly implement FR-GME-030/031/032, FR-GME-050/051, and LOG-002. Missing unit tests (FB-04/05/06) are solid with meaningful assertions. 5 BDD scenarios (FB-07) and 5 integration tests (FB-08) map correctly to spec Section 11.2 and 11.3. Documentation now includes grounding state key reference, callback internals, and troubleshooting. Full suite: 1074 passed, 0 failed, 1 skipped. Coverage for deep_research.py: 93.66%. No encoding violations. Two non-blocking WARNs survive.
+
+### Findings (Scoped to FB-01 through FB-08 + regressions)
+
+#### PASS - FB-01 (FR-GME-030/031/032): accumulated_urls from grounding
+- **Requirement**: FR-GME-030 - accumulated_urls SHALL use grounding chunk URIs for Google
+- **Status**: Compliant
+- **Detail**: Conditional at L344-347: when `prov == "google" and grounding_for_round.has_metadata`, `new_urls` built from grounding sources. URL count logs and `deep_urls_accumulated_*` now reflect grounding URIs.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L344-L347)
+
+#### PASS - FB-02 (FR-GME-050/051): grounding_source_count in adaptive_context
+- **Requirement**: FR-GME-050/051
+- **Status**: Compliant
+- **Detail**: `grounding_src_count` computed and appended to round dict. `_format_prior_rounds` surfaces count for AnalysisAgent.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L393-L405), [L695-L697](newsletter_agent/tools/deep_research.py#L695-L697)
+
+#### PASS - FB-03 (LOG-002): Per-round log level
+- **Requirement**: Section 10.5 LOG-002 - WARNING on missing grounding metadata
+- **Status**: Compliant
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L282-L285)
+
+#### PASS - FB-04: test_parse_grounding_from_state_partial_metadata
+- **Status**: Compliant. Two test methods verify partial metadata handling. Assertions can fail.
+- **Evidence**: [test_deep_research.py](tests/unit/test_deep_research.py#L1456-L1490)
+
+#### PASS - FB-05: test_accumulated_urls_from_grounding
+- **Status**: Compliant. Captures accumulated URLs before cleanup, asserts grounding URIs present and regex-only URL absent.
+- **Evidence**: [test_deep_research.py](tests/unit/test_deep_research.py#L1497-L1553)
+
+#### PASS - FB-06: test_adaptive_context_includes_grounding_count
+- **Status**: Compliant. Multi-round test verifies count == 3 (with metadata) and count == 0 (without).
+- **Evidence**: [test_deep_research.py](tests/unit/test_deep_research.py#L1559-L1647)
+
+#### PASS - FB-07: BDD acceptance tests (5 scenarios)
+- **Status**: Compliant. All 5 spec scenarios implemented and passing.
+- **Evidence**: [test_grounding_metadata.py](tests/bdd/test_grounding_metadata.py)
+
+#### PASS - FB-08: Integration tests (IT-001, IT-002, IT-003)
+- **Status**: Compliant. 5 tests across 3 classes using `build_research_phase` for real agent wiring.
+- **Evidence**: [test_grounding_integration.py](tests/integration/test_grounding_integration.py)
+
+#### PASS - Documentation (previously WARN)
+- **Status**: Compliant. State key table, callback docs, and troubleshooting section added.
+- **Evidence**: [developer-guide.md](docs/developer-guide.md#L93-L110), [L315-L355](docs/developer-guide.md#L315-L355)
+
+#### PASS - Regression Check
+- **Status**: No regressions. 1074 passed, 0 failed. 93.66% coverage. Clean encoding.
+
+#### WARN - Process Compliance: Acceptance criteria checkboxes
+- **Detail**: Per-task checkboxes in T23-01 through T23-10 remain unchecked. All functionality verified independently. Carried forward from Round 1.
+
+#### WARN - BDD Scenario 3: Spec ambiguity
+- **Detail**: FR-GME-020 says grounding is authoritative (NOT regex). Scenario 3 Gherkin says supplementary text sources should be included. Implementation follows FR (correct). BDD test is consistent with FR. Spec-level ambiguity, not implementation defect.
+
+### Statistics (Round 2)
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Code Fixes (FB-01/02/03) | 3 | 0 | 0 |
+| Unit Tests (FB-04/05/06) | 3 | 0 | 0 |
+| BDD Tests (FB-07) | 1 | 1 | 0 |
+| Integration Tests (FB-08) | 1 | 0 | 0 |
+| Documentation | 1 | 0 | 0 |
+| Regression Check | 1 | 0 | 0 |
+| Process Compliance | 0 | 1 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+| **Total** | **11** | **2** | **0** |
+
+### Recommended Actions (Round 2)
+
+1. (WARN) Check off acceptance criteria in T23-01 through T23-10 when convenient. Non-blocking.
+2. (WARN) Consider clarifying spec Section 11.2 Scenario 3 to align with FR-GME-020. Non-blocking.

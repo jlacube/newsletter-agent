@@ -88,6 +88,21 @@ cp .env.example .env
 
 All inter-agent communication happens through ADK session state (a shared dict). Agents read from and write to state keys. See [Architecture](architecture.md) for the complete state key inventory.
 
+#### Grounding Metadata State Keys (Google Provider)
+
+During each Google search round, the grounding capture callback writes raw metadata to session state. The orchestrator then parses it into structured keys:
+
+| Key pattern | Lifetime | Description |
+|-------------|----------|-------------|
+| `_grounding_raw_{idx}_{prov}_round_{r}` | Per-round (cleaned up) | Raw grounding dict from ADK callback |
+| `grounding_sources_{idx}_{prov}_round_{r}` | Per-round (cleaned up) | Parsed list of `{"uri": str, "title": str}` |
+| `grounding_supports_{idx}_{prov}_round_{r}` | Per-round (cleaned up) | Parsed grounding supports (segment text + chunk indices) |
+| `grounding_queries_{idx}_{prov}_round_{r}` | Per-round (cleaned up) | Web search queries from the grounding response |
+
+All per-round grounding keys are removed during `_cleanup_state()`. The final merged output in `research_{idx}_{prov}` uses grounding sources for its SOURCES section (Google only). Perplexity rounds use text-based regex extraction.
+
+The callback reads from `callback_context.state['temp:_adk_grounding_metadata']` because ADK attaches grounding metadata to session state before the `after_model_callback` fires (see OQ-1 resolution in `tests/integration/test_grounding_spike.py`).
+
 ### Custom BaseAgent Pattern
 
 Custom agents extend `google.adk.agents.BaseAgent` and implement `_run_async_impl`:
@@ -296,3 +311,29 @@ To modify the template:
 2. Run `pytest tests/unit/test_html_formatter.py -v` to verify rendering
 3. Run `pytest tests/security/ -v` to verify sanitization still works
 4. Generate a test newsletter in dry-run mode to preview the visual result
+
+## Troubleshooting
+
+### Empty or Missing Newsletter Sources (Google Provider)
+
+If a Google search topic produces an empty SOURCES section or fewer sources than expected:
+
+1. **Check grounding metadata capture**: Look for `[Grounding]` log lines at INFO level. A line like `[Grounding] Topic X/google round 0: extracted N sources` confirms metadata was captured. If you see `no grounding metadata available` (WARNING), the Gemini API did not return grounding data for that round.
+
+2. **Verify the ADK callback**: The `after_model_callback` reads from `callback_context.state['temp:_adk_grounding_metadata']`. If ADK changes this internal key in a future version, the callback will silently fall back to regex extraction. Check ADK release notes when upgrading.
+
+3. **Check link verification**: If `verify_links: true`, broken grounding URLs are filtered out. Look for `[AdaptiveResearch]` log lines mentioning "URLs broken, cleaning". Temporarily set `verify_links: false` in config to see if sources appear without verification.
+
+4. **Inspect the merged output**: The merged result in state key `research_{idx}_google` should have a SOURCES section with markdown links. If SOURCES is empty but SUMMARY has content, the grounding metadata was missing and regex fallback found no URLs either.
+
+### Perplexity Sources Missing
+
+Perplexity does not use grounding metadata. Sources are extracted via regex from the LLM text output. If sources are missing, check:
+
+1. The Perplexity API key is valid (`PERPLEXITY_API_KEY` env var)
+2. The LLM text output includes markdown links in its SOURCES section
+3. The `search_perplexity` tool is returning valid results
+
+### Duplicate Sources Across Rounds
+
+The grounding merge uses first-title-wins deduplication by URI. If the same URL appears across multiple rounds, only the first occurrence's title is kept. This is by design to prevent title drift from LLM rephrasing.

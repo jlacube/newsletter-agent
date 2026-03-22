@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: for_review
+review_status: remediated
 ---
 
 # WP23 - Grounding Metadata Extraction
@@ -384,6 +384,8 @@ Grounding-sourced citations must render correctly in the final newsletter HTML e
 - 2026-03-22T10:00:00Z - coder - lane=doing - Starting implementation of T23-01 through T23-10
 - 2026-03-22T12:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
 - 2026-03-22T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (10 FAILs) -- awaiting remediation
+- 2026-03-22T15:00:00Z - coder - lane=doing - Addressing reviewer feedback (FB-01 through FB-08)
+- 2026-03-22T16:00:00Z - coder - lane=for_review - All feedback items resolved, re-submitted for review
 
 ## Self-Review
 
@@ -403,8 +405,10 @@ Grounding-sourced citations must render correctly in the final newsletter HTML e
 - [x] LOG-001 through LOG-004 implemented (Section 10.5)
 
 ### Correctness
-- [x] All 102 unit tests pass
-- [x] Full suite of 1060 tests passes with zero regressions
+- [x] All 106 unit tests pass (was 102, added 4 for FB-04/05/06)
+- [x] All 5 BDD grounding tests pass (FB-07)
+- [x] All 5 integration grounding tests pass (FB-08)
+- [x] Full suite of 1074 tests passes with zero regressions
 - [x] Coverage at 83.59% (above 80% threshold)
 
 ### Code Quality
@@ -434,14 +438,14 @@ Verdict: Changes Required. The core grounding capture, parsing, merge, cleanup, 
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Implement FR-GME-030/031/032: `accumulated_urls` for Google provider must be populated from grounding chunk URIs, not regex extraction. `deep_urls_accumulated_{idx}_{provider}` must include grounding URIs, and URL count logs must reflect grounding counts. Currently `_extract_urls(round_output)` at line ~343 is used unconditionally. Add a conditional: when `grounding_for_round.has_metadata` is True, populate `accumulated_urls` from `[s["uri"] for s in grounding_for_round.sources]` instead.
-- [ ] **FB-02**: Implement FR-GME-050/051: Add `grounding_source_count` field to `adaptive_context["rounds"]` entry (line ~386-394). Set to `len(grounding_for_round.sources)` when metadata present, `0` otherwise. Pass this count in AnalysisAgent input context.
-- [ ] **FB-03**: Fix LOG-002 per-round level: the per-round no-metadata message at line ~281 uses `logger.debug` but spec Section 10.5 LOG-002 requires WARNING. Change to `logger.warning`.
-- [ ] **FB-04**: Add missing unit test `test_parse_grounding_from_state_partial_metadata` (spec 11.1 #6): state with chunks present but supports/queries absent should return GroundingResult with populated sources and empty supports/queries.
-- [ ] **FB-05**: Add missing unit test `test_accumulated_urls_from_grounding` (spec 11.1 #12): verify that for Google provider, `accumulated_urls` is populated from grounding chunk URIs, not regex.
-- [ ] **FB-06**: Add missing unit test `test_adaptive_context_includes_grounding_count` (spec 11.1 #15): verify `grounding_source_count` field in `adaptive_context["rounds"]` entry.
-- [ ] **FB-07**: Add BDD acceptance tests for all 5 grounding scenarios from spec Section 11.2 in `tests/bdd/`.
-- [ ] **FB-08**: Add integration tests IT-001, IT-002, IT-003 from spec Section 11.3 in `tests/integration/`.
+- [x] **FB-01**: Implement FR-GME-030/031/032: `accumulated_urls` for Google provider populated from grounding chunk URIs. Fixed in deep_research.py - conditional path uses grounding sources when `has_metadata` is True.
+- [x] **FB-02**: Implement FR-GME-050/051: Added `grounding_source_count` field to `adaptive_context["rounds"]` entry and `_format_prior_rounds` output.
+- [x] **FB-03**: Fix LOG-002 per-round level: changed to `logger.warning` for no-metadata fallback.
+- [x] **FB-04**: Added `test_parse_grounding_from_state_partial_metadata` unit test.
+- [x] **FB-05**: Added `test_accumulated_urls_from_grounding` unit test.
+- [x] **FB-06**: Added `test_adaptive_context_includes_grounding_count` unit test.
+- [x] **FB-07**: Added 5 BDD acceptance tests in `tests/bdd/test_grounding_metadata.py` (all 5 scenarios from spec Section 11.2).
+- [x] **FB-08**: Added 5 integration tests in `tests/integration/test_grounding_integration.py` (IT-001, IT-002, IT-003 from spec Section 11.3).
 
 ### Findings
 

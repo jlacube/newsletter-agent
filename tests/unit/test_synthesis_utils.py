@@ -103,6 +103,55 @@ class TestValidJsonOutput:
         assert "http://plain.com" in urls
         assert len(sources) == 2
 
+    def test_synthetic_google_search_sources_are_removed(self):
+        sections = [
+            {
+                "title": "T",
+                "body_markdown": (
+                    'Analysis with '
+                    '[GOOGLE research for "T"](https://www.google.com/search?q=T+trends) '
+                    'and '
+                    '[Real Source](https://example.com/article).'
+                ),
+                "sources": [
+                    {
+                        "url": "https://www.google.com/search?q=T+trends",
+                        "title": 'GOOGLE research for "T"',
+                    },
+                    {
+                        "url": "https://example.com/article",
+                        "title": "Real Source",
+                    },
+                ],
+            }
+        ]
+        raw = json.dumps({"executive_summary": [], "sections": sections})
+        result = parse_synthesis_output(raw, ["T"])
+        section = result["synthesis_0"]
+        assert section["sources"] == [{"url": "https://example.com/article", "title": "Real Source"}]
+        assert "https://www.google.com/search?q=T+trends" not in section["body_markdown"]
+        assert 'GOOGLE research for "T"' in section["body_markdown"]
+
+    def test_round_placeholder_sources_are_removed(self):
+        sections = [
+            {
+                "title": "T",
+                "body_markdown": "Benchmark summary [Round 1](https://www.google.com/search?q=T+Round+1)",
+                "sources": [
+                    {
+                        "url": "https://www.google.com/search?q=T+Round+1",
+                        "title": "Round 1",
+                    }
+                ],
+            }
+        ]
+        raw = json.dumps({"executive_summary": [], "sections": sections})
+        result = parse_synthesis_output(raw, ["T"])
+        section = result["synthesis_0"]
+        assert section["sources"] == []
+        assert "https://www.google.com/search?q=T+Round+1" not in section["body_markdown"]
+        assert "Round 1" in section["body_markdown"]
+
 
 class TestMarkdownWrappedJson:
     def test_json_in_code_block(self):

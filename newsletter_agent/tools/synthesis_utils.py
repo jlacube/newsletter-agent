@@ -8,8 +8,12 @@ import json
 import logging
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+_MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^)]+)\)")
+_PLACEHOLDER_TITLE_RE = re.compile(r"^(?:google\s+research\s+for\b|round\s+\d+\b)", re.IGNORECASE)
 
 
 def parse_synthesis_output(
@@ -132,16 +136,18 @@ def _build_state_from_json(
     for i, topic_name in enumerate(expected_topics):
         if i < len(raw_sections) and isinstance(raw_sections[i], dict):
             section = raw_sections[i]
-            sources = _normalize_sources(section.get("sources", []))
-            body = section.get("body_markdown", "")
-            state[f"synthesis_{i}"] = {
-                "title": section.get("title", topic_name),
-                "body_markdown": body,
-                "sources": sources,
-            }
+            normalized = normalize_synthesis_section(
+                title=section.get("title", topic_name),
+                body_markdown=section.get("body_markdown", ""),
+                raw_sources=section.get("sources", []),
+            )
+            state[f"synthesis_{i}"] = normalized
             logger.info(
                 "[SynthesisParse] Topic %d '%s': %d sources, body=%d chars",
-                i, section.get("title", topic_name), len(sources), len(body),
+                i,
+                normalized["title"],
+                len(normalized["sources"]),
+                len(normalized["body_markdown"]),
             )
         else:
             state[f"synthesis_{i}"] = {
@@ -174,6 +180,58 @@ def _normalize_sources(raw_sources: list) -> list[dict]:
                 seen.add(url)
                 result.append({"url": url, "title": str(src.get("title", url))})
     return result
+
+
+def _is_google_search_placeholder_url(url: str) -> bool:
+    """Return True for synthetic google.com search URLs fabricated as citations."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return (
+        parsed.scheme.lower() in {"http", "https"}
+        and host in {"www.google.com", "google.com"}
+        and parsed.path == "/search"
+        and "q=" in (parsed.query or "")
+    )
+
+
+def _is_placeholder_source(source: dict) -> bool:
+    """Identify low-quality placeholder sources emitted by the synthesis model."""
+    url = str(source.get("url", ""))
+    title = str(source.get("title", "")).strip()
+    return _is_google_search_placeholder_url(url) or bool(_PLACEHOLDER_TITLE_RE.match(title))
+
+
+def _strip_removed_markdown_links(body_markdown: str, removed_urls: set[str]) -> str:
+    """Replace removed markdown links with plain text labels in the body."""
+    if not body_markdown or not removed_urls:
+        return body_markdown
+
+    def _replace(match: re.Match[str]) -> str:
+        title, url = match.group(1), match.group(2)
+        if url in removed_urls:
+            return title
+        return match.group(0)
+
+    return _MARKDOWN_LINK_RE.sub(_replace, body_markdown)
+
+
+def normalize_synthesis_section(
+    title: str,
+    body_markdown: str,
+    raw_sources: list,
+) -> dict[str, Any]:
+    """Normalize a synthesized section and remove synthetic placeholder links."""
+    sources = _normalize_sources(raw_sources)
+    removed_urls = {src["url"] for src in sources if _is_placeholder_source(src)}
+    if removed_urls:
+        sources = [src for src in sources if src["url"] not in removed_urls]
+        body_markdown = _strip_removed_markdown_links(body_markdown, removed_urls)
+
+    return {
+        "title": title,
+        "body_markdown": body_markdown,
+        "sources": sources,
+    }
 
 
 def _fallback_output(

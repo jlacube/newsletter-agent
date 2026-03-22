@@ -22,6 +22,7 @@ from google.adk.events import Event
 from google.genai import types
 
 from newsletter_agent.prompts.synthesis import build_per_topic_prompt
+from newsletter_agent.tools.synthesis_utils import normalize_synthesis_section
 
 logger = logging.getLogger(__name__)
 
@@ -204,13 +205,11 @@ class PerTopicSynthesizerAgent(BaseAgent):
                 f"Missing 'section' key in response for topic '{name}'"
             )
 
-        sources = _normalize_sources(raw_section.get("sources", []))
-        body = raw_section.get("body_markdown", "")
-        section = {
-            "title": raw_section.get("title", name),
-            "body_markdown": body,
-            "sources": sources,
-        }
+        section = normalize_synthesis_section(
+            title=raw_section.get("title", name),
+            body_markdown=raw_section.get("body_markdown", ""),
+            raw_sources=raw_section.get("sources", []),
+        )
 
         # Extract executive summary
         summary = parsed.get("executive_summary", "")
@@ -244,21 +243,6 @@ def _try_parse_json(text: str) -> dict | None:
             pass
 
     return None
-
-
-def _normalize_sources(raw_sources: list) -> list[dict]:
-    """Normalize and deduplicate source references."""
-    seen: set[str] = set()
-    result = []
-    for src in raw_sources:
-        if isinstance(src, dict) and "url" in src:
-            url = str(src["url"])
-            if not url.startswith(("http://", "https://")):
-                continue
-            if url not in seen:
-                seen.add(url)
-                result.append({"url": url, "title": str(src.get("title", url))})
-    return result
 
 
 def _fallback_section(name: str) -> dict[str, Any]:

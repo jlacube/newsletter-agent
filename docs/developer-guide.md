@@ -26,7 +26,7 @@ NewsletterAgent/
       synthesis.py           # Synthesis agent instruction builder
     tools/
       perplexity_search.py   # Perplexity Sonar API FunctionTool
-      deep_research.py       # DeepResearchOrchestrator (adaptive Plan-Search-Analyze loop)
+      deep_research.py       # DeepResearchOrchestrator (adaptive Plan-Search-Analyze loop, grounding metadata extraction)
       deep_research_refiner.py # DeepResearchRefinerAgent (source refinement)
       research_utils.py      # Research output parsing utilities
       synthesis_utils.py     # Synthesis JSON parsing utilities
@@ -268,7 +268,7 @@ To add a new search provider (e.g., Tavily, Brave Search):
 2. Create `newsletter_agent/prompts/research_{provider}.py` with an instruction builder
 3. Add the provider name to `TopicConfig.sources` in `config/schema.py`
 4. Update `build_research_phase()` in `agent.py` to create agents for the new provider (both standard and deep modes)
-5. Update `DeepResearchOrchestrator._make_search_agent()` in `tools/deep_research.py` to support the new provider
+5. Update `DeepResearchOrchestrator._make_search_agent()` in `tools/deep_research.py` to support the new provider. For Google-like providers that supply structured grounding metadata, register an `after_model_callback` to capture it (see existing Google grounding callback pattern).
 5. Update `ResearchValidatorAgent` provider list construction
 6. Add unit tests in `tests/unit/test_{provider}_search.py`
 

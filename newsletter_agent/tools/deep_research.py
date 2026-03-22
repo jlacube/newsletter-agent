@@ -10,11 +10,13 @@ Spec refs: FR-ADR-001 through FR-ADR-085, Section 4, Section 8.1,
            Section 9.4 (Design Decisions ADR-1 through ADR-4).
 """
 
+import dataclasses
 import json
 import logging
 import re
 from collections.abc import AsyncGenerator
 from html import unescape
+from typing import Any
 
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -68,6 +70,103 @@ def _remove_broken_source_lines(text: str, broken_urls: set[str]) -> str:
             continue
         cleaned.append(line)
     return "\n".join(cleaned)
+
+
+# --- Grounding metadata extraction (FR-GME-001 through FR-GME-051) ---
+
+_MD_SPECIAL_RE = re.compile(r"([\[\]\(\)])")
+
+
+@dataclasses.dataclass
+class GroundingResult:
+    """Structured result from grounding metadata extraction."""
+
+    sources: list[dict[str, str]] = dataclasses.field(default_factory=list)
+    supports: list[dict[str, Any]] = dataclasses.field(default_factory=list)
+    queries: list[str] = dataclasses.field(default_factory=list)
+    has_metadata: bool = False
+
+
+def _grounding_capture_callback(
+    callback_context: Any,
+    llm_response: Any,
+    idx: int,
+    prov: str,
+    round_idx: int,
+) -> None:
+    """Capture grounding metadata from session state into a raw state key.
+
+    Registered as after_model_callback on Google search LlmAgents.
+    Reads from 'temp:_adk_grounding_metadata' (ADK stores grounding data
+    there before after_model_callback fires -- see OQ-1 resolution in
+    tests/integration/test_grounding_spike.py).
+
+    Returns None (never modifies the LLM response). Never raises.
+    """
+    try:
+        state = callback_context.state
+        gm = state.get("temp:_adk_grounding_metadata")
+        if gm is None:
+            return None
+
+        raw: dict[str, Any] = {}
+
+        # Extract grounding chunks
+        chunks = getattr(gm, "grounding_chunks", None) or []
+        serialized_chunks = []
+        for chunk in chunks:
+            web = getattr(chunk, "web", None)
+            if web is None:
+                continue
+            uri = getattr(web, "uri", "") or ""
+            title = getattr(web, "title", "") or ""
+            if uri:
+                serialized_chunks.append({"web": {"uri": uri, "title": title}})
+        raw["grounding_chunks"] = serialized_chunks
+
+        # Extract grounding supports
+        supports = getattr(gm, "grounding_supports", None) or []
+        serialized_supports = []
+        for support in supports:
+            segment = getattr(support, "segment", None)
+            entry: dict[str, Any] = {
+                "segment_text": getattr(segment, "text", "") if segment else "",
+                "start_index": getattr(segment, "start_index", 0) if segment else 0,
+                "end_index": getattr(segment, "end_index", 0) if segment else 0,
+                "chunk_indices": list(
+                    getattr(support, "grounding_chunk_indices", None) or []
+                ),
+            }
+            serialized_supports.append(entry)
+        raw["grounding_supports"] = serialized_supports
+
+        # Extract web search queries
+        raw["web_search_queries"] = list(
+            getattr(gm, "web_search_queries", None) or []
+        )
+
+        key = f"_grounding_raw_{idx}_{prov}_round_{round_idx}"
+        state[key] = raw
+
+    except Exception:
+        logger.warning(
+            "[Grounding] Callback error capturing metadata for idx=%d/%s round %d",
+            idx, prov, round_idx, exc_info=True,
+        )
+    return None
+
+
+def _make_grounding_callback(
+    idx: int, prov: str, round_idx: int
+) -> Any:
+    """Create a bound after_model_callback for grounding metadata capture."""
+
+    def _cb(callback_context: Any, llm_response: Any) -> None:
+        return _grounding_capture_callback(
+            callback_context, llm_response, idx, prov, round_idx
+        )
+
+    return _cb
 
 
 class DeepResearchOrchestrator(BaseAgent):
@@ -160,9 +259,39 @@ class DeepResearchOrchestrator(BaseAgent):
                 self.topic_name, prov, round_idx, len(round_output),
             )
 
+            # --- Parse grounding metadata for this round (FR-GME-005) ---
+            # Must happen before link verification so grounding URIs are available
+            grounding_for_round = GroundingResult()
+            if prov == "google":
+                grounding_for_round = self._parse_grounding_from_state(
+                    state, idx, prov, round_idx,
+                )
+                if grounding_for_round.has_metadata:
+                    state[f"grounding_sources_{idx}_{prov}_round_{round_idx}"] = grounding_for_round.sources
+                    state[f"grounding_supports_{idx}_{prov}_round_{round_idx}"] = grounding_for_round.supports
+                    state[f"grounding_queries_{idx}_{prov}_round_{round_idx}"] = grounding_for_round.queries
+                    logger.info(
+                        "[Grounding] Topic %s/%s round %d: extracted %d sources, "
+                        "%d supports, %d queries",
+                        self.topic_name, prov, round_idx,
+                        len(grounding_for_round.sources),
+                        len(grounding_for_round.supports),
+                        len(grounding_for_round.queries),
+                    )
+                else:
+                    logger.debug(
+                        "[Grounding] Topic %s/%s round %d: no grounding metadata available",
+                        self.topic_name, prov, round_idx,
+                    )
+
             # --- Per-round link verification (if enabled) ---
             if state.get("config_verify_links", False) and round_output:
-                round_urls = list(self._extract_urls(round_output))
+                # FR-GME-040: use grounding URIs for Google when available
+                if prov == "google" and grounding_for_round.has_metadata:
+                    round_urls = [s["uri"] for s in grounding_for_round.sources]
+                else:
+                    round_urls = list(self._extract_urls(round_output))
+
                 if round_urls:
                     try:
                         check_results = await verify_urls(round_urls)
@@ -189,6 +318,13 @@ class DeepResearchOrchestrator(BaseAgent):
                             round_output = _remove_broken_source_lines(
                                 round_output, broken
                             )
+                            # FR-GME-041: remove broken URIs from grounding sources state
+                            gs_key = f"grounding_sources_{idx}_{prov}_round_{round_idx}"
+                            gs = state.get(gs_key)
+                            if gs:
+                                state[gs_key] = [
+                                    s for s in gs if s["uri"] not in broken
+                                ]
                         else:
                             logger.info(
                                 "[AdaptiveResearch] Topic %s/%s round %d: all %d URLs valid",
@@ -319,7 +455,10 @@ class DeepResearchOrchestrator(BaseAgent):
         state[f"adaptive_reasoning_chain_{idx}_{prov}"] = json.dumps(adaptive_context)
 
         # --- Merge all rounds ---
-        merged = self._merge_rounds(state, round_count)
+        if prov == "google":
+            merged = self._merge_rounds_with_grounding(state, round_count)
+        else:
+            merged = self._merge_rounds(state, round_count)
         state[f"research_{idx}_{prov}"] = merged
 
         merged_source_count = len(_MARKDOWN_LINK_RE.findall(merged.split("SOURCES:", 1)[1] if "SOURCES:" in merged else ""))
@@ -570,12 +709,18 @@ class DeepResearchOrchestrator(BaseAgent):
                 timeframe_instruction=self.timeframe_instruction,
             )
 
+        # Wire grounding metadata callback for Google provider (FR-GME-004)
+        after_cb = None
+        if prov == "google":
+            after_cb = _make_grounding_callback(idx, prov, round_idx)
+
         return LlmAgent(
             name=f"DeepSearchRound_{idx}_{prov}_r{round_idx}",
             model=self.model,
             instruction=lambda ctx, _s=instruction: _s,
             tools=list(self.tools),
             output_key=f"deep_research_latest_{idx}_{prov}",
+            after_model_callback=after_cb,
         )
 
     @staticmethod
@@ -592,6 +737,140 @@ class DeepResearchOrchestrator(BaseAgent):
         # Bare URLs on their own (not already inside a markdown link)
         urls.update(_BARE_URL_RE.findall(text))
         return urls
+
+    def _parse_grounding_from_state(
+        self, state: dict, idx: int, prov: str, round_idx: int,
+    ) -> GroundingResult:
+        """Parse raw grounding metadata from session state into GroundingResult.
+
+        Reads _grounding_raw_{idx}_{prov}_round_{round_idx}, deduplicates URIs,
+        escapes markdown-special characters in titles, and handles all edge cases.
+        Never raises -- returns empty GroundingResult on any error.
+        """
+        try:
+            key = f"_grounding_raw_{idx}_{prov}_round_{round_idx}"
+            raw = state.get(key)
+            if not raw:
+                return GroundingResult()
+
+            # Extract sources from grounding chunks
+            seen_uris: dict[str, str] = {}  # uri -> title (first wins)
+            chunks = raw.get("grounding_chunks", []) or []
+            for i, chunk in enumerate(chunks):
+                web = chunk.get("web") if isinstance(chunk, dict) else None
+                if not web:
+                    continue
+                uri = web.get("uri", "") or ""
+                if not uri or not uri.startswith("https://"):
+                    continue
+                title = web.get("title", "") or ""
+                if not title:
+                    # LOG-004: empty title
+                    logger.warning(
+                        "[Grounding] Topic %s/%s round %d: chunk %d has empty title, using URI",
+                        self.topic_name, prov, round_idx, i,
+                    )
+                    title = uri
+                else:
+                    # Escape markdown-special characters in titles
+                    title = _MD_SPECIAL_RE.sub(r"\\\1", title)
+                if uri not in seen_uris:
+                    seen_uris[uri] = title
+
+            sources = [{"uri": uri, "title": title} for uri, title in seen_uris.items()]
+
+            # Extract supports
+            supports_raw = raw.get("grounding_supports", []) or []
+            supports = []
+            for s in supports_raw:
+                if isinstance(s, dict):
+                    supports.append({
+                        "segment_text": s.get("segment_text", ""),
+                        "start_index": s.get("start_index", 0),
+                        "end_index": s.get("end_index", 0),
+                        "chunk_indices": s.get("chunk_indices", []),
+                    })
+
+            # Extract queries
+            queries = list(raw.get("web_search_queries", []) or [])
+
+            return GroundingResult(
+                sources=sources,
+                supports=supports,
+                queries=queries,
+                has_metadata=True,
+            )
+        except Exception:
+            logger.warning(
+                "[Grounding] Error parsing grounding state for idx=%d/%s round %d",
+                idx, prov, round_idx, exc_info=True,
+            )
+            return GroundingResult()
+
+    def _merge_rounds_with_grounding(self, state: dict, round_count: int) -> str:
+        """Merge rounds using grounding metadata for SOURCES (Google provider).
+
+        SOURCES are built from grounding_sources state keys (deduplicated by URI).
+        SUMMARY is built from LLM text output (same as _merge_rounds).
+        Falls back to _merge_rounds if no grounding data exists for any round.
+        """
+        idx = self.topic_idx
+        prov = self.provider
+
+        # Collect grounding sources across all rounds
+        all_sources: dict[str, str] = {}  # uri -> title (first wins)
+        has_any_grounding = False
+
+        for r in range(round_count):
+            gs_key = f"grounding_sources_{idx}_{prov}_round_{r}"
+            grounding_sources = state.get(gs_key)
+            if grounding_sources:
+                has_any_grounding = True
+                for src in grounding_sources:
+                    uri = src.get("uri", "")
+                    if uri and uri not in all_sources:
+                        all_sources[uri] = src.get("title", uri)
+
+        if not has_any_grounding:
+            # FR-GME-022: complete fallback
+            logger.warning(
+                "[Grounding] Topic %s/%s: no grounding metadata available, "
+                "falling back to text extraction",
+                self.topic_name, prov,
+            )
+            return self._merge_rounds(state, round_count)
+
+        # Build SUMMARY from LLM text output (same as _merge_rounds)
+        summaries: list[str] = []
+        for r in range(round_count):
+            round_key = f"research_{idx}_{prov}_round_{r}"
+            content = state.get(round_key, "")
+            if not content:
+                continue
+            summary_part, _ = self._split_sections(content)
+            if summary_part.strip():
+                if len(summaries) > 0:
+                    summaries.append(f"\n\n--- Round {r} ---\n\n{summary_part}")
+                else:
+                    summaries.append(summary_part)
+
+        if not summaries:
+            return ""
+
+        merged_summary = "".join(summaries)
+        sources_lines = [
+            f"- [{title}]({uri})" for uri, title in all_sources.items()
+        ]
+        sources_section = "\n".join(sources_lines)
+
+        # LOG-003: merge summary
+        logger.info(
+            "[Grounding] Topic %s/%s: merged %d unique sources from "
+            "grounding metadata across %d rounds",
+            self.topic_name, prov, len(all_sources), round_count,
+        )
+
+        return f"SUMMARY:\n{merged_summary}\n\nSOURCES:\n{sources_section}"
 
     def _merge_rounds(self, state: dict, round_count: int) -> str:
         """Merge all round outputs into a single research result."""
@@ -715,6 +994,11 @@ class DeepResearchOrchestrator(BaseAgent):
         ]
         for r in range(round_count):
             keys_to_delete.append(f"research_{idx}_{prov}_round_{r}")
+            # Grounding metadata keys (FR-GME-013)
+            keys_to_delete.append(f"_grounding_raw_{idx}_{prov}_round_{r}")
+            keys_to_delete.append(f"grounding_sources_{idx}_{prov}_round_{r}")
+            keys_to_delete.append(f"grounding_supports_{idx}_{prov}_round_{r}")
+            keys_to_delete.append(f"grounding_queries_{idx}_{prov}_round_{r}")
 
         for key in keys_to_delete:
             state.pop(key, None)

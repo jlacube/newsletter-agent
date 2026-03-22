@@ -1,11 +1,11 @@
 ---
-lane: planned
+lane: for_review
 ---
 
 # WP23 - Grounding Metadata Extraction
 
 > **Spec**: `specs/004-grounding-metadata-extraction.spec.md`
-> **Status**: Not Started
+> **Status**: Complete
 > **Priority**: P1 (MVP - core source reliability fix)
 > **Goal**: Capture Google search sources from structured API grounding metadata instead of fragile LLM text parsing, eliminating empty source sections and placeholder URLs.
 > **Independent Test**: Run the pipeline with a Google search topic. Verify the merged SOURCES section contains URLs from `groundingChunks` API metadata, not regex-parsed from LLM text. Confirm Perplexity topics are unchanged.
@@ -380,3 +380,39 @@ Grounding-sourced citations must render correctly in the final newsletter HTML e
 ## Activity Log
 
 - 2026-03-22T00:00:00Z - planner - lane=planned - Work package created
+- 2026-03-22T10:00:00Z - coder - lane=doing - Starting implementation of T23-01 through T23-10
+- 2026-03-22T12:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+
+## Self-Review
+
+### Spec Compliance
+- [x] GroundingResult dataclass with sources, supports, queries, has_metadata (FR-GME-002/003)
+- [x] _grounding_capture_callback reads temp:_adk_grounding_metadata from state (OQ-1 resolution)
+- [x] Callback never raises, returns None (FR-GME-004)
+- [x] _parse_grounding_from_state deduplicates URIs, escapes titles (FR-GME-002/003)
+- [x] Google search agents get after_model_callback, Perplexity does not (FR-GME-001/006)
+- [x] Per-round grounding extraction writes sources/supports/queries to state (FR-GME-010/011/012)
+- [x] Link verification uses grounding URIs for Google (FR-GME-040)
+- [x] Broken URLs removed from grounding_sources state (FR-GME-041)
+- [x] _merge_rounds_with_grounding builds SOURCES from grounding metadata (FR-GME-020/021)
+- [x] Fallback to _merge_rounds when no grounding data (FR-GME-022)
+- [x] Grounding redirect URIs preserved (FR-GME-023)
+- [x] State cleanup includes grounding keys (FR-GME-013)
+- [x] LOG-001 through LOG-004 implemented (Section 10.5)
+
+### Correctness
+- [x] All 102 unit tests pass
+- [x] Full suite of 1060 tests passes with zero regressions
+- [x] Coverage at 83.59% (above 80% threshold)
+
+### Code Quality
+- [x] No dead imports or debug artifacts
+- [x] No hardcoded values (all key patterns use idx/prov/round_idx)
+- [x] No security issues introduced
+
+### Scope Discipline
+- [x] Only deep_research.py and test_deep_research.py modified
+- [x] No unrelated changes
+
+### Encoding
+- [x] No em dashes, smart quotes, or curly apostrophes

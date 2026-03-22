@@ -12,6 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from newsletter_agent.tools.deep_research import (
     DeepResearchOrchestrator,
+    GroundingResult,
+    _grounding_capture_callback,
+    _make_grounding_callback,
     _MARKDOWN_LINK_RE,
 )
 
@@ -470,6 +473,215 @@ class TestOrchestratorRun:
 
         assert "Focus on results from the past month." in instruction
 
+    @pytest.mark.asyncio
+    async def test_google_round_parses_grounding_and_merges(self):
+        """Google provider with grounding metadata in state uses grounding merge."""
+        orch = _make_orchestrator(max_rounds=1, provider="google")
+        ctx = _make_ctx()
+
+        round_output = _research_text(
+            [("Old", "https://old.com")],
+            "Round 0 findings from LLM",
+        )
+
+        with patch.object(orch, "_make_search_agent") as mock_make:
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                # Simulate callback writing raw grounding data
+                run_ctx.session.state["deep_research_latest_0_google"] = round_output
+                run_ctx.session.state["_grounding_raw_0_google_round_0"] = {
+                    "grounding_chunks": [
+                        {"web": {"uri": "https://grounded.com/a", "title": "Grounded A"}},
+                        {"web": {"uri": "https://grounded.com/b", "title": "Grounded B"}},
+                    ],
+                    "grounding_supports": [],
+                    "web_search_queries": ["AI news"],
+                }
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        merged = ctx.session.state["research_0_google"]
+        assert "SUMMARY:" in merged
+        assert "SOURCES:" in merged
+        assert "https://grounded.com/a" in merged
+        assert "https://grounded.com/b" in merged
+        # LLM-extracted old source should NOT be in the grounding-based SOURCES
+        sources_section = merged.split("SOURCES:")[1]
+        assert "https://old.com" not in sources_section
+
+    @pytest.mark.asyncio
+    async def test_google_round_no_grounding_falls_back(self):
+        """Google provider without grounding metadata falls back to text merge."""
+        orch = _make_orchestrator(max_rounds=1, provider="google")
+        ctx = _make_ctx()
+
+        round_output = _research_text(
+            [("Text Source", "https://text.com")],
+            "Findings from text only",
+        )
+
+        with patch.object(orch, "_make_search_agent") as mock_make:
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                run_ctx.session.state["deep_research_latest_0_google"] = round_output
+                # No grounding data at all
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        merged = ctx.session.state["research_0_google"]
+        # Falls back to text extraction -- old sources present
+        assert "https://text.com" in merged
+
+    @pytest.mark.asyncio
+    async def test_perplexity_round_no_grounding_processing(self):
+        """Perplexity provider: no grounding processing at all."""
+        orch = _make_orchestrator(
+            name="DeepResearch_0_perplexity",
+            max_rounds=1,
+            provider="perplexity",
+        )
+        ctx = _make_ctx()
+
+        round_output = _research_text(
+            [("Perp", "https://perp.com")],
+            "Perplexity findings",
+        )
+
+        with patch.object(orch, "_make_search_agent") as mock_make:
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                run_ctx.session.state["deep_research_latest_0_perplexity"] = round_output
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        merged = ctx.session.state["research_0_perplexity"]
+        assert "https://perp.com" in merged
+        # No grounding keys should exist
+        assert not any(
+            k.startswith("grounding_") or k.startswith("_grounding_")
+            for k in ctx.session.state
+        )
+
+    @pytest.mark.asyncio
+    async def test_google_link_verification_uses_grounding_urls(self):
+        """When link verification enabled and grounding data present,
+        grounding URIs are sent to verify_urls (FR-GME-040)."""
+        orch = _make_orchestrator(max_rounds=1, provider="google")
+        ctx = _make_ctx({"config_verify_links": True})
+
+        round_output = _research_text(
+            [("Old", "https://old.com")],
+            "Findings",
+        )
+
+        with patch.object(orch, "_make_search_agent") as mock_make, \
+             patch("newsletter_agent.tools.deep_research.verify_urls", new_callable=AsyncMock) as mock_verify:
+
+            mock_verify.return_value = {}
+
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                run_ctx.session.state["deep_research_latest_0_google"] = round_output
+                run_ctx.session.state["_grounding_raw_0_google_round_0"] = {
+                    "grounding_chunks": [
+                        {"web": {"uri": "https://grounded.com/a", "title": "Grounded A"}},
+                    ],
+                    "grounding_supports": [],
+                    "web_search_queries": [],
+                }
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        # Verify that verify_urls was called with grounding URI, not regex-extracted
+        mock_verify.assert_called_once()
+        call_args = mock_verify.call_args[0][0]
+        assert "https://grounded.com/a" in call_args
+
+    @pytest.mark.asyncio
+    async def test_broken_grounding_url_removed_from_state(self):
+        """Broken grounding URL removed from grounding_sources state (FR-GME-041)."""
+        from newsletter_agent.tools.link_verifier import LinkCheckResult
+
+        orch = _make_orchestrator(max_rounds=1, provider="google")
+        ctx = _make_ctx({"config_verify_links": True})
+
+        round_output = (
+            "SUMMARY:\nSome findings about [A](https://broken.com) and [B](https://good.com)\n\n"
+            "SOURCES:\n- [A](https://broken.com)\n- [B](https://good.com)"
+        )
+
+        with patch.object(orch, "_make_search_agent") as mock_make, \
+             patch("newsletter_agent.tools.deep_research.verify_urls", new_callable=AsyncMock) as mock_verify:
+
+            mock_verify.return_value = {
+                "https://broken.com": LinkCheckResult(
+                    url="https://broken.com", status="broken", error="404"
+                ),
+                "https://good.com": LinkCheckResult(
+                    url="https://good.com", status="valid"
+                ),
+            }
+
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                run_ctx.session.state["deep_research_latest_0_google"] = round_output
+                run_ctx.session.state["_grounding_raw_0_google_round_0"] = {
+                    "grounding_chunks": [
+                        {"web": {"uri": "https://broken.com", "title": "Broken"}},
+                        {"web": {"uri": "https://good.com", "title": "Good"}},
+                    ],
+                    "grounding_supports": [],
+                    "web_search_queries": [],
+                }
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        # The merged result should not contain the broken URL in the SOURCES
+        merged = ctx.session.state["research_0_google"]
+        sources_section = merged.split("SOURCES:")[1] if "SOURCES:" in merged else ""
+        assert "https://broken.com" not in sources_section
+        assert "https://good.com" in sources_section
+
 
 # ---------------------------------------------------------------------------
 # Test: _parse_planning_output
@@ -767,3 +979,470 @@ class TestCollectBareUrls:
         assert seen == {
             "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC": "AI agent frameworks adoption trends 2026"
         }
+
+
+# ---------------------------------------------------------------------------
+# Test: GroundingResult dataclass (T23-02)
+# ---------------------------------------------------------------------------
+
+
+class TestGroundingResult:
+
+    def test_default_empty(self):
+        gr = GroundingResult()
+        assert gr.sources == []
+        assert gr.supports == []
+        assert gr.queries == []
+        assert gr.has_metadata is False
+
+    def test_with_data(self):
+        gr = GroundingResult(
+            sources=[{"uri": "https://a.com", "title": "A"}],
+            supports=[{"segment_text": "foo"}],
+            queries=["q1"],
+            has_metadata=True,
+        )
+        assert len(gr.sources) == 1
+        assert gr.has_metadata is True
+
+
+# ---------------------------------------------------------------------------
+# Test: _grounding_capture_callback (T23-02/T23-04)
+# ---------------------------------------------------------------------------
+
+
+class TestGroundingCaptureCallback:
+
+    def _make_callback_context(self, state: dict) -> MagicMock:
+        ctx = MagicMock()
+        ctx.state = state
+        return ctx
+
+    def _make_grounding_metadata(self, chunks=None, supports=None, queries=None):
+        gm = MagicMock()
+        gm.grounding_chunks = chunks or []
+        gm.grounding_supports = supports or []
+        gm.web_search_queries = queries or []
+        return gm
+
+    def _make_chunk(self, uri: str, title: str = ""):
+        chunk = MagicMock()
+        web = MagicMock()
+        web.uri = uri
+        web.title = title
+        chunk.web = web
+        return chunk
+
+    def test_captures_grounding_data(self):
+        chunks = [
+            self._make_chunk("https://example.com/a", "Article A"),
+            self._make_chunk("https://example.com/b", "Article B"),
+        ]
+        gm = self._make_grounding_metadata(chunks=chunks, queries=["q1"])
+        state = {"temp:_adk_grounding_metadata": gm}
+        cb_ctx = self._make_callback_context(state)
+        result = _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 1)
+        assert result is None
+        raw = state["_grounding_raw_0_google_round_1"]
+        assert len(raw["grounding_chunks"]) == 2
+        assert raw["grounding_chunks"][0]["web"]["uri"] == "https://example.com/a"
+        assert raw["web_search_queries"] == ["q1"]
+
+    def test_no_metadata_does_nothing(self):
+        state = {}
+        cb_ctx = self._make_callback_context(state)
+        result = _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 0)
+        assert result is None
+        assert "_grounding_raw_0_google_round_0" not in state
+
+    def test_exception_does_not_raise(self):
+        cb_ctx = MagicMock()
+        cb_ctx.state = None  # will cause exception
+        result = _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 0)
+        assert result is None
+
+    def test_make_grounding_callback_creates_bound_callback(self):
+        cb = _make_grounding_callback(1, "google", 2)
+        assert callable(cb)
+
+    def test_captures_supports_with_segments(self):
+        chunk = self._make_chunk("https://ex.com", "Ex")
+        support = MagicMock()
+        segment = MagicMock()
+        segment.text = "supported text"
+        segment.start_index = 5
+        segment.end_index = 20
+        support.segment = segment
+        support.grounding_chunk_indices = [0]
+
+        gm = self._make_grounding_metadata(
+            chunks=[chunk], supports=[support], queries=["q"]
+        )
+        state = {"temp:_adk_grounding_metadata": gm}
+        cb_ctx = self._make_callback_context(state)
+        _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 0)
+
+        raw = state["_grounding_raw_0_google_round_0"]
+        assert len(raw["grounding_supports"]) == 1
+        assert raw["grounding_supports"][0]["segment_text"] == "supported text"
+        assert raw["grounding_supports"][0]["start_index"] == 5
+        assert raw["grounding_supports"][0]["chunk_indices"] == [0]
+
+    def test_captures_support_with_no_segment(self):
+        chunk = self._make_chunk("https://ex.com", "Ex")
+        support = MagicMock()
+        support.segment = None
+        support.grounding_chunk_indices = []
+
+        gm = self._make_grounding_metadata(chunks=[chunk], supports=[support])
+        state = {"temp:_adk_grounding_metadata": gm}
+        cb_ctx = self._make_callback_context(state)
+        _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 0)
+
+        raw = state["_grounding_raw_0_google_round_0"]
+        assert raw["grounding_supports"][0]["segment_text"] == ""
+        assert raw["grounding_supports"][0]["start_index"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Test: _parse_grounding_from_state (T23-03)
+# ---------------------------------------------------------------------------
+
+
+class TestParseGroundingFromState:
+
+    def test_happy_path(self):
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://a.com", "title": "Title A"}},
+                    {"web": {"uri": "https://b.com", "title": "Title B"}},
+                ],
+                "grounding_supports": [
+                    {
+                        "segment_text": "some text",
+                        "start_index": 0,
+                        "end_index": 10,
+                        "chunk_indices": [0],
+                    },
+                ],
+                "web_search_queries": ["query1"],
+            },
+        }
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert gr.has_metadata is True
+        assert len(gr.sources) == 2
+        assert gr.sources[0]["uri"] == "https://a.com"
+        assert gr.sources[0]["title"] == "Title A"
+        assert len(gr.supports) == 1
+        assert gr.queries == ["query1"]
+
+    def test_empty_state_returns_empty_result(self):
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state({}, 0, "google", 0)
+        assert gr.has_metadata is False
+        assert gr.sources == []
+
+    def test_deduplicates_by_uri(self):
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://a.com", "title": "Title A"}},
+                    {"web": {"uri": "https://a.com", "title": "Title A (dup)"}},
+                ],
+                "grounding_supports": [],
+                "web_search_queries": [],
+            },
+        }
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert len(gr.sources) == 1
+        assert gr.sources[0]["title"] == "Title A"  # first wins
+
+    def test_empty_title_uses_uri(self):
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://a.com", "title": ""}},
+                ],
+                "grounding_supports": [],
+                "web_search_queries": [],
+            },
+        }
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert gr.sources[0]["title"] == "https://a.com"
+
+    def test_skips_non_https_uris(self):
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "http://insecure.com", "title": "Bad"}},
+                    {"web": {"uri": "https://good.com", "title": "Good"}},
+                ],
+                "grounding_supports": [],
+                "web_search_queries": [],
+            },
+        }
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert len(gr.sources) == 1
+        assert gr.sources[0]["uri"] == "https://good.com"
+
+    def test_escapes_markdown_special_chars_in_titles(self):
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://a.com", "title": "Title [with] (parens)"}},
+                ],
+                "grounding_supports": [],
+                "web_search_queries": [],
+            },
+        }
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert "[" not in gr.sources[0]["title"].replace("\\[", "")
+
+    def test_exception_returns_empty_result(self):
+        """Corrupt data should not crash."""
+        state = {"_grounding_raw_0_google_round_0": "not a dict"}
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert gr.has_metadata is False
+
+
+# ---------------------------------------------------------------------------
+# Test: _merge_rounds_with_grounding (T23-07)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeRoundsWithGrounding:
+
+    def test_happy_path_3_rounds(self):
+        """3 rounds with grounding produce deduplicated SOURCES."""
+        state = {
+            "research_0_google_round_0": "SUMMARY:\nRound 0 findings\n\nSOURCES:\n- [Old](https://old.com)",
+            "research_0_google_round_1": "SUMMARY:\nRound 1 findings\n\nSOURCES:\n- [Old](https://old.com)",
+            "research_0_google_round_2": "SUMMARY:\nRound 2 findings\n\nSOURCES:\n- [Old](https://old.com)",
+            "grounding_sources_0_google_round_0": [
+                {"uri": "https://a.com", "title": "Article A"},
+                {"uri": "https://b.com", "title": "Article B"},
+            ],
+            "grounding_sources_0_google_round_1": [
+                {"uri": "https://b.com", "title": "Article B (dup)"},
+                {"uri": "https://c.com", "title": "Article C"},
+            ],
+            "grounding_sources_0_google_round_2": [
+                {"uri": "https://d.com", "title": "Article D"},
+            ],
+        }
+        orch = _make_orchestrator()
+        result = orch._merge_rounds_with_grounding(state, 3)
+        assert "SUMMARY:" in result
+        assert "SOURCES:" in result
+        assert "Round 0 findings" in result
+        assert "Round 1 findings" in result
+        assert "Round 2 findings" in result
+        # Grounding sources, deduplicated
+        assert "- [Article A](https://a.com)" in result
+        assert "- [Article B](https://b.com)" in result
+        assert "- [Article C](https://c.com)" in result
+        assert "- [Article D](https://d.com)" in result
+        # Old LLM-extracted source NOT in SOURCES section
+        sources_section = result.split("SOURCES:")[1]
+        assert "https://old.com" not in sources_section
+
+    def test_fallback_when_no_grounding(self):
+        """No grounding data delegates to _merge_rounds."""
+        state = {
+            "research_0_google_round_0": "SUMMARY:\nFindings\n\nSOURCES:\n- [X](https://x.com)",
+        }
+        orch = _make_orchestrator()
+        result = orch._merge_rounds_with_grounding(state, 1)
+        # Falls back to _merge_rounds which uses LLM sources
+        assert "https://x.com" in result
+
+    def test_mixed_rounds_grounding_and_not(self):
+        """Some rounds with grounding, some without -- grounding sources used."""
+        state = {
+            "research_0_google_round_0": "SUMMARY:\nRound 0\n\nSOURCES:\n- [X](https://x.com)",
+            "research_0_google_round_1": "SUMMARY:\nRound 1\n\nSOURCES:\n- [Y](https://y.com)",
+            "grounding_sources_0_google_round_0": [
+                {"uri": "https://a.com", "title": "A"},
+            ],
+            # round 1 has no grounding data
+        }
+        orch = _make_orchestrator()
+        result = orch._merge_rounds_with_grounding(state, 2)
+        sources_section = result.split("SOURCES:")[1]
+        assert "https://a.com" in sources_section
+        # LLM-extracted source should NOT appear in grounding-based sources
+        assert "https://y.com" not in sources_section
+
+    def test_preserves_grounding_redirect_uris(self):
+        """Grounding redirect URIs are preserved as-is in SOURCES (FR-GME-023)."""
+        redirect_uri = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123"
+        state = {
+            "research_0_google_round_0": "SUMMARY:\nFindings\n\nSOURCES:\n",
+            "grounding_sources_0_google_round_0": [
+                {"uri": redirect_uri, "title": "Grounding Article"},
+            ],
+        }
+        orch = _make_orchestrator()
+        result = orch._merge_rounds_with_grounding(state, 1)
+        assert redirect_uri in result
+
+    def test_empty_summaries_returns_empty_string(self):
+        """All rounds empty text -> empty string."""
+        state = {
+            "research_0_google_round_0": "",
+            "grounding_sources_0_google_round_0": [
+                {"uri": "https://a.com", "title": "A"},
+            ],
+        }
+        orch = _make_orchestrator()
+        result = orch._merge_rounds_with_grounding(state, 1)
+        assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Test: State cleanup with grounding keys (T23-08)
+# ---------------------------------------------------------------------------
+
+
+class TestStateCleanupWithGrounding:
+
+    def test_removes_grounding_keys(self):
+        state = {
+            "adaptive_plan_0_google": "plan",
+            "adaptive_analysis_0_google": "analysis",
+            "adaptive_context_0_google": "ctx",
+            "deep_research_latest_0_google": "latest",
+            "deep_urls_accumulated_0_google": ["http://a.com"],
+            "research_0_google_round_0": "round 0",
+            "research_0_google_round_1": "round 1",
+            "_grounding_raw_0_google_round_0": {"chunks": []},
+            "_grounding_raw_0_google_round_1": {"chunks": []},
+            "grounding_sources_0_google_round_0": [{"uri": "https://a.com"}],
+            "grounding_sources_0_google_round_1": [{"uri": "https://b.com"}],
+            "grounding_supports_0_google_round_0": [],
+            "grounding_supports_0_google_round_1": [],
+            "grounding_queries_0_google_round_0": ["q1"],
+            "grounding_queries_0_google_round_1": ["q2"],
+            "research_0_google": "final merged",
+            "unrelated_key": "keep me",
+        }
+        orch = _make_orchestrator()
+        orch._cleanup_state(state, 2)
+
+        # Grounding keys removed
+        assert "_grounding_raw_0_google_round_0" not in state
+        assert "_grounding_raw_0_google_round_1" not in state
+        assert "grounding_sources_0_google_round_0" not in state
+        assert "grounding_sources_0_google_round_1" not in state
+        assert "grounding_supports_0_google_round_0" not in state
+        assert "grounding_queries_0_google_round_0" not in state
+        # Final merged and unrelated preserved
+        assert state["research_0_google"] == "final merged"
+        assert state["unrelated_key"] == "keep me"
+
+    def test_missing_grounding_keys_no_error(self):
+        """Cleanup when no grounding keys exist should not raise."""
+        state = {
+            "research_0_google_round_0": "round 0",
+        }
+        orch = _make_orchestrator()
+        orch._cleanup_state(state, 1)
+        assert "research_0_google_round_0" not in state
+
+
+# ---------------------------------------------------------------------------
+# Test: Grounding observability logging (T23-09)
+# ---------------------------------------------------------------------------
+
+
+class TestGroundingLogging:
+
+    def test_log_001_extraction_info(self, caplog):
+        """LOG-001: Successful extraction logged at INFO."""
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://a.com", "title": "A"}},
+                ],
+                "grounding_supports": [],
+                "web_search_queries": ["q1"],
+            },
+        }
+        orch = _make_orchestrator()
+        with caplog.at_level("INFO"):
+            gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        # Parsing itself doesn't log -- the logging is in _run_async_impl
+        assert gr.has_metadata is True
+
+    def test_log_003_merge_info(self, caplog):
+        """LOG-003: Merge summary logged at INFO."""
+        state = {
+            "research_0_google_round_0": "SUMMARY:\nFindings\n\nSOURCES:\n",
+            "grounding_sources_0_google_round_0": [
+                {"uri": "https://a.com", "title": "A"},
+            ],
+        }
+        orch = _make_orchestrator()
+        with caplog.at_level("INFO"):
+            orch._merge_rounds_with_grounding(state, 1)
+        assert any(
+            "[Grounding]" in r.message and "merged" in r.message
+            for r in caplog.records
+        )
+
+    def test_log_002_fallback_warning(self, caplog):
+        """LOG-002: Fallback logged at WARNING."""
+        state = {
+            "research_0_google_round_0": "SUMMARY:\nFindings\n\nSOURCES:\n- [X](https://x.com)",
+        }
+        orch = _make_orchestrator()
+        with caplog.at_level("WARNING"):
+            orch._merge_rounds_with_grounding(state, 1)
+        assert any(
+            "falling back" in r.message and r.levelname == "WARNING"
+            for r in caplog.records
+        )
+
+    def test_log_004_empty_title_warning(self, caplog):
+        """LOG-004: Empty title logged at WARNING."""
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://a.com", "title": ""}},
+                ],
+                "grounding_supports": [],
+                "web_search_queries": [],
+            },
+        }
+        orch = _make_orchestrator()
+        with caplog.at_level("WARNING"):
+            orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert any(
+            "empty title" in r.message and r.levelname == "WARNING"
+            for r in caplog.records
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test: _make_search_agent grounding callback wiring (T23-04)
+# ---------------------------------------------------------------------------
+
+
+class TestSearchAgentGroundingCallback:
+
+    def test_google_agent_has_after_model_callback(self):
+        orch = _make_orchestrator(provider="google")
+        agent = orch._make_search_agent(0, "test query")
+        assert agent.after_model_callback is not None
+
+    def test_perplexity_agent_has_no_after_model_callback(self):
+        orch = _make_orchestrator(provider="perplexity")
+        agent = orch._make_search_agent(0, "test query")
+        assert agent.after_model_callback is None

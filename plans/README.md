@@ -535,7 +535,7 @@ Cross-WP consistency audit performed. No inconsistencies found. Key validations:
 
 | ID | Title | Priority | Status | Depends On | Parallelisable |
 |----|-------|----------|--------|-----------|----------------|
-| [WP23](WP23-grounding-metadata-extraction.md) | Grounding Metadata Extraction | P1 | Not Started | WP12-WP18 (base system + adaptive orchestrator) | No |
+| [WP23](WP23-grounding-metadata-extraction.md) | Grounding Metadata Extraction | P1 | Complete | WP12-WP18 (base system + adaptive orchestrator) | No |
 
 ### Enhancement MVP Scope
 

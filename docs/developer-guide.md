@@ -169,11 +169,11 @@ pytest tests/unit/test_agent_factory.py::TestBuildPipeline -v
 # By marker
 pytest -m performance -v
 
-# Observability acceptance tests (BDD + integration + performance + security)
-pytest tests/bdd/ tests/integration/test_observability.py tests/performance/test_otel_overhead.py tests/security/test_otel_security.py -v
+# Observability acceptance tests (BDD + integration + E2E smoke + performance + security)
+pytest tests/bdd/ tests/integration/test_observability.py tests/e2e/test_observability_smoke.py tests/performance/test_otel_overhead.py tests/security/test_otel_security.py -v
 
 # Observability coverage for target modules
-pytest tests/ --ignore=tests/unit/test_http_handler.py --cov=newsletter_agent.telemetry --cov=newsletter_agent.cost_tracker --cov=newsletter_agent.timing --cov=newsletter_agent.logging_config --cov-branch --cov-report=term-missing
+pytest tests/ --ignore=tests/unit/test_http_handler.py --cov=newsletter_agent.telemetry --cov=newsletter_agent.cost_tracker --cov=newsletter_agent.timing --cov=newsletter_agent.logging_config --cov=newsletter_agent.config.schema --cov-branch --cov-report=term-missing
 ```
 
 ### Test Configuration

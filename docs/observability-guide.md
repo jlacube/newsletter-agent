@@ -38,8 +38,9 @@ It is the operational reference for tracing, debugging, and cost monitoring in N
 
 ### WP22 - Quality Gate
 
-- BDD, integration, security, and performance tests cover the observability feature set.
+- BDD, integration, local E2E smoke, security, and performance tests cover the observability feature set.
 - The suite verifies token extraction, pricing, span hierarchy, log correlation, exporter selection, kill-switch behavior, and PII/secret handling.
+- The local smoke path runs `python -m newsletter_agent` in `dry_run=true` mode and asserts console span output plus the `pipeline_cost_summary` log line.
 
 ## Runtime Architecture
 
@@ -197,6 +198,7 @@ WP22 adds coverage in these areas:
 
 - BDD tests for token tracking, cost calculation, cost summary, span hierarchy, log correlation, exporter config, budget warnings, and kill switch behavior
 - integration tests for end-to-end observability wiring
+- local E2E smoke coverage for the real CLI entry point with console span output and cost summary logging
 - performance tests for tracing overhead and span counts
 - security tests for PII and secret leakage
 
@@ -208,7 +210,7 @@ The current docs, plans, runtime behavior, and observability tests are aligned f
 - `SynthesisLinkVerifier` runs before formatting
 - `cost_summary` state and log payloads use the spec-aligned public shape
 - the SC-006 benchmark enforces the 5% threshold
-- WP19-WP22 plan status is complete
+- WP19-WP22 plan status is complete, with WP22 approved with findings after re-review
 
 ## File Map
 
@@ -227,5 +229,6 @@ The current docs, plans, runtime behavior, and observability tests are aligned f
 - `tests/bdd/test_cost_budget.py`
 - `tests/bdd/test_kill_switch.py`
 - `tests/integration/test_observability.py`
+- `tests/e2e/test_observability_smoke.py`
 - `tests/performance/test_otel_overhead.py`
 - `tests/security/test_otel_security.py`

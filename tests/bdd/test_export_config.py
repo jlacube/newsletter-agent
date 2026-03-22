@@ -7,12 +7,12 @@ Feature: Export Configuration
   Scenario: OTLP export when endpoint is set
 """
 
+import io
 from unittest.mock import patch
 
 import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 
 import newsletter_agent.telemetry as telemetry_mod
 
@@ -29,19 +29,6 @@ def _reset_telemetry():
     trace._TRACER_PROVIDER_SET_ONCE._done = False
 
 
-def _get_exporter_types(provider):
-    """Extract exporter class names from a TracerProvider."""
-    types = []
-    if hasattr(provider, "_active_span_processor"):
-        proc = provider._active_span_processor
-        # MultSpanProcessor wraps individual processors
-        if hasattr(proc, "_span_processors"):
-            for p in proc._span_processors:
-                if hasattr(p, "span_exporter"):
-                    types.append(type(p.span_exporter).__name__)
-    return types
-
-
 class TestExportConfigScenarios:
     """Feature: Export Configuration."""
 
@@ -50,19 +37,28 @@ class TestExportConfigScenarios:
 
         Given OTEL_EXPORTER_OTLP_ENDPOINT is not set
         When telemetry initializes
-        Then ConsoleSpanExporter is configured
+        Then span output is written to stdout by the console exporter
         """
         monkeypatch.setenv("OTEL_ENABLED", "true")
         monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
         monkeypatch.delenv("K_SERVICE", raising=False)
+        capture_stream = io.StringIO()
+        monkeypatch.setattr(telemetry_mod.sys, "__stdout__", capture_stream)
 
         telemetry_mod.init_telemetry()
 
         provider = trace.get_tracer_provider()
         assert isinstance(provider, TracerProvider)
 
-        exporter_types = _get_exporter_types(provider)
-        assert "ConsoleSpanExporter" in exporter_types
+        tracer = telemetry_mod.get_tracer("test.export_config")
+        with tracer.start_as_current_span("ConsoleExportSpan"):
+            pass
+
+        provider.force_flush()
+        captured = capture_stream.getvalue()
+
+        assert "ConsoleExportSpan" in captured
+        assert '"name": "ConsoleExportSpan"' in captured
 
     def test_otlp_export_when_endpoint_set(self, monkeypatch):
         """Scenario: OTLP export when endpoint is set.
@@ -75,10 +71,15 @@ class TestExportConfigScenarios:
         monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
         monkeypatch.delenv("K_SERVICE", raising=False)
 
-        telemetry_mod.init_telemetry()
+        with patch(
+            "opentelemetry.exporter.otlp.proto.grpc.trace_exporter.OTLPSpanExporter"
+        ) as mock_exporter:
+            telemetry_mod.init_telemetry()
 
         provider = trace.get_tracer_provider()
         assert isinstance(provider, TracerProvider)
 
-        exporter_types = _get_exporter_types(provider)
-        assert "OTLPSpanExporter" in exporter_types
+        mock_exporter.assert_called_once_with(
+            endpoint="http://localhost:4317",
+            headers=None,
+        )

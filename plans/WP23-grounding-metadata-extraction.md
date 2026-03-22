@@ -87,6 +87,7 @@ Replace the regex-based source URL extraction from Google search rounds with str
   - [ ] When present: extracts `sources` (uri + title pairs), `supports`, `queries` into `GroundingResult(has_metadata=True)`
   - [ ] Duplicate URIs within a single round are deduplicated; first title occurrence wins
   - [ ] Chunks with empty or missing `title` use the URI as the title
+  - [ ] Titles containing markdown-special characters (`[`, `]`, `(`, `)`) are escaped with backslashes so downstream `- [title](uri)` formatting is not broken
   - [ ] Missing `grounding_supports` or `web_search_queries` in raw data defaults to empty lists (partial metadata OK)
   - [ ] When state key is absent or empty: returns `GroundingResult(has_metadata=False)` with empty lists
   - [ ] On any exception: logs WARNING, returns empty `GroundingResult(has_metadata=False)`
@@ -101,6 +102,7 @@ Replace the regex-based source URL extraction from Google search rounds with str
   - The raw data in state is a Python dict (serialized by the callback in T23-02). Structure: `{"grounding_chunks": [{"web": {"uri": "...", "title": "..."}}], "grounding_supports": [...], "web_search_queries": [...]}`
   - Deduplication: use an `OrderedDict` or `dict` (Python 3.7+ insertion order) keyed by URI to track first-seen title
   - Validation: skip chunks where `uri` is empty or doesn't start with `https://`
+  - Markdown safety: titles from the API may contain characters that break markdown link syntax. Escape `[`, `]`, `(`, `)` with backslashes in titles (e.g., `Company [Inc]` becomes `Company \\[Inc\\]`). This ensures `- [title](uri)` formatting in T23-07 produces valid markdown that the synthesis LLM and `markdown.markdown()` converter will parse correctly into `<a>` tags in the email.
   - Known pitfall: `grounding_supports[].segment` may have `text` that references the model's response text. This is informational - store it but don't validate against the model output.
   - Test pattern: directly call `orch._parse_grounding_from_state(state, 0, "google", 0)` with crafted state dicts. No async needed.
 
@@ -200,6 +202,8 @@ Replace the regex-based source URL extraction from Google search rounds with str
   - [ ] Google grounding redirect URIs preserved as-is in SOURCES (FR-GME-023)
   - [ ] Orchestrator calls `_merge_rounds_with_grounding` instead of `_merge_rounds` for Google provider
   - [ ] Perplexity provider continues to use existing `_merge_rounds`
+  - [ ] Grounding sources formatted as `- [title](uri)` markdown links -- this exact format is required for the downstream synthesis LLM to pick up citations and produce valid `body_markdown` inline citations and `sources` JSON arrays
+  - [ ] Source titles containing markdown-special characters (brackets, parentheses) are escaped so the markdown link syntax is not broken
 - **Test requirements**: unit
   - `test_merge_rounds_with_grounding_happy_path` - 3 rounds with grounding produce deduplicated SOURCES
   - `test_merge_rounds_with_grounding_fallback` - no grounding data delegates to `_merge_rounds`
@@ -213,6 +217,7 @@ Replace the regex-based source URL extraction from Google search rounds with str
   - Return format: `"SUMMARY:\n{summary}\n\nSOURCES:\n{sources_lines}"`
   - Wire in: replace `merged = self._merge_rounds(state, round_count)` with conditional: if `self.provider == "google"` use `_merge_rounds_with_grounding`, else use `_merge_rounds`
   - Known pitfall: ensure the SUMMARY is still built from ALL rounds' text output, not just rounds with grounding data. Grounding only replaces SOURCES extraction.
+  - Email citation compatibility: the `- [title](uri)` format is critical -- this exact format is what the synthesis LLM prompt expects (see `newsletter_agent/prompts/synthesis.py`). The LLM produces `body_markdown` with inline `[title](uri)` citations and a structured `sources` array. Downstream, `markdown.markdown()` converts inline citations to `<a>` tags, then `nh3.clean()` sanitizes them. The structured `sources` array populates the per-section and global Sources lists in the Jinja2 template. If the markdown format is wrong, citations will not render as clickable links in the email.
   - Test pattern: set up state with `grounding_sources_*` and `research_*_round_*` keys, call `_merge_rounds_with_grounding`, verify output format
 
 ### T23-08 - State Cleanup Extension
@@ -273,6 +278,9 @@ Replace the regex-based source URL extraction from Google search rounds with str
   - [ ] New/modified methods in deep_research.py: >= 80% code coverage, >= 90% branch coverage
   - [ ] Full test suite passes with zero regressions (all existing tests still pass)
   - [ ] E2E pipeline run (manual or CI) produces newsletter with zero synthetic/placeholder Google URLs (SC-002)
+  - [ ] E2E pipeline HTML contains properly rendered citation links: per-section Sources footer `<a>` tags and global All Sources appendix `<a>` tags both contain grounding-sourced URLs and titles
+  - [ ] Grounding redirect URIs (`vertexaisearch.cloud.google.com/grounding-api-redirect/...`) are clickable in the final HTML email (verified by inspecting the output HTML)
+  - [ ] Source titles from grounding metadata are HTML-escaped in the email output (no raw `<`, `>`, `&` in rendered titles) -- verified via Jinja2 autoescaping and nh3 sanitization of inline body citations
 - **Test requirements**: BDD, integration, E2E
 - **Depends on**: T23-01 through T23-09 (all implementation must be complete)
 - **Implementation Guidance**:
@@ -282,6 +290,13 @@ Replace the regex-based source URL extraction from Google search rounds with str
   - For the orchestrator integration test, use the existing mock pattern from `test_deep_research.py`: `patch.object(orch, "_make_search_agent")` returning a mock agent, with state pre-populated
   - Coverage check: `pytest --cov=newsletter_agent/tools/deep_research --cov-branch --cov-report=term-missing`
   - E2E validation: run `python -m newsletter_agent` with a topic using google_search, inspect output HTML and logs
+  - E2E email rendering checks: in the output HTML file, verify:
+    1. Per-section Sources footer contains `<a href="...">` tags with grounding-sourced URLs and titles
+    2. Global All Sources appendix contains the same grounding-sourced URLs
+    3. Inline body citations (`<a>` tags in `body_html`) reference grounding-sourced URLs
+    4. No raw markdown link syntax (`[title](url)`) appears in the rendered HTML
+    5. Grounding redirect URIs are preserved as valid `href` values (not URL-encoded or truncated)
+    6. Source titles with special characters (`&`, `<`, `>`) are HTML-escaped in the output
   - Known pitfall: BDD tests need realistic grounding metadata fixtures. Create a `conftest.py` fixture or helper that builds `types.GroundingMetadata`-like mock objects with the correct nested structure.
 
 ## Implementation Notes
@@ -317,6 +332,24 @@ def _make_grounding_callback(idx: int, prov: str, round_idx: int):
         # ... serialize and write
     return _callback
 ```
+
+### Citation Rendering Chain (Email Display)
+
+Grounding-sourced citations must render correctly in the final newsletter HTML email. The rendering chain is:
+
+1. **Merge** (T23-07): `_merge_rounds_with_grounding` produces `SOURCES:\n- [title](uri)` markdown links. This format is consumed verbatim by the synthesis LLM prompt.
+2. **Synthesis**: The LLM reads the markdown SOURCES and produces JSON with `body_markdown` (containing `[title](uri)` inline citations) and a `sources` array of `{"url": str, "title": str}` objects.
+3. **Normalization** (`synthesis_utils.normalize_synthesis_section`): Deduplicates sources, removes placeholders. Grounding redirect URIs (`vertexaisearch.cloud.google.com/grounding-api-redirect/...`) pass through because they start with `https://`.
+4. **Formatting** (`sanitize_synthesis_html`): `markdown.markdown()` converts `[title](uri)` to `<a href="uri">title</a>`. Then `nh3.clean()` sanitizes -- allowing `<a>` tags with `href` attribute, adding `rel="noopener noreferrer"`. Special characters in titles are HTML-escaped.
+5. **Template** (`newsletter.html.j2`): Three citation locations:
+   - Inline body: `{{ section.body_html|safe }}` -- pre-sanitized HTML with `<a>` tags
+   - Per-section Sources footer: `<a href="{{ src.url }}">{{ src.title }}</a>` -- Jinja2 autoescaping handles title escaping, URL is output as-is
+   - Global All Sources appendix: same pattern
+
+**Key validation points for T23-10**:
+- Source titles with `&`, `<`, `>`, quotes must be escaped (Jinja2 autoescaping handles footer/appendix; nh3 handles inline body)
+- Grounding redirect URIs must not be URL-encoded by the template (they contain path segments that must remain as-is)
+- The `- [title](uri)` format in SOURCES must exactly match what the existing synthesis prompt expects (see `newsletter_agent/prompts/synthesis.py`)
 
 ### Backward Compatibility
 

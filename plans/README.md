@@ -523,3 +523,69 @@ Cross-WP consistency audit performed. No inconsistencies found. Key validations:
 | T22-10 | Performance tests: OTel overhead benchmark | WP22 | Yes |
 | T22-11 | Security tests: no PII in spans, OTLP headers not logged | WP22 | Yes |
 | T22-12 | Coverage verification for all new modules | WP22 | No |
+
+---
+
+## Enhancement: Grounding Metadata Extraction
+
+> **Spec**: `specs/004-grounding-metadata-extraction.spec.md` (v1.0)
+> **Added**: 2025-07-22
+
+### Enhancement Work Packages
+
+| ID | Title | Priority | Status | Depends On | Parallelisable |
+|----|-------|----------|--------|-----------|----------------|
+| [WP23](WP23-grounding-metadata-extraction.md) | Grounding Metadata Extraction | P1 | Not Started | WP12-WP18 (base system + adaptive orchestrator) | No |
+
+### Enhancement MVP Scope
+
+**WP23** is the sole work package and constitutes the complete releasable increment. It captures Google search sources from structured API grounding metadata instead of fragile LLM text parsing, eliminating empty source sections and placeholder URLs. Perplexity is unchanged.
+
+### Enhancement Dependency & Execution Summary
+
+- **Prerequisite**: WP01-WP22 must all be complete (base system + all prior enhancements including adaptive orchestrator and telemetry).
+- **Sequence**: WP23 is a single, self-contained WP. Internally: T23-01 -> T23-02 -> (T23-03 || T23-04) -> T23-05 -> T23-06 -> (T23-07 || T23-08 || T23-09) -> T23-10
+- **Parallelization**: Within WP23, T23-03/T23-04 can run in parallel, and T23-07/T23-08/T23-09 can run in parallel.
+- **Critical path**: T23-01 -> T23-02 -> T23-03 -> T23-05 -> T23-06 -> T23-07 -> T23-10
+
+### Enhancement Sequencing Notes
+
+**WP23** modifies a single production file (`deep_research.py`) and its test file. The change is scoped to `DeepResearchOrchestrator`:
+
+1. **T23-01 (Spike)** resolves OQ-1: does `after_model_callback` receive populated `grounding_metadata`? This must run first to determine the extraction mechanism (callback vs state-key fallback).
+2. **T23-02 (Dataclass + Callback)** implements the core data model and callback function.
+3. **T23-03 (Parse) and T23-04 (Register)** are independent and can be parallelized. T23-03 parses raw grounding data into `GroundingResult`; T23-04 wires the callback into `_make_search_agent` for Google agents only.
+4. **T23-05 (Loop Integration)** is the largest task - modifies `_run_async_impl` to extract grounding data, populate URLs, and update adaptive context.
+5. **T23-06 (Link Verification)** modifies per-round verification to use grounding URIs for Google.
+6. **T23-07 (Merge), T23-08 (Cleanup), T23-09 (Logging)** are largely independent and can be parallelized. T23-07 implements `_merge_rounds_with_grounding`; T23-08 extends `_cleanup_state`; T23-09 adds structured logging.
+7. **T23-10 (Testing)** is the quality gate: 5 BDD scenarios, 3 integration tests, coverage verification, and E2E validation.
+
+### Consistency Notes
+
+Cross-WP consistency audit performed. Key validations:
+- `_make_search_agent` method signature is unchanged (T23-04 adds `after_model_callback` parameter to LlmAgent construction, not to the method itself)
+- State key naming follows existing `{prefix}_{idx}_{prov}_round_{r}` convention from WP16
+- `_merge_rounds` (existing) is NOT removed; it becomes the fallback for Perplexity and Google-without-metadata
+- `_extract_urls` (existing) is NOT removed; it remains used for Perplexity URL tracking and Google fallback
+- `_cleanup_state` extended, not replaced; existing cleanup keys unchanged
+- `adaptive_context["rounds"]` gains `grounding_source_count` field; existing fields unchanged
+- `accumulated_urls` population conditionally switches source (grounding vs regex) but downstream consumption unchanged
+- Coverage thresholds: 80% code, 90% branch consistent with WP17 and WP22
+- All 22 FRs (FR-GME-001 through FR-GME-051) assigned to exactly one primary task; no orphans, no duplicates
+- All 5 SCs mapped to T23-10 acceptance tests
+- All 4 USs mapped to T23-10 BDD scenarios
+
+### Enhancement Task Index
+
+| Task ID | Summary | Work Package | Parallel? |
+|---------|---------|--------------|----------|
+| T23-01 | ADK callback verification spike (OQ-1) | WP23 | No |
+| T23-02 | GroundingResult dataclass and capture callback | WP23 | No |
+| T23-03 | Parse grounding from state method | WP23 | Yes |
+| T23-04 | Register callback on Google search agent | WP23 | Yes |
+| T23-05 | Orchestrator loop integration | WP23 | No |
+| T23-06 | Grounding-aware link verification | WP23 | No |
+| T23-07 | Grounding-aware round merge | WP23 | Yes |
+| T23-08 | State cleanup extension | WP23 | Yes |
+| T23-09 | Observability logging | WP23 | Yes |
+| T23-10 | Acceptance and integration tests | WP23 | No |

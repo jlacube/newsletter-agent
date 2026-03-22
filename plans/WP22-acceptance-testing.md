@@ -1,6 +1,6 @@
 ---
-lane: to_do
-review_status: has_feedback
+lane: done
+review_status:
 ---
 
 # WP22 - Acceptance Testing & Quality Gate
@@ -42,6 +42,13 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Scenario: "Missing usage_metadata defaults to zero" -- Given mocked LLM with `usage_metadata=None`, When synthesizer completes, Then span tokens are all 0 and WARNING log contains `"usage_metadata missing"`
   - [ ] Tests use `InMemorySpanExporter` to capture and assert span attributes
   - [ ] Tests use mocked genai.Client (no real API calls)
+
+### Spec Compliance Checklist
+
+- [x] US-01 Scenario 1 is covered with a mocked direct LLM call that emits non-zero `gen_ai.usage.*` attributes on the `llm.generate:*` span.
+- [x] US-01 Scenario 2 is covered with `usage_metadata=None`, zero token defaults, and a WARNING log assertion.
+- [x] SC-001 evidence is captured via `InMemorySpanExporter` assertions against the completed LLM span.
+- [x] All genai API calls are mocked so the acceptance tests never require a real external API.
 - **Test requirements**: BDD (pytest-bdd or plain pytest with BDD-style naming)
 - **Depends on**: WP19, WP20, WP21 (all implementation complete)
 - **Implementation Guidance**:
@@ -70,6 +77,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Scenario: "Cost computed correctly for gemini-2.5-pro" -- Given pricing 1.25/10.00 per 1M and tokens (10000 prompt, 2000 completion, 500 thinking), Then `input_cost_usd=0.0125`, `output_cost_usd=0.025`, `total_cost_usd=0.0375`
   - [ ] Scenario: "Unknown model uses zero cost" -- Given pricing without "gemini-3.0-flash", When call with that model, Then `total_cost_usd=0.0` and WARNING logged
   - [ ] Tests operate on CostTracker directly (no pipeline needed)
+
+### Spec Compliance Checklist
+
+- [x] FR-401 cost math is validated with the exact Gemini pricing formula, including thinking tokens billed at the output rate.
+- [x] FR-404 unknown-model handling is validated with zero pricing plus a WARNING log assertion.
+- [x] US-02 coverage stays at the `CostTracker` boundary without depending on pipeline orchestration.
 - **Test requirements**: BDD
 - **Depends on**: WP20 (CostTracker)
 - **Implementation Guidance**:
@@ -88,6 +101,13 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Scenario: "Empty run produces zero summary" -- Given no LLM calls succeed, Then `total_cost_usd=0.0` and `call_count=0`
   - [ ] Tests verify log output contains structured JSON with correct keys and values
   - [ ] Tests verify `state["run_cost_usd"]` and `state["cost_summary"]` are set
+
+### Spec Compliance Checklist
+
+- [x] FR-501 structured `pipeline_cost_summary` logging is asserted with JSON content, per-topic keys, and total-cost math.
+- [x] FR-502 root-span `cost_summary` event attributes are asserted on the completed pipeline span.
+- [x] FR-503 and FR-504 state mutations are asserted via `state["run_cost_usd"]` and `state["cost_summary"]`.
+- [x] US-02 empty-run handling is covered with a zero-cost and zero-call summary assertion.
 - **Test requirements**: BDD
 - **Depends on**: WP20, WP21 (cost summary in timing.py)
 - **Implementation Guidance**:
@@ -104,6 +124,13 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Scenario: "Agent spans form correct tree" -- Given 1-topic standard mode pipeline, Then `NewsletterPipeline` is root (no parent), `ResearchPhase` has parent `NewsletterPipeline`, `Topic0Research` has parent `ResearchPhase`
   - [ ] Scenario: "Failed agent span records error" -- Given PerTopicSynthesizer raises exception, Then span has status ERROR and exception event
   - [ ] Tests verify parent_id relationships across exported spans
+
+### Spec Compliance Checklist
+
+- [x] FR-201 agent execution creates one span per callback invocation with the expected span names.
+- [x] FR-202 parent-child relationships are asserted across the exported span tree.
+- [x] SC-003 coverage verifies at least a 3-level hierarchy rooted at `NewsletterPipeline`.
+- [x] Error-path behavior is covered by asserting ERROR status and an exception event on a failed span.
 - **Test requirements**: BDD
 - **Depends on**: WP21 (span creation in timing.py)
 - **Implementation Guidance**:
@@ -125,6 +152,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Scenario: "Log lines include trace context" -- Given OTel enabled and pipeline running, When log emitted from newsletter_agent, Then log contains 32-char hex trace_id matching root span
   - [ ] Scenario: "Disabled telemetry produces zero trace IDs" -- Given `OTEL_ENABLED=false`, Then log contains `trace=00000000000000000000000000000000`
   - [ ] Tests capture log output and verify format
+
+### Spec Compliance Checklist
+
+- [x] FR-701 is validated by emitting a real `newsletter_agent` log line inside an active span and asserting formatted `trace=` and `span=` fields.
+- [x] FR-704 backwards compatibility is validated by emitting a real log line with a `NoOpTracerProvider` and asserting zero trace/span IDs in the formatted output.
+- [x] SC-005 evidence is based on actual logger output, not direct `LogRecord` mutation or filter-only inspection.
 - **Test requirements**: BDD
 - **Depends on**: WP21 (TraceContextFilter)
 - **Implementation Guidance**:
@@ -141,6 +174,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Scenario: "Console export when no OTLP endpoint" -- Given no OTLP endpoint, When telemetry initializes, Then ConsoleSpanExporter is configured
   - [ ] Scenario: "OTLP export when endpoint is set" -- Given endpoint=http://localhost:4317, Then OTLPSpanExporter is configured
   - [ ] Tests verify exporter type by inspecting TracerProvider's span processors
+
+### Spec Compliance Checklist
+
+- [x] FR-603 is validated behaviorally by initializing telemetry without an OTLP endpoint, emitting a span, and asserting console-exported span data reaches stdout.
+- [x] FR-602 is validated by initializing telemetry with an OTLP endpoint and asserting OTLP export configuration remains present.
+- [x] SC-004 evidence includes exported span behavior, not only provider internals.
 - **Test requirements**: BDD
 - **Depends on**: WP19 (telemetry init)
 - **Implementation Guidance**:
@@ -160,6 +199,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 - **Acceptance criteria**:
   - [ ] Scenario: "Budget exceeded logs warning" -- Given budget=0.01 and accumulated=0.009, When call adds 0.005, Then WARNING "Cost budget exceeded" logged and pipeline continues
   - [ ] Scenario: "No budget means no warning" -- Given budget is null, When cost=100.0, Then no budget warning
+
+### Spec Compliance Checklist
+
+- [x] FR-406 budget-threshold behavior is asserted with a WARNING on the transition from under-budget to over-budget.
+- [x] The non-budget path is asserted to keep running without any warning side effect.
+- [x] US-06 coverage is scoped to `CostTracker` behavior rather than unrelated pipeline mechanics.
 - **Test requirements**: BDD
 - **Depends on**: WP20 (CostTracker budget logic)
 - **Implementation Guidance**:
@@ -174,6 +219,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 - **Acceptance criteria**:
   - [ ] Scenario: "Disabled telemetry has no overhead" -- Given `OTEL_ENABLED=false`, When pipeline runs, Then no spans created, no cost tracking, pipeline produces identical output
   - [ ] Tests verify NoOpTracerProvider is active and no span data is exported
+
+### Spec Compliance Checklist
+
+- [x] FR-102 is validated by initializing telemetry with `OTEL_ENABLED=false` and asserting the `NoOpTracerProvider` path.
+- [x] SC-007 evidence verifies that no spans are exported and no active span bookkeeping remains.
+- [x] The disabled path preserves normal pipeline-visible output while skipping telemetry work.
 - **Test requirements**: BDD
 - **Depends on**: WP19 (telemetry init disabled path)
 - **Implementation Guidance**:
@@ -184,15 +235,24 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 
 ### T22-09 - Integration tests: OTel end-to-end, cost pipeline, config loading
 
-- **Description**: Implement integration tests per spec Section 11.3 that verify the full OTel + cost pipeline with mocked LLM calls.
-- **Spec refs**: Section 11.3 (all 4 integration test requirements)
+- **Description**: Implement integration tests per spec Section 11.3 and the local smoke validation from Section 11.4, verifying the full OTel + cost pipeline with mocked LLM calls.
+- **Spec refs**: Section 11.3, Section 11.4
 - **Parallel**: No (runs after BDD tests for sequential validation)
 - **Acceptance criteria**:
   - [ ] Test "OTel end-to-end": Run pipeline with mocked LLM calls, capture spans via InMemorySpanExporter, assert span tree structure (root > phases > topics) and verify span attributes
   - [ ] Test "Cost pipeline": Run pipeline with mocked LLM returning known token counts, assert cost summary values are mathematically correct (verify exact USD amounts)
   - [ ] Test "Config loading": Load `topics.yaml` with pricing section, verify PricingConfig parsed and CostTracker initialized with correct pricing
+  - [ ] Test "Local smoke": Run `python -m newsletter_agent` with 1 topic and `dry_run=true`, assert stdout contains console span output and the cost summary log
   - [ ] All genai API calls are mocked (no real LLM calls)
   - [ ] Each test calls `reset_cost_tracker()` and resets global TracerProvider in teardown
+
+### Spec Compliance Checklist
+
+- [x] Section 11.3 OTel end-to-end coverage runs a mocked pipeline path and asserts the exported span tree plus key span attributes.
+- [x] Section 11.3 cost-pipeline coverage runs mocked direct LLM calls and asserts exact USD totals from the resulting summary.
+- [x] Section 11.3 config-loading coverage parses pricing config and initializes `CostTracker` with the parsed model pricing.
+- [x] Section 11.4 local smoke coverage runs `python -m newsletter_agent` in `dry_run=true` mode and asserts console span plus cost summary output.
+- [x] Test teardown resets the global tracer provider and cost tracker between runs.
 - **Test requirements**: integration (pytest)
 - **Depends on**: WP19, WP20, WP21
 - **Implementation Guidance**:
@@ -212,6 +272,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Uses mocked LLM calls (to isolate instrumentation overhead from I/O)
   - [ ] Asserts overhead is less than 5% (SC-006)
   - [ ] Counts total spans from a 5-topic deep-research run and asserts < 500 per run
+
+### Spec Compliance Checklist
+
+- [x] Section 11.5 benchmark executes a realistic mocked pipeline path rather than callback-only busy work.
+- [x] SC-006 evidence compares enabled vs disabled runs with mocked LLM calls and asserts overhead remains below 5%.
+- [x] Span-volume coverage runs a 5-topic deep-research path and asserts fewer than 500 spans are emitted.
 - **Test requirements**: performance (pytest-benchmark or manual timing)
 - **Depends on**: WP19, WP20, WP21
 - **Implementation Guidance**:
@@ -248,6 +314,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] Test: Export all spans from a test run with mocked LLM calls, assert no span attribute value contains prompt text, response text, email addresses, or API key strings
   - [ ] Test: Set `OTEL_EXPORTER_OTLP_HEADERS=Bearer secret-token-12345`, run pipeline, grep all log output for "secret-token-12345" and assert zero matches
   - [ ] Test: No span attribute contains values matching `GOOGLE_API_KEY` or `PERPLEXITY_API_KEY` patterns
+
+### Spec Compliance Checklist
+
+- [x] Section 11.6 span export coverage searches all span attributes for prompt text, response text, email-address fragments, and API key values.
+- [x] OTLP header handling is validated by ensuring configured header values never appear in captured logs.
+- [x] Section 10.2 security NFR coverage includes explicit checks for `GOOGLE_API_KEY` and `PERPLEXITY_API_KEY` pattern leakage.
 - **Test requirements**: security (pytest)
 - **Depends on**: WP19, WP20, WP21
 - **Implementation Guidance**:
@@ -277,6 +349,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
   - [ ] `newsletter_agent/config/schema.py` (new models): adequate coverage for PricingConfig
   - [ ] Combined coverage report shows all new code meeting thresholds
   - [ ] Coverage report is generated and can be inspected
+
+### Spec Compliance Checklist
+
+- [x] Section 11.1 thresholds are tracked explicitly for `telemetry.py`, `cost_tracker.py`, `timing.py`, `logging_config.py`, and `config/schema.py`.
+- [x] Both code coverage (>= 80%) and branch coverage (>= 90%) are required evidence for the touched observability modules.
+- [x] A concrete coverage report command and inspectable output are part of the task deliverable.
 - **Test requirements**: none (verification)
 - **Depends on**: T22-01 through T22-11
 - **Implementation Guidance**:
@@ -289,6 +367,7 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 
 - **Execution order**: T22-01 through T22-08 (BDD, parallel) -> T22-09 (integration) -> T22-10 + T22-11 (parallel) -> T22-12 (coverage verification)
 - **Key files created**: `tests/bdd/test_token_tracking.py`, `tests/bdd/test_cost_calculation.py`, `tests/bdd/test_cost_summary.py`, `tests/bdd/test_span_hierarchy.py`, `tests/bdd/test_log_correlation.py`, `tests/bdd/test_export_config.py`, `tests/bdd/test_cost_budget.py`, `tests/bdd/test_kill_switch.py`, `tests/integration/test_observability.py`, `tests/performance/test_otel_overhead.py`, `tests/security/test_otel_security.py`
+- **E2E smoke coverage**: `tests/e2e/test_observability_smoke.py` validates the local `python -m newsletter_agent` dry-run observability path required by Section 11.4.
 - **Shared test fixtures**: Consider a `tests/conftest_otel.py` or additions to `tests/conftest.py` for common OTel test setup (InMemorySpanExporter, TracerProvider, CostTracker reset)
 - **All tests use mocked LLM calls**: No real API calls. Mock genai.Client globally for all acceptance/integration tests.
 - **Teardown is critical**: Every test must reset global OTel TracerProvider and CostTracker to avoid cross-test pollution.
@@ -308,16 +387,17 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 ## Self-Review
 
 ### Spec Compliance
-- [x] All 8 BDD feature scenarios from Section 11.2 implemented
-- [x] Integration tests per Section 11.3 (OTel end-to-end, cost pipeline, config loading)
-- [x] Performance tests per Section 11.5 (overhead < 15% with SimpleSpanProcessor, < 500 spans)
-- [x] Security tests per Section 11.6 (no PII in spans, no OTLP headers in logs)
-- [x] Coverage thresholds met: telemetry 99%, cost_tracker 100%, timing 96%, logging_config 100%, config/schema 98%
+- [x] Per-task Step 2b Spec Compliance Checklists added for T22-01 through T22-12
+- [x] All 8 BDD feature scenarios from Section 11.2 implemented, including real formatted log capture and behavioral console-export verification
+- [x] Integration and local smoke coverage now span Sections 11.3 and 11.4, including `python -m newsletter_agent` in `dry_run=true` mode
+- [x] Performance tests per Section 11.5 now exercise a mocked LLM pipeline path and enforce the < 5% overhead threshold plus < 500 spans
+- [x] Security tests per Section 11.6 remain in place with no PII or secret leakage detected
 
 ### Correctness
-- [x] All 1005 tests pass (including 79 BDD, 6 integration, 2 performance, 5 security for WP22)
+- [x] WP22 observability acceptance slice passes: 30 tests passed in 19.77s
+- [x] Broad regression suite passes: 999 tests passed with `tests/unit/test_http_handler.py` intentionally excluded from the established coverage command
 - [x] Edge cases handled: missing usage_metadata, unknown models, empty runs, disabled telemetry
-- [x] Float comparisons use pytest.approx to avoid floating-point precision issues
+- [x] Real logger output, console exporter output, CLI stdout, and mocked LLM benchmark paths are all asserted directly
 
 ### Code Quality
 - [x] No unused code or debug artifacts
@@ -333,12 +413,12 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 - [x] No em dashes, smart quotes, or curly apostrophes
 
 ### Coverage Thresholds
-- [x] All target modules >= 80% code coverage
-- [x] Branch coverage adequate (BrPart counts minimal)
-- [x] Full suite: 88% overall coverage
+- [x] All target modules meet the established coverage gate in the broader suite: telemetry 93%, cost_tracker 100%, timing 95%, logging_config 100%, config/schema 98%
+- [x] Coverage command executed with branch measurement enabled via `--cov-branch`
+- [x] Broad suite total coverage reported at 96.68%
 
 ### Outstanding Issues
-- Performance overhead test uses 15% threshold (vs spec's 5%) because tests use SimpleSpanProcessor (synchronous) which has higher overhead than production BatchSpanProcessor. Production overhead is typically < 2%.
+- None.
 
 ## Activity Log
 
@@ -349,6 +429,9 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 - 2026-03-21T23:45:00Z - coder - lane=for_review - All tasks complete, 1005 tests passing, coverage verified
 - 2026-03-22T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 - 2026-03-22T06:02:25Z - reviewer - lane=to_do - Verdict: Changes Required (5 FAILs) -- awaiting remediation
+- 2026-03-22T06:05:06.2705312Z - coder - lane=doing - Addressing reviewer feedback (FB-01, FB-02, FB-03, FB-04, FB-05)
+- 2026-03-22T06:15:18.9722778Z - coder - lane=for_review - Reviewer feedback addressed, observability acceptance suite and broader coverage verification passing
+- 2026-03-22T06:27:18Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 
 ## Review (Round 2 - Re-review)
 
@@ -365,11 +448,11 @@ Changes Required. Five FAILs block approval: the required per-task Step 2b compl
 
 > Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
 
-- [ ] **FB-01**: Add the missing Step 2b Spec Compliance Checklist for every WP22 task (T22-01 through T22-12). The aggregate Self-Review section does not satisfy the per-task process requirement.
-- [ ] **FB-02**: Rework T22-05 so the BDD tests emit and capture formatted log output and assert the actual log line content, including the zero-trace disabled case, instead of only constructing a `LogRecord` and calling `TraceContextFilter.filter()` directly.
-- [ ] **FB-03**: Rework T22-06 so the console-export scenario verifies behavior, not only configuration. The spec requires evidence that spans are written to stdout when no OTLP endpoint is set.
-- [ ] **FB-04**: Add the Section 11.4 observability E2E smoke test for `python -m newsletter_agent` in `dry_run=true` mode and assert console span output plus cost summary output. The existing CLI subprocess test is a WP14 entry-point test and suppresses logging.
-- [ ] **FB-05**: Rework T22-10 so the SC-006 benchmark exercises a pipeline path with mocked LLM calls, as required by Section 11.5 and the WP acceptance criteria, rather than the current busy-wait callback simulation.
+- [x] **FB-01**: Add the missing Step 2b Spec Compliance Checklist for every WP22 task (T22-01 through T22-12). The aggregate Self-Review section does not satisfy the per-task process requirement.
+- [x] **FB-02**: Rework T22-05 so the BDD tests emit and capture formatted log output and assert the actual log line content, including the zero-trace disabled case, instead of only constructing a `LogRecord` and calling `TraceContextFilter.filter()` directly.
+- [x] **FB-03**: Rework T22-06 so the console-export scenario verifies behavior, not only configuration. The spec requires evidence that spans are written to stdout when no OTLP endpoint is set.
+- [x] **FB-04**: Add the Section 11.4 observability E2E smoke test for `python -m newsletter_agent` in `dry_run=true` mode and assert console span output plus cost summary output. The existing CLI subprocess test is a WP14 entry-point test and suppresses logging.
+- [x] **FB-05**: Rework T22-10 so the SC-006 benchmark exercises a pipeline path with mocked LLM calls, as required by Section 11.5 and the WP acceptance criteria, rather than the current busy-wait callback simulation.
 
 ### Findings
 
@@ -518,3 +601,98 @@ Changes Required. Five FAILs block approval: the required per-task Step 2b compl
 3. Address FB-03 by extending T22-06 to emit a span and verify console exporter stdout behavior when OTLP is unset.
 4. Address FB-04 by adding the missing Section 11.4 observability smoke test for `python -m newsletter_agent` in `dry_run=true` mode.
 5. Address FB-05 by changing T22-10 to benchmark a mocked-LLM pipeline path instead of the current busy-wait callback simulation.
+
+## Review (Round 3 - Re-review)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-22
+> **Verdict**: Approved with Findings
+> **review_status**:
+
+### Summary
+
+Approved with Findings. FB-01 through FB-05 are resolved: the per-task Step 2b checklists are present, the log-correlation tests now assert emitted log lines, the console-export test verifies stdout output, the missing Section 11.4 smoke test exists, and the SC-006 benchmark now exercises a mocked LLM pipeline path and passes in focused verification. Two WARNs remain: the WP history is still batched across commits, and the updated docs still contain minor drift.
+
+### Review Feedback
+
+No required changes.
+
+### Findings
+
+#### PASS - Process Compliance: Step 2b Checklist
+- **Requirement**: Coder Step 2b / per-task Spec Compliance Checklist
+- **Status**: Compliant
+- **Detail**: Every task from T22-01 through T22-12 now has its own Spec Compliance Checklist with checked items.
+- **Evidence**: `plans/WP22-acceptance-testing.md` contains 12 `### Spec Compliance Checklist` sections
+
+#### PASS - Spec Adherence: BDD Feature "Log-Trace Correlation" (Section 11.2)
+- **Requirement**: US-04, FR-701, FR-704, SC-005
+- **Status**: Compliant
+- **Detail**: The reworked tests emit real log output and assert the formatted line contents for both active-span and disabled-telemetry cases.
+- **Evidence**: `tests/bdd/test_log_correlation.py`
+
+#### PASS - Spec Adherence: BDD Feature "Export Configuration" (Section 11.2)
+- **Requirement**: US-05, FR-602, FR-603, SC-004
+- **Status**: Compliant
+- **Detail**: The console-export scenario now emits a span, flushes the provider, and asserts console span output in stdout. The OTLP scenario verifies exporter construction against the configured endpoint.
+- **Evidence**: `tests/bdd/test_export_config.py`
+
+#### PASS - Test Coverage Adherence: Section 11.4 End-to-End Smoke Test
+- **Requirement**: Section 11.4 End-to-End Tests
+- **Status**: Compliant
+- **Detail**: A new CLI smoke test runs `python -m newsletter_agent` in dry-run mode through the real module entry point and asserts console spans, `pipeline_cost_summary`, trace correlation, and the JSON summary output.
+- **Evidence**: `tests/e2e/test_observability_smoke.py`
+
+#### PASS - Performance Tests: SC-006 Benchmark Path
+- **Requirement**: Section 11.5, SC-006, T22-10 acceptance criteria
+- **Status**: Compliant
+- **Detail**: The benchmark now drives a mocked pipeline path that exercises timing callbacks, `traced_generate()`, and cost tracking with mocked LLM calls rather than a callback-only busy-wait harness.
+- **Evidence**: `tests/performance/test_otel_overhead.py`
+
+#### PASS - Verification
+- **Requirement**: FB-02 through FB-05 remediation verification
+- **Status**: Compliant
+- **Detail**: Focused re-review execution passed for the changed WP22 files.
+- **Evidence**: `pytest tests/bdd/test_log_correlation.py tests/bdd/test_export_config.py tests/e2e/test_observability_smoke.py tests/performance/test_otel_overhead.py -q --no-header -rA -vv` reported `7 passed, 0 failed`
+
+#### WARN - Process Compliance: Commit Granularity
+- **Requirement**: One commit per task
+- **Status**: Deviating
+- **Detail**: The original WP22 delivery and earlier remediation remain batched across multiple broad commits instead of one commit per task. This is historical process drift and does not block correctness.
+- **Evidence**: Git history includes `2f1fcf7`, `c7df0c5`, `13528d5`, and `49fdb12` spanning multiple tasks and remediations
+
+#### WARN - Documentation Accuracy
+- **Requirement**: Documentation reflects the real WP22 verification workflow
+- **Status**: Deviating
+- **Detail**: `docs/developer-guide.md` still labels the coverage command as covering the target observability modules, but the command omits `newsletter_agent.config.schema`. `docs/observability-guide.md` also states that WP19-WP22 plan status is complete even while this re-review was still in progress.
+- **Evidence**: `docs/developer-guide.md` observability coverage command; `docs/observability-guide.md` compliance notes
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, or curly apostrophes
+- **Status**: Compliant
+- **Detail**: No UTF-8 violations were found in the remediation files inspected during re-review.
+- **Evidence**: Regex scan across the changed WP22 remediation files returned no matches
+
+### Statistics
+
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 1 | 1 | 0 |
+| Spec Adherence | 2 | 0 | 0 |
+| Data Model | N/A | N/A | N/A |
+| API / Interface | N/A | N/A | N/A |
+| Architecture | N/A | N/A | N/A |
+| Test Coverage | 2 | 0 | 0 |
+| Non-Functional | 0 | 0 | 0 |
+| Performance | 1 | 0 | 0 |
+| Documentation | 0 | 1 | 0 |
+| Success Criteria | 1 | 0 | 0 |
+| Coverage Thresholds | 0 | 0 | 0 |
+| Scope Discipline | 0 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. Track the commit-granularity warning as a historical process issue; no retroactive split is required for approval.
+2. Sync the observability coverage command in `docs/developer-guide.md` with the modules actually covered by WP22, including `newsletter_agent.config.schema`.
+3. Keep `docs/observability-guide.md` aligned with the current WP lane when future reviews are still in progress.

@@ -1,6 +1,6 @@
 ---
-lane: done
-review_status:
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP22 - Acceptance Testing & Quality Gate
@@ -348,35 +348,42 @@ Deliver the quality gate for the observability enhancement. Implement all BDD ac
 - 2026-03-21T23:30:00Z - coder - lane=doing - Integration, performance, security tests implemented
 - 2026-03-21T23:45:00Z - coder - lane=for_review - All tasks complete, 1005 tests passing, coverage verified
 - 2026-03-22T00:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
+- 2026-03-22T06:02:25Z - reviewer - lane=to_do - Verdict: Changes Required (5 FAILs) -- awaiting remediation
 
-## Review
+## Review (Round 2 - Re-review)
 
 > **Reviewed by**: Reviewer Agent
 > **Date**: 2026-03-22
-> **Verdict**: Approved with Findings
-> **review_status**: (empty -- approved)
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
 
 ### Summary
 
-WP22 is approved with findings. All 8 BDD feature test suites implement every scenario from spec Section 11.2 faithfully. Integration, performance, and security tests cover Section 11.3, 11.5, and 11.6. Coverage exceeds thresholds (98.4% combined, 100% on cost_tracker and logging_config). Two warnings are recorded: the performance overhead test uses a 15% threshold vs the spec's 5% (documented and justified), and the single-commit bundling of all 12 tasks.
+Changes Required. Five FAILs block approval: the required per-task Step 2b compliance checklist is absent, the BDD log-correlation tests do not capture emitted log output, the export-configuration acceptance test does not verify console span output to stdout, the Section 11.4 observability smoke test is missing, and the SC-006 benchmark does not use mocked LLM calls as required by the spec and plan.
 
 ### Review Feedback
 
-No required changes.
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Add the missing Step 2b Spec Compliance Checklist for every WP22 task (T22-01 through T22-12). The aggregate Self-Review section does not satisfy the per-task process requirement.
+- [ ] **FB-02**: Rework T22-05 so the BDD tests emit and capture formatted log output and assert the actual log line content, including the zero-trace disabled case, instead of only constructing a `LogRecord` and calling `TraceContextFilter.filter()` directly.
+- [ ] **FB-03**: Rework T22-06 so the console-export scenario verifies behavior, not only configuration. The spec requires evidence that spans are written to stdout when no OTLP endpoint is set.
+- [ ] **FB-04**: Add the Section 11.4 observability E2E smoke test for `python -m newsletter_agent` in `dry_run=true` mode and assert console span output plus cost summary output. The existing CLI subprocess test is a WP14 entry-point test and suppresses logging.
+- [ ] **FB-05**: Rework T22-10 so the SC-006 benchmark exercises a pipeline path with mocked LLM calls, as required by Section 11.5 and the WP acceptance criteria, rather than the current busy-wait callback simulation.
 
 ### Findings
 
-#### PASS - Process Compliance: Spec Compliance Checklist
-- **Requirement**: Step 2b checklist
-- **Status**: Compliant
-- **Detail**: Self-Review section present with Spec Compliance, Correctness, Code Quality, Scope Discipline, Encoding, and Coverage Thresholds checklists -- all items checked.
-- **Evidence**: [WP22-acceptance-testing.md](plans/WP22-acceptance-testing.md) Self-Review section
+#### FAIL - Process Compliance: Step 2b Checklist Missing
+- **Requirement**: Coder Step 2b / per-task Spec Compliance Checklist
+- **Status**: Missing
+- **Detail**: No per-task Step 2b checklist exists for T22-01 through T22-12. The only checklist block is the aggregate Self-Review section, which does not satisfy the required task-level compliance record.
+- **Evidence**: `plans/WP22-acceptance-testing.md` task sections `T22-01` through `T22-12`; Self-Review at `plans/WP22-acceptance-testing.md` line 308
 
 #### WARN - Process Compliance: Commit Granularity
 - **Requirement**: One commit per task
 - **Status**: Deviating
-- **Detail**: All 12 tasks (T22-01 through T22-12) were delivered in a single commit `2f1fcf7`. The WP plan specifies individual tasks; the convention is one commit per task. Since WP22 is a test-only work package with no production code changes, this is low risk but deviates from process.
-- **Evidence**: `git log --oneline -1` shows single commit for all tasks
+- **Detail**: WP22 work was batched into one delivery commit and later remediation commits rather than one commit per task. This deviates from the required reviewable task granularity.
+- **Evidence**: Git history shows `2f1fcf7 test(observability): add BDD, integration, performance, security tests (WP22)` followed by later remediation commits `c7df0c5`, `13528d5`, and `49fdb12`
 
 #### PASS - Spec Adherence: BDD Feature "Token Tracking on LLM Calls" (Section 11.2)
 - **Requirement**: US-01 Scenarios 1-2, SC-001
@@ -402,17 +409,17 @@ No required changes.
 - **Detail**: 3-level tree verified: NewsletterPipeline (root, no parent) > ResearchPhase > Topic0Research. Failed agent span records ERROR status and exception event.
 - **Evidence**: tests/bdd/test_span_hierarchy.py
 
-#### PASS - Spec Adherence: BDD Feature "Log-Trace Correlation" (Section 11.2)
+#### FAIL - Spec Adherence: BDD Feature "Log-Trace Correlation" (Section 11.2)
 - **Requirement**: US-04, FR-701, FR-704, SC-005
-- **Status**: Compliant
-- **Detail**: Active span produces 32-char hex trace_id matching the span context. Disabled telemetry produces zero IDs ("0"*32).
-- **Evidence**: tests/bdd/test_log_correlation.py
+- **Status**: Missing
+- **Detail**: The BDD tests never emit or capture a formatted log line. Both scenarios construct a `LogRecord` manually and call `TraceContextFilter.filter()` directly, so the acceptance criterion `Tests capture log output and verify format` is not implemented.
+- **Evidence**: `plans/WP22-acceptance-testing.md` T22-05 acceptance criteria and guidance; `tests/bdd/test_log_correlation.py` lines 44-82 and 92-115
 
-#### PASS - Spec Adherence: BDD Feature "Export Configuration" (Section 11.2)
+#### FAIL - Spec Adherence: BDD Feature "Export Configuration" (Section 11.2)
 - **Requirement**: US-05, FR-602, FR-603, SC-004
-- **Status**: Compliant
-- **Detail**: No OTLP endpoint configures ConsoleSpanExporter. OTLP endpoint=http://localhost:4317 configures OTLPSpanExporter. Exporter types verified by inspecting TracerProvider internals.
-- **Evidence**: tests/bdd/test_export_config.py
+- **Status**: Partial
+- **Detail**: The console-export scenario only verifies that `ConsoleSpanExporter` is configured. Spec Section 11.2 also requires evidence that spans are written to stdout when no OTLP endpoint is set. No span is emitted and no stdout output is asserted.
+- **Evidence**: `specs/003-observability-cost-tracing.spec.md` Section 11.2 Feature "Export Configuration"; `tests/bdd/test_export_config.py` lines 48-65
 
 #### PASS - Spec Adherence: BDD Feature "Cost Budget Warning" (Section 11.2)
 - **Requirement**: US-06, FR-406
@@ -432,11 +439,17 @@ No required changes.
 - **Detail**: Full span tree (5 agents, 2 topics) with parent-child verification. Cost pipeline through traced_generate with exact USD assertions. Config loading from YAML with pricing section parsed to PricingConfig and CostTracker initialized. Default pricing without explicit config verified.
 - **Evidence**: tests/integration/test_observability.py (3 test classes, 6 tests)
 
-#### WARN - Performance Tests (Section 11.5, SC-006)
-- **Requirement**: SC-006: overhead < 5%
+#### FAIL - Test Coverage Adherence: Section 11.4 End-to-End Smoke Test Missing
+- **Requirement**: Section 11.4 End-to-End Tests; WP22 Spec References include Section 11.4
+- **Status**: Missing
+- **Detail**: No WP22 test verifies `python -m newsletter_agent` in `dry_run=true` mode with console span output and cost summary output. The existing CLI subprocess test is a WP14 entry-point test, suppresses logging, and only checks exit behavior and JSON summary.
+- **Evidence**: `plans/WP22-acceptance-testing.md` Spec References include Section 11.4; `specs/003-observability-cost-tracing.spec.md` Section 11.4; `tests/e2e/test_cli_subprocess.py` lines 1-6 and 59-117
+
+#### FAIL - Performance Tests: SC-006 Benchmark Path Does Not Match Spec
+- **Requirement**: Section 11.5, SC-006, T22-10 acceptance criteria
 - **Status**: Deviating
-- **Detail**: Test uses 15% threshold instead of spec's 5%. Documented in test comments and WP "Outstanding Issues" as necessary because test uses SimpleSpanProcessor (synchronous) which has inherently higher overhead than production's BatchSpanProcessor. The justification is reasonable: SimpleSpanProcessor is required for test reliability (capturing spans synchronously), and production overhead is stated as typically < 2%. However, this means SC-006 is not directly validated by the test as written.
-- **Evidence**: tests/performance/test_otel_overhead.py lines 178-184
+- **Detail**: The benchmark enforces the 5% threshold, but it does not use mocked LLM calls or a mocked pipeline path. It measures `_run_simulated_pipeline()` plus `_simulate_mock_llm_work()` busy-wait loops, which does not satisfy the spec and plan requirement to compare instrumented and non-instrumented pipeline runs using mocked LLM calls.
+- **Evidence**: `plans/WP22-acceptance-testing.md` T22-10 acceptance criteria; `specs/003-observability-cost-tracing.spec.md` SC-006 and Section 11.5; `tests/performance/test_otel_overhead.py` lines 41-53 and 146-188
 
 #### PASS - Performance Tests: Span Count (Section 11.5)
 - **Requirement**: Span count < 500 per run
@@ -453,8 +466,8 @@ No required changes.
 #### PASS - Coverage Thresholds (Section 11.1)
 - **Requirement**: 80% code, 90% branch for new modules
 - **Status**: Compliant
-- **Detail**: telemetry.py 99%, cost_tracker.py 100%, timing.py 96%, logging_config.py 100%, config/schema.py 98%. Combined 98.4%. Branch coverage adequate (5 partial branches total across all modules).
-- **Evidence**: pytest --cov output, 999 tests passing
+- **Detail**: Targeted observability coverage meets thresholds for every scoped module: telemetry 92.0% code / 96.4% branch, cost_tracker 100.0% / 100.0%, timing 95.6% / 93.3%, logging_config 100.0% / 100.0%, config.schema 99.2% / 94.1%.
+- **Evidence**: `pytest tests/ --ignore=tests/performance/test_otel_overhead.py --cov=newsletter_agent.telemetry --cov=newsletter_agent.cost_tracker --cov=newsletter_agent.timing --cov=newsletter_agent.logging_config --cov=newsletter_agent.config.schema --cov-branch --cov-report=term-missing`
 
 #### PASS - Test Coverage: Unit tests for TraceContextFilter (Section 11.1)
 - **Requirement**: test_logging_trace.py tests per Section 11.1
@@ -468,37 +481,40 @@ No required changes.
 - **Detail**: Test organization table updated with BDD, security, and performance descriptions including observability tests. Running Tests section includes observability-specific commands. Logging section documents TraceContextFilter behavior.
 - **Evidence**: docs/developer-guide.md
 
-#### PASS - Scope Discipline
+#### WARN - Scope Discipline
 - **Requirement**: No code outside declared scope
-- **Status**: Compliant
-- **Detail**: WP22 commit contains only new test files, docs/developer-guide.md update, and plan file updates. No production code changes. No unspecified abstractions.
-- **Evidence**: git log --oneline --name-only -1
+- **Status**: Deviating
+- **Detail**: Later WP22-labelled remediation changed production source files and unrelated test surfaces outside the work package's declared test-only scope. This did not invalidate the observability fixes, but it is scope creep relative to the WP22 plan.
+- **Evidence**: Git history for `c7df0c5`, `13528d5`, and `49fdb12` touches `newsletter_agent/telemetry.py`, `newsletter_agent/timing.py`, `newsletter_agent/cost_tracker.py`, `newsletter_agent/logging_config.py`, and non-WP22 test files
 
 #### PASS - Encoding (UTF-8)
 - **Requirement**: No em dashes, smart quotes, or curly apostrophes
 - **Status**: Compliant
-- **Detail**: All 12 test files and WP plan file checked. No problematic characters found.
-- **Evidence**: PowerShell encoding check across all WP22 files
+- **Detail**: No UTF-8 violations were found in the inspected WP22 files and related observability docs/tests.
+- **Evidence**: Regex scan for smart quotes, curly apostrophes, and em dashes across the inspected WP22 files returned no matches
 
 ### Statistics
 
 | Dimension | Pass | Warn | Fail |
 |-----------|------|------|------|
-| Process Compliance | 1 | 1 | 0 |
-| Spec Adherence | 8 | 0 | 0 |
+| Process Compliance | 0 | 1 | 1 |
+| Spec Adherence | 6 | 0 | 2 |
 | Data Model | N/A | N/A | N/A |
 | API / Interface | N/A | N/A | N/A |
 | Architecture | N/A | N/A | N/A |
-| Test Coverage | 3 | 0 | 0 |
+| Test Coverage | 1 | 0 | 1 |
 | Non-Functional | 1 | 0 | 0 |
-| Performance | 1 | 1 | 0 |
+| Performance | 1 | 0 | 1 |
 | Documentation | 1 | 0 | 0 |
-| Success Criteria | 6 | 1 | 0 |
+| Success Criteria | 0 | 0 | 1 |
 | Coverage Thresholds | 1 | 0 | 0 |
-| Scope Discipline | 1 | 0 | 0 |
+| Scope Discipline | 0 | 1 | 0 |
 | Encoding (UTF-8) | 1 | 0 | 0 |
 
 ### Recommended Actions
 
-1. (WARN) The 15% overhead threshold for SC-006 is justified for test infrastructure reasons but should be tracked. Consider adding a CI-only benchmark using BatchSpanProcessor to validate the 5% threshold in a production-equivalent configuration.
-2. (WARN) Future work packages should use per-task commits for easier review and bisection.
+1. Address FB-01 by adding a Step 2b Spec Compliance Checklist for every task from T22-01 through T22-12.
+2. Address FB-02 by changing T22-05 to emit real log lines and assert formatted output, not just filter-mutated `LogRecord` fields.
+3. Address FB-03 by extending T22-06 to emit a span and verify console exporter stdout behavior when OTLP is unset.
+4. Address FB-04 by adding the missing Section 11.4 observability smoke test for `python -m newsletter_agent` in `dry_run=true` mode.
+5. Address FB-05 by changing T22-10 to benchmark a mocked-LLM pipeline path instead of the current busy-wait callback simulation.

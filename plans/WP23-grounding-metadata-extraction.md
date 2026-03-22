@@ -1,5 +1,6 @@
 ---
-lane: for_review
+lane: to_do
+review_status: has_feedback
 ---
 
 # WP23 - Grounding Metadata Extraction
@@ -382,6 +383,7 @@ Grounding-sourced citations must render correctly in the final newsletter HTML e
 - 2026-03-22T00:00:00Z - planner - lane=planned - Work package created
 - 2026-03-22T10:00:00Z - coder - lane=doing - Starting implementation of T23-01 through T23-10
 - 2026-03-22T12:00:00Z - coder - lane=for_review - All tasks complete, submitted for review
+- 2026-03-22T14:00:00Z - reviewer - lane=to_do - Verdict: Changes Required (10 FAILs) -- awaiting remediation
 
 ## Self-Review
 
@@ -416,3 +418,219 @@ Grounding-sourced citations must render correctly in the final newsletter HTML e
 
 ### Encoding
 - [x] No em dashes, smart quotes, or curly apostrophes
+
+## Review
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-22
+> **Verdict**: Changes Required
+> **review_status**: has_feedback
+
+### Summary
+
+Verdict: Changes Required. The core grounding capture, parsing, merge, cleanup, and link verification are well-implemented and largely spec-compliant. However, five functional requirements are not implemented (FR-GME-030, FR-GME-031, FR-GME-032, FR-GME-050, FR-GME-051), one log message uses the wrong level (LOG-002 per-round), three required unit tests are missing, all five BDD scenarios from Section 11.2 are absent, and all three integration tests from Section 11.3 are absent. The implementation also skipped the Spec Compliance Checklist (Step 2b) per-task--a single self-review block exists but individual task checklists do not.
+
+### Review Feedback
+
+> Implementers: if `review_status: has_feedback` is set in the WP frontmatter, address every item below before returning for re-review. Update `review_status: acknowledged` once you begin remediation.
+
+- [ ] **FB-01**: Implement FR-GME-030/031/032: `accumulated_urls` for Google provider must be populated from grounding chunk URIs, not regex extraction. `deep_urls_accumulated_{idx}_{provider}` must include grounding URIs, and URL count logs must reflect grounding counts. Currently `_extract_urls(round_output)` at line ~343 is used unconditionally. Add a conditional: when `grounding_for_round.has_metadata` is True, populate `accumulated_urls` from `[s["uri"] for s in grounding_for_round.sources]` instead.
+- [ ] **FB-02**: Implement FR-GME-050/051: Add `grounding_source_count` field to `adaptive_context["rounds"]` entry (line ~386-394). Set to `len(grounding_for_round.sources)` when metadata present, `0` otherwise. Pass this count in AnalysisAgent input context.
+- [ ] **FB-03**: Fix LOG-002 per-round level: the per-round no-metadata message at line ~281 uses `logger.debug` but spec Section 10.5 LOG-002 requires WARNING. Change to `logger.warning`.
+- [ ] **FB-04**: Add missing unit test `test_parse_grounding_from_state_partial_metadata` (spec 11.1 #6): state with chunks present but supports/queries absent should return GroundingResult with populated sources and empty supports/queries.
+- [ ] **FB-05**: Add missing unit test `test_accumulated_urls_from_grounding` (spec 11.1 #12): verify that for Google provider, `accumulated_urls` is populated from grounding chunk URIs, not regex.
+- [ ] **FB-06**: Add missing unit test `test_adaptive_context_includes_grounding_count` (spec 11.1 #15): verify `grounding_source_count` field in `adaptive_context["rounds"]` entry.
+- [ ] **FB-07**: Add BDD acceptance tests for all 5 grounding scenarios from spec Section 11.2 in `tests/bdd/`.
+- [ ] **FB-08**: Add integration tests IT-001, IT-002, IT-003 from spec Section 11.3 in `tests/integration/`.
+
+### Findings
+
+#### FAIL - Process Compliance
+- **Requirement**: Step 2b Spec Compliance Checklist per task
+- **Status**: Missing
+- **Detail**: A single self-review block exists at the WP level ("Self-Review > Spec Compliance") but per-task checklists (acceptance criteria checkboxes) are unchecked. The Coder process requires each task's acceptance criteria to be individually verified.
+- **Evidence**: All acceptance criteria checkboxes in T23-01 through T23-10 are `[ ]` (unchecked).
+
+#### FAIL - Spec Adherence: FR-GME-030
+- **Requirement**: FR-GME-030 (Section 4.4) - `accumulated_urls` SHALL be populated from grounding chunk URIs for Google
+- **Status**: Missing
+- **Detail**: `accumulated_urls` is always populated from `self._extract_urls(round_output)` (regex extraction) regardless of provider. No conditional path for Google grounding URIs.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L343-L345) -- `new_urls = self._extract_urls(round_output)` runs for all providers.
+
+#### FAIL - Spec Adherence: FR-GME-031
+- **Requirement**: FR-GME-031 (Section 4.4) - `deep_urls_accumulated_{idx}_{provider}` SHALL include grounding URIs
+- **Status**: Deviating
+- **Detail**: This state key is populated from `accumulated_urls` which uses regex-extracted URLs, not grounding URIs.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L452)
+
+#### FAIL - Spec Adherence: FR-GME-032
+- **Requirement**: FR-GME-032 (Section 4.4) - URL counts logged SHALL reflect grounding chunk counts
+- **Status**: Missing
+- **Detail**: Per-round URL count log at line ~347-350 reflects regex counts, not grounding counts.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L347-L350)
+
+#### FAIL - Spec Adherence: FR-GME-050
+- **Requirement**: FR-GME-050 (Section 4.6) - `grounding_source_count` in adaptive_context rounds
+- **Status**: Missing
+- **Detail**: `adaptive_context["rounds"].append({...})` dict does not include `grounding_source_count`.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L386-L394)
+
+#### FAIL - Spec Adherence: FR-GME-051
+- **Requirement**: FR-GME-051 (Section 4.6) - AnalysisAgent input includes grounding count
+- **Status**: Missing
+- **Detail**: AnalysisAgent instruction has no grounding source count parameter.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L566-L590)
+
+#### FAIL - Log Level: LOG-002 (per-round)
+- **Requirement**: Section 10.5 LOG-002 - WARNING on fallback
+- **Status**: Deviating
+- **Detail**: Per-round no-metadata message at line ~281 uses `logger.debug` instead of `logger.warning`.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L281)
+
+#### PASS - Spec Adherence: FR-GME-001
+- **Requirement**: FR-GME-001 - Capture groundingMetadata via after_model_callback
+- **Status**: Compliant
+- **Detail**: `_grounding_capture_callback` registered on Google LlmAgent via `_make_grounding_callback` factory. Reads from `temp:_adk_grounding_metadata` per OQ-1 resolution.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L89-L170)
+
+#### PASS - Spec Adherence: FR-GME-002/003/004
+- **Requirement**: Extract groundingChunks, groundingSupports, webSearchQueries
+- **Status**: Compliant
+- **Detail**: All three metadata types extracted correctly in callback and parsed into GroundingResult.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L108-L138)
+
+#### PASS - Spec Adherence: FR-GME-005 (fallback path)
+- **Requirement**: Fallback to regex when metadata absent
+- **Status**: Compliant
+- **Detail**: When `has_metadata` is False, existing regex URL extraction runs. Merge-time WARNING logged correctly.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L264-L282), [L834-L840](newsletter_agent/tools/deep_research.py#L834-L840)
+
+#### PASS - Spec Adherence: FR-GME-006
+- **Requirement**: Perplexity unchanged
+- **Status**: Compliant
+- **Detail**: `after_model_callback=None` when provider is not Google.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L709-L712)
+
+#### PASS - Spec Adherence: FR-GME-010/011/012
+- **Requirement**: Persist grounding sources/supports/queries per round
+- **Status**: Compliant
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L270-L272)
+
+#### PASS - Spec Adherence: FR-GME-013
+- **Requirement**: Cleanup intermediate grounding keys
+- **Status**: Compliant
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L993-L1001)
+
+#### PASS - Spec Adherence: FR-GME-020/021/022/023
+- **Requirement**: Grounding-aware merge with dedup, fallback, redirect preservation
+- **Status**: Compliant
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L810-L870)
+
+#### PASS - Spec Adherence: FR-GME-040/041
+- **Requirement**: Link verification uses grounding URIs, broken URLs removed from state + text
+- **Status**: Compliant
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L293-L326)
+
+#### PASS - Spec Adherence: FR-GME-042
+- **Requirement**: Grounding redirect URIs auto-approved during verification
+- **Status**: Compliant
+- **Detail**: Existing `_is_google_grounding_redirect` in `link_verifier.py` auto-approves these URIs. No WP23 code change required per spec ("existing logic").
+- **Evidence**: [link_verifier.py](newsletter_agent/tools/link_verifier.py#L177)
+
+#### PASS - Data Model
+- **Requirement**: GroundingResult dataclass (Section 7)
+- **Status**: Compliant
+- **Detail**: Dataclass has all four required fields with correct types and defaults.
+- **Evidence**: [deep_research.py](newsletter_agent/tools/deep_research.py#L81-L88)
+
+#### PASS - Architecture
+- **Requirement**: Section 9.1-9.4
+- **Status**: Compliant
+- **Detail**: All changes confined to `deep_research.py` as specified. No new modules. Inline dataclass per Decision 3.
+
+#### FAIL - Test Coverage: Missing Unit Tests
+- **Requirement**: Section 11.1 tests #6, #11, #14
+- **Status**: Missing
+- **Detail**: `test_parse_grounding_from_state_partial_metadata`, `test_accumulated_urls_from_grounding`, `test_adaptive_context_includes_grounding_count` are absent.
+- **Evidence**: Searched `tests/unit/test_deep_research.py` -- these test names do not exist.
+
+#### FAIL - Test Coverage: BDD Tests
+- **Requirement**: Section 11.2 - 5 BDD scenarios
+- **Status**: Missing
+- **Detail**: No grounding BDD tests exist in `tests/bdd/`. All 5 scenarios unimplemented.
+- **Evidence**: `pytest --co -q tests/bdd/ | grep grounding` returns empty.
+
+#### FAIL - Test Coverage: Integration Tests
+- **Requirement**: Section 11.3 - IT-001, IT-002, IT-003
+- **Status**: Missing
+- **Detail**: Only the T23-01 spike test exists (permanently skipped). No functional integration tests.
+- **Evidence**: `tests/integration/test_grounding_spike.py` is the only grounding file; it is skipped.
+
+#### PASS - Non-Functional: Security
+- **Requirement**: Section 10.2
+- **Status**: Compliant
+- **Detail**: Grounding URIs pass through existing SSRF-protected link verifier. Titles are markdown-escaped. No secrets exposed.
+
+#### PASS - Non-Functional: Performance
+- **Requirement**: Section 10.1 NFR-001/002
+- **Status**: Compliant
+- **Detail**: Metadata extraction is pure in-memory dict access. No additional network calls.
+
+#### PASS - Documentation: architecture.md
+- **Requirement**: Section 4h
+- **Status**: Compliant
+- **Detail**: Grounding pipeline, callback mechanism, and state keys documented.
+- **Evidence**: architecture.md state key table includes grounding entries.
+
+#### WARN - Documentation: developer-guide.md
+- **Requirement**: Section 4h
+- **Status**: Partial
+- **Detail**: Mentions grounding in file listing and provider instructions. Does not document grounding state key semantics, callback internals, or troubleshooting.
+- **Evidence**: developer-guide.md
+
+#### PASS - Scope Discipline
+- **Requirement**: Only files within WP23 scope modified
+- **Status**: Compliant
+- **Detail**: Only `deep_research.py`, `test_deep_research.py`, spike test, and docs modified. No scope creep.
+
+#### PASS - Encoding (UTF-8)
+- **Requirement**: No em dashes, smart quotes, curly apostrophes
+- **Status**: Compliant
+- **Detail**: All new/modified files are clean ASCII/UTF-8 without typographic characters.
+
+#### WARN - Success Criteria: SC-003
+- **Requirement**: SC-003 - Source count per topic increases by >= 20%
+- **Status**: Not verifiable
+- **Detail**: No E2E comparison data exists. SC-003 requires measurement across a 5-run average. Cannot verify from code review alone.
+
+#### PASS - Coverage Thresholds
+- **Requirement**: >= 80% code coverage, >= 90% branch coverage
+- **Status**: Compliant
+- **Detail**: 83.59% overall coverage reported. 102 unit tests pass. No `# pragma: no cover` exclusions observed in new code.
+
+### Statistics
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 0 | 0 | 1 |
+| Spec Adherence | 11 | 0 | 6 |
+| Data Model | 1 | 0 | 0 |
+| API / Interface | 1 | 0 | 0 |
+| Architecture | 1 | 0 | 0 |
+| Test Coverage | 0 | 0 | 3 |
+| Non-Functional | 2 | 0 | 0 |
+| Performance | 1 | 0 | 0 |
+| Documentation | 1 | 1 | 0 |
+| Success Criteria | 0 | 1 | 0 |
+| Coverage Thresholds | 1 | 0 | 0 |
+| Scope Discipline | 1 | 0 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+
+1. **FB-01** (FR-GME-030/031/032): Add conditional in the URL tracking block (~L343): when `prov == "google" and grounding_for_round.has_metadata`, set `new_urls` from grounding sources instead of `_extract_urls`. Update the URL count log accordingly.
+2. **FB-02** (FR-GME-050/051): Add `grounding_source_count` to the `adaptive_context["rounds"].append({...})` dict. Pass the count into AnalysisAgent input.
+3. **FB-03** (LOG-002): Change `logger.debug` at L281 to `logger.warning`.
+4. **FB-04** through **FB-06**: Add the three missing unit tests.
+5. **FB-07**: Add BDD tests for all 5 grounding scenarios from spec Section 11.2.
+6. **FB-08**: Add integration tests IT-001, IT-002, IT-003 from spec Section 11.3.
+7. Check off all per-task acceptance criteria in T23-01 through T23-10.

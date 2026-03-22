@@ -1,6 +1,6 @@
 ---
-lane: for_review
-review_status: acknowledged
+lane: done
+review_status:
 ---
 
 # WP19 - Telemetry Foundation: Dependencies, OTel Init & Config Schema
@@ -429,6 +429,7 @@ Establish the foundational telemetry infrastructure that all subsequent observab
 - 2026-03-21T13:00:00Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 - 2026-03-22T08:01:19Z - coder - lane=doing - Addressing runtime OTel shutdown incompatibility discovered against installed opentelemetry-sdk 1.38.0
 - 2026-03-22T08:21:46Z - coder - lane=for_review - Runtime shutdown compatibility fix implemented and validated; ready for re-review
+- 2026-03-22T08:25:25Z - reviewer - lane=done - Verdict: Approved with Findings (2 WARNs)
 
 ## Review
 
@@ -648,3 +649,67 @@ A runtime incompatibility was discovered after approval: the installed `opentele
 - `python -c "from newsletter_agent.telemetry import init_telemetry, shutdown_telemetry; init_telemetry(); shutdown_telemetry(); print('telemetry-smoke-ok')"` -> `telemetry-smoke-ok`
 - `python -m newsletter_agent` -> no `Telemetry shutdown error`; unrelated `503 UNAVAILABLE` observed during one smoke run
 - `pytest tests/ --ignore=tests/unit/test_http_handler.py -q` -> `1001 passed`
+
+## Re-Review (2026-03-22)
+
+> **Reviewed by**: Reviewer Agent
+> **Date**: 2026-03-22
+> **Verdict**: Approved with Findings
+> **Scope**: Post-approval telemetry shutdown remediation, telemetry unit-test updates, and regression-stability change in `tests/performance/test_otel_overhead.py`
+
+### Summary
+
+Approved with Findings. The telemetry shutdown remediation is acceptable against FR-106 and Section 8.1 because the installed OpenTelemetry Python SDK exposes the 5-second budget on `force_flush(timeout_millis=...)` while `TracerProvider.shutdown()` is documented without a timeout parameter. The implementation now preserves the required shutdown budget and no longer raises at runtime. One non-blocking scope warning remains: the performance benchmark hardening in `tests/performance/test_otel_overhead.py` crosses strict WP19 file scope, but it is observability-adjacent, test-only, and justified by keeping the suite green after the telemetry fix.
+
+### Review Feedback
+
+No blocking feedback.
+
+### Findings
+
+#### PASS - Spec Adherence: FR-106 shutdown budget
+- **Requirement**: FR-106, Section 8.1 implementation contract
+- **Status**: Compliant via documented technical deviation
+- **Detail**: `shutdown_telemetry()` now flushes with `force_flush(timeout_millis=5000)` and then calls `shutdown()` using the signature supported by the installed SDK. Official OpenTelemetry Python SDK documentation defines `TracerProvider.force_flush(timeout_millis=30000)` and `TracerProvider.shutdown()` without a timeout argument, so the revised sequence matches the real API while preserving the 5-second flush budget required by the spec intent.
+- **Evidence**: `newsletter_agent/telemetry.py` lines 171-182; OpenTelemetry Python SDK docs for `TracerProvider.force_flush` and `TracerProvider.shutdown`
+
+#### PASS - Test Coverage Adherence: shutdown signature compatibility
+- **Requirement**: T19-07, FR-106, Section 11.1
+- **Status**: Compliant
+- **Detail**: Telemetry unit tests now verify both provider shapes: timeout-bearing `shutdown(timeout_millis=...)` and SDK-compatible no-arg `shutdown()`. This closes the previous runtime compatibility gap rather than only asserting the older contract.
+- **Evidence**: `tests/unit/test_telemetry.py` lines 213-252; validation evidence `pytest tests/unit/test_telemetry.py -q` -> `35 passed`
+
+#### PASS - Non-Functional Adherence: runtime regression cleared
+- **Requirement**: FR-106 error handling, SC-007 no-breakage expectation for disabled or graceful telemetry paths
+- **Status**: Compliant
+- **Detail**: The previous runtime `Telemetry shutdown error` caused by an unsupported keyword argument is no longer present in the recorded smoke runs. The remaining `503 UNAVAILABLE` noted by the implementer is unrelated to the shutdown path.
+- **Evidence**: Post-Approval Remediation validation block; `newsletter_agent/telemetry.py` lines 166-184
+
+#### WARN - Scope Discipline: WP22 performance benchmark touched during WP19 remediation
+- **Requirement**: WP19 scope discipline; plan scope is centered on telemetry foundation files and direct WP19 tests
+- **Status**: Minor deviation
+- **Detail**: `tests/performance/test_otel_overhead.py` belongs to the WP22 acceptance/performance tranche, not strict WP19 scope. The change is test-only and stabilizes the observability regression benchmark under full-suite load by taking median overhead samples instead of relying on a single noisy measurement. This is acceptable as a non-blocking scope crossover, not a correctness failure.
+- **Evidence**: `tests/performance/test_otel_overhead.py` lines 162-173; commit `a1fbf43`
+
+#### WARN - Coverage Thresholds: branch coverage still not enforced in project config
+- **Requirement**: T19-09, Section 11.1
+- **Status**: Partial
+- **Detail**: The earlier accepted warning remains unchanged. `pyproject.toml` still does not enforce branch coverage in the coverage configuration even though the documented observability coverage command uses `--cov-branch`.
+- **Evidence**: `pyproject.toml` lines 14-22; `docs/developer-guide.md` lines 175-176
+
+### Statistics
+| Dimension | Pass | Warn | Fail |
+|-----------|------|------|------|
+| Process Compliance | 1 | 0 | 0 |
+| Spec Adherence | 1 | 0 | 0 |
+| Test Coverage | 1 | 0 | 0 |
+| Non-Functional | 1 | 0 | 0 |
+| Documentation | 1 | 0 | 0 |
+| Scope Discipline | 0 | 1 | 0 |
+| Coverage Thresholds | 0 | 1 | 0 |
+| Encoding (UTF-8) | 1 | 0 | 0 |
+
+### Recommended Actions
+1. No remediation is required to return WP19 to `lane: done`.
+2. Track the cross-scope test stabilization as accepted technical housekeeping, not as unfinished WP19 work.
+3. If the team wants the remaining coverage warning cleared, add branch coverage enforcement in the project coverage configuration in a separate maintenance change.

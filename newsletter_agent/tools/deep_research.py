@@ -279,7 +279,7 @@ class DeepResearchOrchestrator(BaseAgent):
                         len(grounding_for_round.queries),
                     )
                 else:
-                    logger.debug(
+                    logger.warning(
                         "[Grounding] Topic %s/%s round %d: no grounding metadata available",
                         self.topic_name, prov, round_idx,
                     )
@@ -340,7 +340,11 @@ class DeepResearchOrchestrator(BaseAgent):
             state[round_key] = round_output
 
             # Track URLs (only verified/surviving URLs reach the accumulator)
-            new_urls = self._extract_urls(round_output)
+            # FR-GME-030: Google with grounding uses chunk URIs, not regex
+            if prov == "google" and grounding_for_round.has_metadata:
+                new_urls = {s["uri"] for s in grounding_for_round.sources}
+            else:
+                new_urls = self._extract_urls(round_output)
             prev_total = len(accumulated_urls)
             accumulated_urls.update(new_urls)
 
@@ -383,6 +387,12 @@ class DeepResearchOrchestrator(BaseAgent):
                 yield ev
 
             # Update adaptive context
+            # FR-GME-050: include grounding_source_count
+            grounding_src_count = (
+                len(grounding_for_round.sources)
+                if grounding_for_round.has_metadata
+                else 0
+            )
             adaptive_context["rounds"].append({
                 "round_idx": round_idx,
                 "query": current_query,
@@ -391,6 +401,7 @@ class DeepResearchOrchestrator(BaseAgent):
                 "urls_found": len(accumulated_urls) - prev_total,
                 "coverage_assessment": analysis["coverage_assessment"],
                 "saturated": analysis["saturated"],
+                "grounding_source_count": grounding_src_count,
             })
 
             logger.info(
@@ -680,6 +691,10 @@ class DeepResearchOrchestrator(BaseAgent):
             lines.append(f"  Findings: {r['findings_summary']}")
             gaps = ", ".join(r["knowledge_gaps"]) if r["knowledge_gaps"] else "none"
             lines.append(f"  Remaining gaps: {gaps}")
+            # FR-GME-051: include grounding source count for AnalysisAgent
+            gs_count = r.get("grounding_source_count")
+            if gs_count is not None:
+                lines.append(f"  Grounding sources: {gs_count}")
         return "\n".join(lines)
 
     def _make_search_agent(self, round_idx: int, query: str) -> LlmAgent:

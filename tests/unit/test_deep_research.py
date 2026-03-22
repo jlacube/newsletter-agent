@@ -1446,3 +1446,199 @@ class TestSearchAgentGroundingCallback:
         orch = _make_orchestrator(provider="perplexity")
         agent = orch._make_search_agent(0, "test query")
         assert agent.after_model_callback is None
+
+
+# ---------------------------------------------------------------------------
+# Test: _parse_grounding_from_state partial metadata (FB-04, spec 11.1 #6)
+# ---------------------------------------------------------------------------
+
+
+class TestParseGroundingPartialMetadata:
+    """Chunks present but no supports/queries returns sources with empty lists."""
+
+    def test_partial_metadata_chunks_only(self):
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://a.com", "title": "Title A"}},
+                ],
+            },
+        }
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert gr.has_metadata is True
+        assert len(gr.sources) == 1
+        assert gr.sources[0]["uri"] == "https://a.com"
+        assert gr.supports == []
+        assert gr.queries == []
+
+    def test_partial_metadata_chunks_and_queries_no_supports(self):
+        state = {
+            "_grounding_raw_0_google_round_0": {
+                "grounding_chunks": [
+                    {"web": {"uri": "https://b.com", "title": "B"}},
+                ],
+                "web_search_queries": ["q1"],
+            },
+        }
+        orch = _make_orchestrator()
+        gr = orch._parse_grounding_from_state(state, 0, "google", 0)
+        assert gr.has_metadata is True
+        assert len(gr.sources) == 1
+        assert gr.supports == []
+        assert gr.queries == ["q1"]
+
+
+# ---------------------------------------------------------------------------
+# Test: accumulated_urls from grounding (FB-05, spec 11.1 #11)
+# ---------------------------------------------------------------------------
+
+
+class TestAccumulatedUrlsFromGrounding:
+    """Google provider populates accumulated_urls from grounding chunks."""
+
+    @pytest.mark.asyncio
+    async def test_google_accumulated_urls_from_grounding(self):
+        """FR-GME-030: accumulated_urls uses grounding URIs, not regex."""
+        orch = _make_orchestrator(max_rounds=1, provider="google")
+        ctx = _make_ctx()
+
+        # LLM text mentions a DIFFERENT URL than grounding data
+        round_output = _research_text(
+            [("Text URL", "https://text-only.com")],
+            "Some findings",
+        )
+
+        captured_accumulated = {}
+
+        original_cleanup = orch._cleanup_state
+
+        def capture_cleanup(s, rc):
+            # Snapshot accumulated_urls state key before cleanup deletes it
+            key = "deep_urls_accumulated_0_google"
+            if key in s:
+                captured_accumulated["urls"] = list(s[key])
+            original_cleanup(s, rc)
+
+        with patch.object(orch, "_make_search_agent") as mock_make, \
+             patch.object(orch, "_cleanup_state", side_effect=capture_cleanup):
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                run_ctx.session.state["deep_research_latest_0_google"] = round_output
+                run_ctx.session.state["_grounding_raw_0_google_round_0"] = {
+                    "grounding_chunks": [
+                        {"web": {"uri": "https://grounded.com/a", "title": "A"}},
+                        {"web": {"uri": "https://grounded.com/b", "title": "B"}},
+                    ],
+                    "grounding_supports": [],
+                    "web_search_queries": [],
+                }
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        # accumulated_urls contained grounding URIs (captured before cleanup)
+        acc = captured_accumulated["urls"]
+        assert "https://grounded.com/a" in acc
+        assert "https://grounded.com/b" in acc
+        # regex-only URL should NOT be in accumulated (grounding path used)
+        assert "https://text-only.com" not in acc
+
+
+# ---------------------------------------------------------------------------
+# Test: adaptive_context includes grounding_source_count (FB-06, spec 11.1 #14)
+# ---------------------------------------------------------------------------
+
+
+class TestAdaptiveContextGroundingCount:
+    """Round entry in adaptive_context has grounding_source_count field."""
+
+    @pytest.mark.asyncio
+    async def test_grounding_source_count_present(self):
+        """FR-GME-050: round has grounding_source_count when metadata present."""
+        orch = _make_orchestrator(max_rounds=2, provider="google")
+        ctx = _make_ctx()
+
+        round_output = _research_text(
+            [("A", "https://a.com")], "Findings"
+        )
+
+        call_count = [0]
+
+        with patch.object(orch, "_make_search_agent") as mock_make, \
+             patch.object(orch, "_run_analysis") as mock_analysis, \
+             patch.object(orch, "_run_planning") as mock_planning:
+
+            # Planning returns query and aspects
+            mock_planning.return_value = ("AI query", ["aspect1", "aspect2"], [])
+
+            # Analysis: not saturated on round 0, saturated on round 1
+            mock_analysis.side_effect = [
+                (
+                    {
+                        "findings_summary": "Found stuff",
+                        "knowledge_gaps": ["gap1"],
+                        "coverage_assessment": "partial",
+                        "saturated": False,
+                        "next_query": "follow-up",
+                        "next_query_rationale": "fill gap",
+                    },
+                    [],
+                ),
+                (
+                    {
+                        "findings_summary": "Complete",
+                        "knowledge_gaps": [],
+                        "coverage_assessment": "full",
+                        "saturated": True,
+                        "next_query": None,
+                        "next_query_rationale": None,
+                    },
+                    [],
+                ),
+            ]
+
+            mock_agent = MagicMock()
+
+            async def fake_run_async(run_ctx):
+                r = call_count[0]
+                run_ctx.session.state["deep_research_latest_0_google"] = round_output
+                if r == 0:
+                    run_ctx.session.state[f"_grounding_raw_0_google_round_{r}"] = {
+                        "grounding_chunks": [
+                            {"web": {"uri": "https://a.com", "title": "A"}},
+                            {"web": {"uri": "https://b.com", "title": "B"}},
+                            {"web": {"uri": "https://c.com", "title": "C"}},
+                        ],
+                        "grounding_supports": [],
+                        "web_search_queries": [],
+                    }
+                # Round 1: no grounding data (fallback)
+                call_count[0] += 1
+                return
+                yield
+
+            mock_agent.run_async = fake_run_async
+            mock_make.return_value = mock_agent
+
+            events = []
+            async for event in orch._run_async_impl(ctx):
+                events.append(event)
+
+        # Reasoning chain is preserved after cleanup
+        chain_raw = ctx.session.state.get("adaptive_reasoning_chain_0_google")
+        assert chain_raw is not None
+        context = json.loads(chain_raw)
+        rounds = context["rounds"]
+        assert len(rounds) == 2
+        # Round 0: had 3 grounding sources
+        assert rounds[0]["grounding_source_count"] == 3
+        # Round 1: no grounding data -> 0
+        assert rounds[1]["grounding_source_count"] == 0

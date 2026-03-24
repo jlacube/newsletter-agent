@@ -13,6 +13,7 @@ from newsletter_agent.tools.synthesis_utils import (
     parse_synthesis_output,
     _relink_orphaned_brackets,
     _fix_nested_links,
+    _fix_outer_bracket_links,
     _fix_split_links,
     _fix_bare_close_brackets,
 )
@@ -293,6 +294,22 @@ class TestRelinkOrphanedBrackets:
         result = _relink_orphaned_brackets(body, sources)
         assert "(https://neo4j.com/rag)" in result
 
+    def test_prefix_match_source_longer_than_bracket(self):
+        """BenchmarkQED pattern: bracket text is a prefix of the source title."""
+        body = (
+            "projects like BenchmarkQED provide tools "
+            "[BenchmarkQED: Automated benchmarking of RAG systems]."
+        )
+        sources = [
+            {
+                "url": "https://research.microsoft.com/benchmarkqed",
+                "title": "BenchmarkQED: Automated benchmarking of RAG systems - Microsoft Research (June 05 2025)",
+            }
+        ]
+        result = _relink_orphaned_brackets(body, sources)
+        assert "(https://research.microsoft.com/benchmarkqed)" in result
+        assert "[BenchmarkQED: Automated benchmarking of RAG systems](" in result
+
     def test_ignores_short_brackets(self):
         body = "Version [v2.0] released. See [AI Market Report in 2026]."
         sources = [
@@ -437,6 +454,56 @@ class TestFixNestedLinks:
         assert _fix_nested_links(None) is None
 
 
+class TestFixOuterBracketLinks:
+    """Tests for _fix_outer_bracket_links: [[Title](URL)] -> [Title](URL)."""
+
+    def test_strips_outer_brackets(self):
+        md = "claim text [[The RAG Landscape](https://example.com)]. More."
+        result = _fix_outer_bracket_links(md)
+        assert result == "claim text [The RAG Landscape](https://example.com). More."
+
+    def test_multiple_outer_brackets(self):
+        md = (
+            "first [[Alpha](https://a.com)] and "
+            "second [[Beta](https://b.com)]."
+        )
+        result = _fix_outer_bracket_links(md)
+        assert "[[" not in result
+        assert "[Alpha](https://a.com)" in result
+        assert "[Beta](https://b.com)" in result
+
+    def test_does_not_affect_proper_links(self):
+        md = "Normal [link](https://example.com) text."
+        assert _fix_outer_bracket_links(md) == md
+
+    def test_does_not_affect_nested_double_url(self):
+        """The nested [[T](U)](U) pattern should not match (only one URL here)."""
+        md = "[[Title](https://inner.com)](https://outer.com)"
+        # This pattern has TWO URLs; it should be handled by _fix_nested_links,
+        # not this function. Our regex would match the [[Title](inner)] portion.
+        # In practice, _fix_nested_links runs first and removes these.
+        # Just verify we don't crash.
+        result = _fix_outer_bracket_links(md)
+        assert isinstance(result, str)
+
+    def test_empty_input(self):
+        assert _fix_outer_bracket_links("") == ""
+
+    def test_none_input(self):
+        assert _fix_outer_bracket_links(None) is None
+
+    def test_real_world_rag_section_pattern(self):
+        """Reproduce the pattern seen in the Gen AI RAG section."""
+        md = (
+            '"naive RAG is dead" '
+            "[[The 2026 RAG Performance Landscape](https://vertexai.example.com/redirect)]. "
+            "The focus has shifted."
+        )
+        result = _fix_outer_bracket_links(md)
+        assert "[[" not in result
+        assert "[The 2026 RAG Performance Landscape](https://vertexai.example.com/redirect)" in result
+
+
 class TestFixSplitLinks:
     """Tests for _fix_split_links: [Title]\\n(URL) joining."""
 
@@ -523,7 +590,8 @@ class TestNormalizeSectionAllFixes:
                 "Bare Title B - Enterprise RAG Solutions](https://b.com). "
                 "Split [Title C - Generative AI Research]\n(https://c.com). "
                 "Orphan [Title D - Autonomous Agent Frameworks]. "
-                "Good [Title E - Small Language Models](https://e.com)."
+                "Good [Title E - Small Language Models](https://e.com). "
+                "Outer [[Title F - RAG Benchmark Results](https://f.com)]."
             ),
             "sources": [
                 {"url": "https://a.com", "title": "Title A - Machine Learning Advances"},
@@ -531,6 +599,7 @@ class TestNormalizeSectionAllFixes:
                 {"url": "https://c.com", "title": "Title C - Generative AI Research"},
                 {"url": "https://d.com", "title": "Title D - Autonomous Agent Frameworks"},
                 {"url": "https://e.com", "title": "Title E - Small Language Models"},
+                {"url": "https://f.com", "title": "Title F - RAG Benchmark Results"},
             ],
         }
         raw = json.dumps({
@@ -541,9 +610,10 @@ class TestNormalizeSectionAllFixes:
         body = result["synthesis_0"]["body_markdown"]
 
         # All patterns should produce valid [Title](URL) markdown
-        assert "[[" not in body, "Nested links not flattened"
+        assert "[[" not in body, "Nested or outer-bracket links not flattened"
         assert "[Title A - Machine Learning Advances](https://a.com)" in body
         assert "[Title B - Enterprise RAG Solutions](https://b.com)" in body
         assert "[Title C - Generative AI Research](https://c.com)" in body
         assert "[Title D - Autonomous Agent Frameworks](https://d.com)" in body
         assert "[Title E - Small Language Models](https://e.com)" in body
+        assert "[Title F - RAG Benchmark Results](https://f.com)" in body

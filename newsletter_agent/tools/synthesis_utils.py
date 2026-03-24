@@ -21,6 +21,11 @@ _NESTED_LINK_RE = re.compile(
     r"\[\[([^\]]+)\]\((https?://[^)]+)\)\]\((https?://[^)]+)\)"
 )
 
+# Pattern: [[Title](URL)] - extra outer brackets wrapping a valid link
+_OUTER_BRACKET_LINK_RE = re.compile(
+    r"\[\[([^\]]+)\]\((https?://[^)]+)\)\]"
+)
+
 # Pattern: ](URL) - used to find bare close-bracket links
 _CLOSE_BRACKET_URL_RE = re.compile(r"\]\((https?://[^)]+)\)")
 
@@ -244,6 +249,7 @@ def normalize_synthesis_section(
     # Fix malformed citation patterns the LLM commonly produces.
     # Order matters: fix structural issues before orphan relinking.
     body_markdown = _fix_nested_links(body_markdown)
+    body_markdown = _fix_outer_bracket_links(body_markdown)
     body_markdown = _fix_split_links(body_markdown)
     body_markdown = _fix_bare_close_brackets(body_markdown, sources)
     body_markdown = _relink_orphaned_brackets(body_markdown, sources)
@@ -277,6 +283,31 @@ def _fix_nested_links(body_markdown: str) -> str:
     result = _NESTED_LINK_RE.sub(_replace, body_markdown)
     if count:
         logger.info("Flattened %d nested [[Title](URL)](URL) links", count)
+    return result
+
+
+def _fix_outer_bracket_links(body_markdown: str) -> str:
+    """Strip outer brackets from ``[[Title](URL)]`` to ``[Title](URL)``.
+
+    The LLM sometimes wraps an already-valid markdown link inside extra
+    brackets as a citation style, producing ``[[Title](URL)]`` which
+    renders as literal ``[<a>Title</a>]`` in HTML.
+    """
+    if not body_markdown or "[[" not in body_markdown:
+        return body_markdown
+
+    count = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal count
+        title = match.group(1)
+        url = match.group(2)
+        count += 1
+        return f"[{title}]({url})"
+
+    result = _OUTER_BRACKET_LINK_RE.sub(_replace, body_markdown)
+    if count:
+        logger.info("Stripped outer brackets from %d [[Title](URL)] links", count)
     return result
 
 

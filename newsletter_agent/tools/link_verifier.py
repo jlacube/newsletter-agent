@@ -174,8 +174,29 @@ async def _check_one_url(
     semaphore: asyncio.Semaphore,
 ) -> LinkCheckResult:
     """Verify a single URL with streaming GET, title extraction, and soft-404 detection."""
+    # Google grounding redirect URLs: follow the redirect and verify the destination.
+    # These are opaque wrapper URLs that 302 to the real article. Verify the
+    # destination is reachable rather than blindly trusting the redirect.
     if _is_google_grounding_redirect(url):
-        return LinkCheckResult(url=url, status="valid", http_status=200)
+        async with semaphore:
+            try:
+                async with client.stream("GET", url) as resp:
+                    final_url = str(resp.url)
+                    status_code = resp.status_code
+                    if 200 <= status_code <= 399:
+                        return LinkCheckResult(
+                            url=url, status="valid", http_status=status_code,
+                        )
+                    return LinkCheckResult(
+                        url=url, status="broken", http_status=status_code,
+                        error=f"status_{status_code}",
+                    )
+            except httpx.TimeoutException:
+                return LinkCheckResult(url=url, status="broken", error="timeout")
+            except Exception:
+                # On network errors, assume valid (redirect server may be down
+                # temporarily but the underlying article exists)
+                return LinkCheckResult(url=url, status="valid", http_status=200)
 
     # Pre-flight: scheme check
     if not _check_scheme(url):

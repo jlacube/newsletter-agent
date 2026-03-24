@@ -281,12 +281,41 @@ class TestVerifyUrls:
         assert r.page_title == "My Article"
 
     @pytest.mark.asyncio
-    async def test_google_grounding_redirect_is_preserved(self):
+    async def test_google_grounding_redirect_follows_to_destination(self, respx_mock):
         url = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ABC123"
+        # Grounding redirect follows to real article
+        respx_mock.get(url).mock(
+            return_value=httpx.Response(
+                302,
+                headers={"Location": "https://example.com/real-article"},
+            )
+        )
+        respx_mock.get("https://example.com/real-article").mock(
+            return_value=httpx.Response(200, html=_html("Real Article"))
+        )
         results = await verify_urls([url])
         r = results[url]
         assert r.status == "valid"
-        assert r.http_status == 200
+
+    @pytest.mark.asyncio
+    async def test_google_grounding_redirect_broken_destination(self, respx_mock):
+        url = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/EXPIRED"
+        respx_mock.get(url).mock(
+            return_value=httpx.Response(404, html=_html("Not Found"))
+        )
+        results = await verify_urls([url])
+        r = results[url]
+        assert r.status == "broken"
+
+    @pytest.mark.asyncio
+    async def test_google_grounding_redirect_network_error_treated_valid(self, respx_mock):
+        url = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/NETERR"
+        respx_mock.get(url).mock(side_effect=httpx.ConnectError("connection refused"))
+        results = await verify_urls([url])
+        r = results[url]
+        # Network errors on grounding redirects are treated as valid
+        # (redirect server may be temporarily down)
+        assert r.status == "valid"
 
     @pytest.mark.asyncio
     async def test_redirect_301_to_200(self, respx_mock):

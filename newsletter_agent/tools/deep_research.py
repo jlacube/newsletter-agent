@@ -226,18 +226,28 @@ def _grounding_capture_callback(
     prov: str,
     round_idx: int,
 ) -> None:
-    """Capture grounding metadata from session state into a raw state key.
+    """Capture grounding metadata into a raw state key for later parsing.
 
     Registered as after_model_callback on Google search LlmAgents.
-    Reads from 'temp:_adk_grounding_metadata' (ADK stores grounding data
-    there before after_model_callback fires -- see OQ-1 resolution in
-    tests/integration/test_grounding_spike.py).
+
+    Checks two sources for grounding metadata (in priority order):
+    1. ``llm_response.grounding_metadata`` - set by gemini_llm_connection when
+       the Gemini API returns grounding data inline with GoogleSearchTool.
+    2. ``temp:_adk_grounding_metadata`` in session state - set by
+       GoogleSearchAgentTool (alternative search tool).
 
     Returns None (never modifies the LLM response). Never raises.
     """
     try:
         state = callback_context.state
-        gm = state.get("temp:_adk_grounding_metadata")
+
+        # Primary: read directly from the LLM response (GoogleSearchTool path)
+        gm = getattr(llm_response, "grounding_metadata", None)
+
+        # Fallback: read from temp state (GoogleSearchAgentTool path)
+        if gm is None:
+            gm = state.get("temp:_adk_grounding_metadata")
+
         if gm is None:
             return None
 

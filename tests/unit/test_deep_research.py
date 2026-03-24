@@ -1041,17 +1041,52 @@ class TestGroundingCaptureCallback:
         gm = self._make_grounding_metadata(chunks=chunks, queries=["q1"])
         state = {"temp:_adk_grounding_metadata": gm}
         cb_ctx = self._make_callback_context(state)
-        result = _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 1)
+        llm_resp = MagicMock()
+        llm_resp.grounding_metadata = None  # force fallback to temp state
+        result = _grounding_capture_callback(cb_ctx, llm_resp, 0, "google", 1)
         assert result is None
         raw = state["_grounding_raw_0_google_round_1"]
         assert len(raw["grounding_chunks"]) == 2
         assert raw["grounding_chunks"][0]["web"]["uri"] == "https://example.com/a"
         assert raw["web_search_queries"] == ["q1"]
 
+    def test_captures_from_llm_response_grounding_metadata(self):
+        """Primary path: grounding metadata on llm_response (GoogleSearchTool)."""
+        chunks = [
+            self._make_chunk("https://example.com/c", "Article C"),
+        ]
+        gm = self._make_grounding_metadata(chunks=chunks, queries=["q2"])
+        llm_resp = MagicMock()
+        llm_resp.grounding_metadata = gm
+        state = {}  # no temp state - grounding comes from llm_response
+        cb_ctx = self._make_callback_context(state)
+        result = _grounding_capture_callback(cb_ctx, llm_resp, 0, "google", 0)
+        assert result is None
+        raw = state["_grounding_raw_0_google_round_0"]
+        assert len(raw["grounding_chunks"]) == 1
+        assert raw["grounding_chunks"][0]["web"]["uri"] == "https://example.com/c"
+        assert raw["web_search_queries"] == ["q2"]
+
+    def test_llm_response_takes_priority_over_temp_state(self):
+        """llm_response.grounding_metadata should be checked first."""
+        chunk_resp = self._make_chunk("https://from-response.com", "From Response")
+        chunk_state = self._make_chunk("https://from-state.com", "From State")
+        gm_resp = self._make_grounding_metadata(chunks=[chunk_resp])
+        gm_state = self._make_grounding_metadata(chunks=[chunk_state])
+        llm_resp = MagicMock()
+        llm_resp.grounding_metadata = gm_resp
+        state = {"temp:_adk_grounding_metadata": gm_state}
+        cb_ctx = self._make_callback_context(state)
+        _grounding_capture_callback(cb_ctx, llm_resp, 0, "google", 0)
+        raw = state["_grounding_raw_0_google_round_0"]
+        assert raw["grounding_chunks"][0]["web"]["uri"] == "https://from-response.com"
+
     def test_no_metadata_does_nothing(self):
         state = {}
         cb_ctx = self._make_callback_context(state)
-        result = _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 0)
+        # llm_response has no grounding_metadata attribute
+        llm_resp = MagicMock(spec=[])
+        result = _grounding_capture_callback(cb_ctx, llm_resp, 0, "google", 0)
         assert result is None
         assert "_grounding_raw_0_google_round_0" not in state
 
@@ -1080,7 +1115,9 @@ class TestGroundingCaptureCallback:
         )
         state = {"temp:_adk_grounding_metadata": gm}
         cb_ctx = self._make_callback_context(state)
-        _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 0)
+        llm_resp = MagicMock()
+        llm_resp.grounding_metadata = None  # force fallback to temp state
+        _grounding_capture_callback(cb_ctx, llm_resp, 0, "google", 0)
 
         raw = state["_grounding_raw_0_google_round_0"]
         assert len(raw["grounding_supports"]) == 1
@@ -1097,7 +1134,9 @@ class TestGroundingCaptureCallback:
         gm = self._make_grounding_metadata(chunks=[chunk], supports=[support])
         state = {"temp:_adk_grounding_metadata": gm}
         cb_ctx = self._make_callback_context(state)
-        _grounding_capture_callback(cb_ctx, MagicMock(), 0, "google", 0)
+        llm_resp = MagicMock()
+        llm_resp.grounding_metadata = None  # force fallback to temp state
+        _grounding_capture_callback(cb_ctx, llm_resp, 0, "google", 0)
 
         raw = state["_grounding_raw_0_google_round_0"]
         assert raw["grounding_supports"][0]["segment_text"] == ""

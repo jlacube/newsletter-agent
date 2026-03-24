@@ -7,15 +7,15 @@
 
 # Newsletter metadata and delivery settings
 newsletter:
-  title: "Weekly Agentic & GenAI Digest"            # Display title (1-200 chars)
-  schedule: "0 8 * * *"                  # Cron: Sunday 8am UTC
+  title: "Daily Agentic & GenAI Digest"            # Display title (1-200 chars)
+  schedule: "0 6 * * *"                  # Cron: Sunday 8am UTC
   recipient_emails:                       # Delivery targets (1-10 emails)
     - "jerome.lacube@gmail.com"
-    #- "jerome.lacube@engie.com"
+    - "jerome.lacube@engie.com"
 
 # Application settings
 settings:
-  dry_run: true                          # true = save HTML only, no email
+  dry_run: false                          # true = save HTML only, no email
   output_dir: "output/"                  # Where to save HTML output
   timeframe: "last_week"
   verify_links: true

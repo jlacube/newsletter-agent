@@ -118,8 +118,8 @@ done
 ```bash
 gcloud run services update newsletter-agent \
   --region=us-central1 \
-  --memory=1Gi \
-  --timeout=600 \
+  --memory=2Gi \
+  --timeout=1200 \
   --min-instances=0 \
   --max-instances=1 \
   --concurrency=1 \
@@ -132,13 +132,13 @@ The health check endpoint (`GET /`) is automatically used by Cloud Run for start
 
 | Setting | Value | Rationale |
 |---------|-------|-----------|
-| Memory | 1 GiB | Sufficient for LLM response processing |
-| Timeout | 600s (10 min) | Allows for multiple LLM calls across topics |
+| Memory | 2 GiB | Accommodates parallel deep research, link verification, and synthesis |
+| Timeout | 1200s (20 min) | Allows for multi-round deep research with link verification |
 | Min instances | 0 | Scale to zero when idle (cost savings) |
 | Max instances | 1 | Newsletter generation is a single-execution job |
 | Concurrency | 1 | Only one pipeline run at a time |
 
-For newsletters with many topics (10+) using `search_depth: "deep"`, consider increasing the timeout to 900s. Deep-mode topics perform multiple research rounds (up to `max_research_rounds` per provider), which increases total pipeline time.
+For newsletters with many topics (10+) using `search_depth: "deep"`, consider increasing the timeout to 1800s. Deep-mode topics perform multiple research rounds (up to `max_research_rounds` per provider), plus link verification and redirect resolution, which increases total pipeline time.
 
 **Adaptive research API call volume:** When using the adaptive deep research mode (`search_depth: "deep"` with `max_research_rounds` > 1), each topic-provider pair makes additional LLM calls for planning (1 call) and per-round analysis (1 call per round). With the default 3 rounds across 5 topics and 2 providers, this adds up to 30 additional `gemini-2.5-flash` calls per pipeline run. At current pricing, this adds approximately $0.002-$0.005 per topic-provider pair per run. No new environment variables or external dependencies are required for adaptive research.
 

@@ -24,7 +24,7 @@ CMD exec gunicorn \
     --bind 0.0.0.0:${PORT} \
     --workers 1 \
     --threads 1 \
-    --timeout 600 \
+    --timeout 1200 \
     --access-logfile - \
     --error-logfile - \
     newsletter_agent.http_handler:app

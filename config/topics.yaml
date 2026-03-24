@@ -8,7 +8,7 @@
 # Newsletter metadata and delivery settings
 newsletter:
   title: "Weekly Agentic & GenAI Digest"            # Display title (1-200 chars)
-  schedule: "0 8 * * 0"                  # Cron: Sunday 8am UTC
+  schedule: "0 8 * * *"                  # Cron: Sunday 8am UTC
   recipient_emails:                       # Delivery targets (1-10 emails)
     - "jerome.lacube@gmail.com"
     #- "jerome.lacube@engie.com"
@@ -55,6 +55,15 @@ topics:
   - name: "Gen AI SLMs / MMLs"
     query: >-
       Latest developments in Gen AI Small Language Models and Medium Language Models. Focus on new trendy ones, benchmarks,
+      and adoption trends.
+    search_depth: "deep"
+    sources:
+      - google_search
+      #- perplexity
+
+  - name: "Gen AI Eval"
+    query: >-
+      Latest developments in Gen AI Evaluation frameworks. Focus on new trendy ones, benchmarks,
       and adoption trends.
     search_depth: "deep"
     sources:

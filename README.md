@@ -404,3 +404,7 @@ reduce the number of topics.
 **HTML output is empty** -- Check the logs for synthesis errors. The synthesis
 agent may have failed to produce valid JSON. Verify your Gemini API key has
 access to `gemini-2.5-pro`.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.

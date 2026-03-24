@@ -13,7 +13,21 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^)]+)\)")
+_ORPHAN_BRACKET_RE = re.compile(r"(?<!!)\[([^\]\[]{10,})\](?!\()")
 _PLACEHOLDER_TITLE_RE = re.compile(r"^(?:google\s+research\s+for\b|round\s+\d+\b)", re.IGNORECASE)
+
+# Pattern: [[Title](URL)](URL) - nested/double-wrapped link
+_NESTED_LINK_RE = re.compile(
+    r"\[\[([^\]]+)\]\((https?://[^)]+)\)\]\((https?://[^)]+)\)"
+)
+
+# Pattern: ](URL) - used to find bare close-bracket links
+_CLOSE_BRACKET_URL_RE = re.compile(r"\]\((https?://[^)]+)\)")
+
+# Pattern: [Title]\n(URL) or [Title] (URL) - split across whitespace
+_SPLIT_LINK_RE = re.compile(
+    r"(?<!!)\[([^\]\[]{10,})\]\s+\((https?://[^)]+)\)"
+)
 
 
 def parse_synthesis_output(
@@ -227,11 +241,203 @@ def normalize_synthesis_section(
         sources = [src for src in sources if src["url"] not in removed_urls]
         body_markdown = _strip_removed_markdown_links(body_markdown, removed_urls)
 
+    # Fix malformed citation patterns the LLM commonly produces.
+    # Order matters: fix structural issues before orphan relinking.
+    body_markdown = _fix_nested_links(body_markdown)
+    body_markdown = _fix_split_links(body_markdown)
+    body_markdown = _fix_bare_close_brackets(body_markdown, sources)
+    body_markdown = _relink_orphaned_brackets(body_markdown, sources)
+
     return {
         "title": title,
         "body_markdown": body_markdown,
         "sources": sources,
     }
+
+
+def _fix_nested_links(body_markdown: str) -> str:
+    """Flatten ``[[Title](URL)](URL)`` to ``[Title](inner_URL)``.
+
+    The LLM sometimes wraps an already-valid markdown link inside another
+    link construct, producing nested brackets that markdown converters
+    render with the raw inner link as display text.
+    """
+    if not body_markdown or "[[" not in body_markdown:
+        return body_markdown
+
+    count = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal count
+        inner_title = match.group(1)
+        inner_url = match.group(2)
+        count += 1
+        return f"[{inner_title}]({inner_url})"
+
+    result = _NESTED_LINK_RE.sub(_replace, body_markdown)
+    if count:
+        logger.info("Flattened %d nested [[Title](URL)](URL) links", count)
+    return result
+
+
+def _fix_split_links(body_markdown: str) -> str:
+    """Join ``[Title] (URL)`` or ``[Title]\\n(URL)`` into ``[Title](URL)``.
+
+    Whitespace or newlines between ``]`` and ``(`` break markdown link
+    syntax. This rejoins them.
+    """
+    if not body_markdown:
+        return body_markdown
+
+    count = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal count
+        title = match.group(1)
+        url = match.group(2)
+        count += 1
+        return f"[{title}]({url})"
+
+    result = _SPLIT_LINK_RE.sub(_replace, body_markdown)
+    if count:
+        logger.info("Joined %d split [Title] (URL) links", count)
+    return result
+
+
+def _fix_bare_close_brackets(
+    body_markdown: str,
+    sources: list[dict] | None = None,
+) -> str:
+    """Fix ``Title](URL)`` by prepending the missing ``[``.
+
+    The LLM sometimes omits the opening bracket, producing text like
+    ``...claim Title](https://example.com). Next...`` which markdown
+    converters cannot parse as a link.
+
+    Uses two strategies:
+    1. Match the text before ``]`` against known source titles (most accurate).
+    2. Fall back to a sentence-boundary heuristic when no source title matches.
+    """
+    if not body_markdown or "](" not in body_markdown:
+        return body_markdown
+
+    matches = list(_CLOSE_BRACKET_URL_RE.finditer(body_markdown))
+    if not matches:
+        return body_markdown
+
+    # Build sorted source title list (longest first for greedy matching)
+    source_titles: list[str] = []
+    if sources:
+        for src in sources:
+            t = src.get("title", "").strip()
+            if len(t) >= 5:
+                source_titles.append(t)
+        source_titles.sort(key=len, reverse=True)
+
+    count = 0
+    offset = 0
+    result = body_markdown
+
+    for m in matches:
+        bracket_pos = m.start() + offset  # position of ] in *result*
+
+        # Check whether this ] already has a matching [
+        depth = 0
+        has_open = False
+        for i in range(bracket_pos - 1, -1, -1):
+            ch = result[i]
+            if ch == "]":
+                depth += 1
+            elif ch == "[":
+                if depth == 0:
+                    has_open = True
+                    break
+                depth -= 1
+        if has_open:
+            continue  # Already a proper [Title](URL)
+
+        text_before = result[:bracket_pos]
+        title_start: int | None = None
+
+        # Strategy 1: match a known source title ending right before ]
+        for src_title in source_titles:
+            if text_before.endswith(src_title):
+                title_start = bracket_pos - len(src_title)
+                break
+
+        # Strategy 2: sentence-boundary heuristic
+        if title_start is None:
+            boundary_positions: list[int] = []
+            for pattern in [". ", "? ", "! ", "; ", "\n", ") ", '" ']:
+                pos = text_before.rfind(pattern)
+                if pos >= 0:
+                    boundary_positions.append(pos + len(pattern))
+            if boundary_positions:
+                candidate = max(boundary_positions)
+                while candidate < bracket_pos and result[candidate] in " \t":
+                    candidate += 1
+                if bracket_pos - candidate >= 5:
+                    title_start = candidate
+
+        if title_start is None:
+            continue
+
+        result = result[:title_start] + "[" + result[title_start:]
+        offset += 1
+        count += 1
+
+    if count:
+        logger.info("Fixed %d bare Title](URL) links (added opening [)", count)
+    return result
+
+
+def _relink_orphaned_brackets(body_markdown: str, sources: list[dict]) -> str:
+    """Relink [Title] bracket references that are missing their (URL) part.
+
+    The synthesis LLM sometimes emits ``[Source Title]`` without ``(URL)``.
+    This function matches those orphaned brackets against the sources list
+    and rewrites them as proper ``[Title](URL)`` markdown links.
+    """
+    if not body_markdown or not sources:
+        return body_markdown
+
+    # Build lookup: normalized title -> url (first match wins)
+    title_to_url: dict[str, str] = {}
+    for src in sources:
+        key = _norm_title(src.get("title", ""))
+        if key and key not in title_to_url:
+            title_to_url[key] = src["url"]
+
+    if not title_to_url:
+        return body_markdown
+
+    relinked = 0
+
+    def _replace(match: re.Match[str]) -> str:
+        nonlocal relinked
+        bracket_text = match.group(1)
+        norm = _norm_title(bracket_text)
+        # Exact match
+        url = title_to_url.get(norm)
+        if url:
+            relinked += 1
+            return f"[{bracket_text}]({url})"
+        # Prefix match: the bracket text may be truncated
+        for src_title, src_url in title_to_url.items():
+            if src_title.startswith(norm) or norm.startswith(src_title):
+                relinked += 1
+                return f"[{bracket_text}]({src_url})"
+        return match.group(0)
+
+    result = _ORPHAN_BRACKET_RE.sub(_replace, body_markdown)
+    if relinked:
+        logger.info("Relinked %d orphaned bracket citations", relinked)
+    return result
+
+
+def _norm_title(title: str) -> str:
+    """Normalize a title for fuzzy comparison."""
+    return re.sub(r"\s+", " ", title.strip().lower())
 
 
 def _fallback_output(

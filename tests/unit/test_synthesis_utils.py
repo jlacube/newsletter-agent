@@ -9,7 +9,13 @@ import json
 
 import pytest
 
-from newsletter_agent.tools.synthesis_utils import parse_synthesis_output
+from newsletter_agent.tools.synthesis_utils import (
+    parse_synthesis_output,
+    _relink_orphaned_brackets,
+    _fix_nested_links,
+    _fix_split_links,
+    _fix_bare_close_brackets,
+)
 
 
 TOPICS = ["AI Frameworks", "Cloud Native", "Cybersecurity"]
@@ -248,6 +254,96 @@ class TestNeverRaises:
         assert "executive_summary" in result
 
 
+class TestRelinkOrphanedBrackets:
+    """Tests for _relink_orphaned_brackets post-processing."""
+
+    def test_relinks_exact_title_match(self):
+        body = "Analysis shows growth [AI Market Report]. More details follow."
+        sources = [{"url": "https://example.com/report", "title": "AI Market Report"}]
+        result = _relink_orphaned_brackets(body, sources)
+        assert "[AI Market Report](https://example.com/report)" in result
+
+    def test_relinks_multiple_orphans(self):
+        body = (
+            "First finding [Source Alpha]. "
+            "Second finding [Source Beta]."
+        )
+        sources = [
+            {"url": "https://a.com", "title": "Source Alpha"},
+            {"url": "https://b.com", "title": "Source Beta"},
+        ]
+        result = _relink_orphaned_brackets(body, sources)
+        assert "[Source Alpha](https://a.com)" in result
+        assert "[Source Beta](https://b.com)" in result
+
+    def test_preserves_existing_markdown_links(self):
+        body = "Existing [Title](https://existing.com) stays intact."
+        sources = [{"url": "https://other.com", "title": "Title"}]
+        result = _relink_orphaned_brackets(body, sources)
+        assert "[Title](https://existing.com)" in result
+
+    def test_prefix_match_truncated_title(self):
+        body = "Analysis [Advanced RAG Techniques for High-Performance LLM Appli]."
+        sources = [
+            {
+                "url": "https://neo4j.com/rag",
+                "title": "Advanced RAG Techniques for High-Performance LLM Applications - Neo4j",
+            }
+        ]
+        result = _relink_orphaned_brackets(body, sources)
+        assert "(https://neo4j.com/rag)" in result
+
+    def test_ignores_short_brackets(self):
+        body = "Version [v2.0] released. See [AI Market Report in 2026]."
+        sources = [
+            {"url": "https://example.com/report", "title": "AI Market Report in 2026"}
+        ]
+        result = _relink_orphaned_brackets(body, sources)
+        # Short bracket [v2.0] should remain unchanged
+        assert "[v2.0]" in result
+        assert "[AI Market Report in 2026](https://example.com/report)" in result
+
+    def test_no_sources_returns_unchanged(self):
+        body = "Analysis [Some Title Reference]."
+        result = _relink_orphaned_brackets(body, [])
+        assert result == body
+
+    def test_empty_body_returns_empty(self):
+        sources = [{"url": "https://a.com", "title": "A"}]
+        assert _relink_orphaned_brackets("", sources) == ""
+
+    def test_no_match_returns_unchanged(self):
+        body = "Reference [Completely Unknown Title Here]."
+        sources = [{"url": "https://a.com", "title": "Totally Different Source"}]
+        result = _relink_orphaned_brackets(body, sources)
+        assert result == body
+
+    def test_case_insensitive_matching(self):
+        body = "See [ai market report] for details."
+        sources = [{"url": "https://example.com", "title": "AI Market Report"}]
+        result = _relink_orphaned_brackets(body, sources)
+        assert "[ai market report](https://example.com)" in result
+
+    def test_integration_with_normalize_section(self):
+        """Orphaned brackets should be relinked during normalization."""
+        section_data = {
+            "title": "Topic",
+            "body_markdown": "Finding [Real Source Title]. More text here.",
+            "sources": [
+                {"url": "https://real.com/article", "title": "Real Source Title"},
+            ],
+        }
+        raw = json.dumps(
+            {
+                "executive_summary": [{"topic": "Topic", "summary": "S"}],
+                "sections": [section_data],
+            }
+        )
+        result = parse_synthesis_output(raw, ["Topic"])
+        body = result["synthesis_0"]["body_markdown"]
+        assert "[Real Source Title](https://real.com/article)" in body
+
+
 class TestTruncatedJsonRepair:
     """Tests for truncated JSON output recovery (token limit hit)."""
 
@@ -312,3 +408,142 @@ class TestJsonWithExtraText:
         raw = f"{inner}\n\nI hope this helps!"
         result = parse_synthesis_output(raw, TOPICS)
         assert "synthesis_0" in result
+
+
+class TestFixNestedLinks:
+    """Tests for _fix_nested_links: [[Title](URL)](URL) flattening."""
+
+    def test_flattens_nested_link(self):
+        md = "text [[Title Here](https://inner.com)](https://outer.com). more"
+        result = _fix_nested_links(md)
+        assert result == "text [Title Here](https://inner.com). more"
+
+    def test_multiple_nested_links(self):
+        md = (
+            "[[Alpha Source](https://a.com)](https://a.com) and "
+            "[[Beta Source](https://b.com)](https://b.com)."
+        )
+        result = _fix_nested_links(md)
+        assert "[[" not in result
+        assert "[Alpha Source](https://a.com)" in result
+        assert "[Beta Source](https://b.com)" in result
+
+    def test_no_nested_links_unchanged(self):
+        md = "Normal [link](https://example.com) text."
+        assert _fix_nested_links(md) == md
+
+    def test_empty_input(self):
+        assert _fix_nested_links("") == ""
+        assert _fix_nested_links(None) is None
+
+
+class TestFixSplitLinks:
+    """Tests for _fix_split_links: [Title]\\n(URL) joining."""
+
+    def test_joins_newline_split(self):
+        md = "[Advanced RAG Techniques]\n(https://example.com). Next."
+        result = _fix_split_links(md)
+        assert result == "[Advanced RAG Techniques](https://example.com). Next."
+
+    def test_joins_space_split(self):
+        md = "[Advanced RAG Techniques] (https://example.com). Next."
+        result = _fix_split_links(md)
+        assert result == "[Advanced RAG Techniques](https://example.com). Next."
+
+    def test_no_split_links_unchanged(self):
+        md = "[Title](https://example.com) normal link."
+        assert _fix_split_links(md) == md
+
+    def test_short_titles_not_matched(self):
+        md = "[Short]\n(https://example.com)"
+        assert _fix_split_links(md) == md
+
+    def test_empty_input(self):
+        assert _fix_split_links("") == ""
+
+
+class TestFixBareCloseBrackets:
+    """Tests for _fix_bare_close_brackets: Title](URL) repair."""
+
+    def test_fixes_with_source_title_match(self):
+        sources = [
+            {"url": "https://example.com/article",
+             "title": "Why GenAI Pilots Fail: Enterprise RAG Challenges"},
+        ]
+        md = (
+            'data "AI-ready" '
+            "Why GenAI Pilots Fail: Enterprise RAG Challenges]"
+            "(https://example.com/article). More text."
+        )
+        result = _fix_bare_close_brackets(md, sources)
+        assert "[Why GenAI Pilots Fail: Enterprise RAG Challenges]" in result
+
+    def test_fixes_with_boundary_heuristic(self):
+        md = (
+            "First sentence ends. "
+            "Forbes AI Newsletter Weekly Roundup]"
+            "(https://example.com). Next."
+        )
+        result = _fix_bare_close_brackets(md)
+        assert "[Forbes AI Newsletter Weekly Roundup]" in result
+
+    def test_preserves_proper_links(self):
+        md = "Normal [Title Here](https://example.com) stays intact."
+        assert _fix_bare_close_brackets(md) == md
+
+    def test_no_bare_brackets_unchanged(self):
+        md = "Plain text without any brackets or URLs."
+        assert _fix_bare_close_brackets(md) == md
+
+    def test_empty_input(self):
+        assert _fix_bare_close_brackets("") == ""
+
+    def test_multiple_bare_brackets(self):
+        sources = [
+            {"url": "https://a.com", "title": "Source Alpha Reference Guide"},
+            {"url": "https://b.com", "title": "Source Beta Technical Review"},
+        ]
+        md = (
+            "Finding Source Alpha Reference Guide](https://a.com). "
+            "Also Source Beta Technical Review](https://b.com)."
+        )
+        result = _fix_bare_close_brackets(md, sources)
+        assert "[Source Alpha Reference Guide](https://a.com)" in result
+        assert "[Source Beta Technical Review](https://b.com)" in result
+
+
+class TestNormalizeSectionAllFixes:
+    """Integration test: all fix functions applied via normalize_synthesis_section."""
+
+    def test_all_fix_patterns_in_one_section(self):
+        section = {
+            "title": "Test Topic",
+            "body_markdown": (
+                "Nested [[Title A - Machine Learning Advances](https://a.com)](https://a.com). "
+                "Bare Title B - Enterprise RAG Solutions](https://b.com). "
+                "Split [Title C - Generative AI Research]\n(https://c.com). "
+                "Orphan [Title D - Autonomous Agent Frameworks]. "
+                "Good [Title E - Small Language Models](https://e.com)."
+            ),
+            "sources": [
+                {"url": "https://a.com", "title": "Title A - Machine Learning Advances"},
+                {"url": "https://b.com", "title": "Title B - Enterprise RAG Solutions"},
+                {"url": "https://c.com", "title": "Title C - Generative AI Research"},
+                {"url": "https://d.com", "title": "Title D - Autonomous Agent Frameworks"},
+                {"url": "https://e.com", "title": "Title E - Small Language Models"},
+            ],
+        }
+        raw = json.dumps({
+            "executive_summary": [{"topic": "Test Topic", "summary": "S"}],
+            "sections": [section],
+        })
+        result = parse_synthesis_output(raw, ["Test Topic"])
+        body = result["synthesis_0"]["body_markdown"]
+
+        # All patterns should produce valid [Title](URL) markdown
+        assert "[[" not in body, "Nested links not flattened"
+        assert "[Title A - Machine Learning Advances](https://a.com)" in body
+        assert "[Title B - Enterprise RAG Solutions](https://b.com)" in body
+        assert "[Title C - Generative AI Research](https://c.com)" in body
+        assert "[Title D - Autonomous Agent Frameworks](https://d.com)" in body
+        assert "[Title E - Small Language Models](https://e.com)" in body

@@ -10,13 +10,16 @@ Spec refs: FR-ADR-001 through FR-ADR-085, Section 4, Section 8.1,
            Section 9.4 (Design Decisions ADR-1 through ADR-4).
 """
 
+import asyncio
 import dataclasses
 import json
 import logging
+import random
 import re
 from collections.abc import AsyncGenerator
 from html import unescape
 from typing import Any
+from urllib.parse import urlparse
 
 from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -32,7 +35,16 @@ from newsletter_agent.tools.link_verifier import (
     verify_urls,
 )
 
+import httpx
+import httpcore
+
 logger = logging.getLogger(__name__)
+
+# Transient network errors that should be retried rather than crashing the pipeline
+_TRANSIENT_ERRORS = (httpx.ReadError, httpx.ConnectError, httpx.RemoteProtocolError,
+                     httpcore.ReadError, httpcore.ConnectError, ConnectionError, TimeoutError)
+_MAX_RETRIES = 2
+_RETRY_BASE_DELAY = 3.0  # seconds
 
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]]*)\]\((https?://[^\)]+)\)")
 _BARE_URL_RE = re.compile(r"(?<!\()(https?://[^\s\)\]>\"]+)")
@@ -59,6 +71,126 @@ _DEFAULT_ASPECTS = [
     "industry implications",
     "emerging trends",
 ]
+
+
+_GROUNDING_REDIRECT_HOST = "vertexaisearch.cloud.google.com"
+_GROUNDING_REDIRECT_PATH_PREFIX = "/grounding-api-redirect/"
+_RESOLVE_TIMEOUT = 10.0
+_RESOLVE_MAX_CONCURRENT = 10
+
+
+def _extract_text_from_events(events: list[Event]) -> str:
+    """Extract concatenated text from LlmAgent events.
+
+    ADK may not populate output_key for LlmAgents running as sub-agents
+    inside a custom BaseAgent. This helper extracts the model's text
+    response directly from the emitted events as a fallback.
+    """
+    parts = []
+    for ev in events:
+        if not hasattr(ev, "content") or not ev.content:
+            continue
+        if not hasattr(ev.content, "parts") or not ev.content.parts:
+            continue
+        for part in ev.content.parts:
+            if hasattr(part, "text") and part.text:
+                parts.append(part.text)
+    return "".join(parts)
+
+
+def _is_grounding_redirect_url(url: str) -> bool:
+    """Return True if the URL is a Google grounding redirect."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    return (
+        parsed.scheme.lower() == "https"
+        and host == _GROUNDING_REDIRECT_HOST
+        and parsed.path.startswith(_GROUNDING_REDIRECT_PATH_PREFIX)
+    )
+
+
+async def _resolve_single_redirect(url: str, client: httpx.AsyncClient, semaphore: asyncio.Semaphore) -> str:
+    """Follow a grounding redirect URL and return the real destination.
+
+    Returns the original URL on any error (network, timeout, etc.).
+    """
+    if not _is_grounding_redirect_url(url):
+        return url
+    async with semaphore:
+        try:
+            resp = await client.head(url, follow_redirects=True)
+            final = str(resp.url)
+            if final and final != url:
+                return final
+        except Exception:
+            pass
+        # Fallback: try GET if HEAD didn't redirect
+        try:
+            resp = await client.get(url, follow_redirects=True)
+            final = str(resp.url)
+            if final and final != url:
+                return final
+        except Exception:
+            logger.warning(
+                "[Grounding] Failed to resolve redirect URL: %s", url,
+            )
+    return url
+
+
+async def resolve_grounding_redirects(
+    urls: dict[str, str],
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Resolve grounding redirect URLs to real destinations.
+
+    Args:
+        urls: Mapping of URI -> title.
+
+    Returns:
+        Tuple of (resolved_urls mapping, redirect_map from old -> new URL).
+    """
+    redirect_urls = {u for u in urls if _is_grounding_redirect_url(u)}
+    if not redirect_urls:
+        return urls, {}
+
+    semaphore = asyncio.Semaphore(_RESOLVE_MAX_CONCURRENT)
+    url_list = sorted(redirect_urls)
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(_RESOLVE_TIMEOUT),
+        follow_redirects=True,
+        max_redirects=5,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; NewsletterAgent/1.0)"},
+    ) as client:
+        tasks = [_resolve_single_redirect(u, client, semaphore) for u in url_list]
+        resolved = await asyncio.gather(*tasks)
+
+    redirect_map: dict[str, str] = {}
+    for orig, real in zip(url_list, resolved):
+        if real != orig:
+            redirect_map[orig] = real
+
+    # Build new urls dict with resolved URIs
+    resolved_urls: dict[str, str] = {}
+    for uri, title in urls.items():
+        new_uri = redirect_map.get(uri, uri)
+        if new_uri not in resolved_urls:  # dedup by resolved URI
+            resolved_urls[new_uri] = title
+
+    logger.info(
+        "[Grounding] Resolved %d/%d grounding redirect URLs to real destinations",
+        len(redirect_map), len(redirect_urls),
+    )
+
+    return resolved_urls, redirect_map
+
+
+def _apply_redirect_map_to_text(text: str, redirect_map: dict[str, str]) -> str:
+    """Replace grounding redirect URLs in text with their resolved destinations."""
+    if not redirect_map:
+        return text
+    for old_url, new_url in redirect_map.items():
+        text = text.replace(old_url, new_url)
+    return text
 
 
 def _remove_broken_source_lines(text: str, broken_urls: set[str]) -> str:
@@ -203,7 +335,26 @@ class DeepResearchOrchestrator(BaseAgent):
 
         # --- Phase 0: Planning (skip if single-round mode) ---
         if self.max_rounds > 1:
-            initial_query, key_aspects, plan_events = await self._run_planning(ctx)
+            for attempt in range(_MAX_RETRIES + 1):
+                try:
+                    initial_query, key_aspects, plan_events = await self._run_planning(ctx)
+                    break
+                except _TRANSIENT_ERRORS as exc:
+                    if attempt < _MAX_RETRIES:
+                        delay = _RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            "[AdaptiveResearch] Topic %s/%s: planning failed (%s: %s), retrying in %.1fs (attempt %d/%d)",
+                            self.topic_name, prov, type(exc).__name__, exc, delay, attempt + 1, _MAX_RETRIES,
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            "[AdaptiveResearch] Topic %s/%s: planning failed after %d retries (%s: %s), using fallback",
+                            self.topic_name, prov, _MAX_RETRIES, type(exc).__name__, exc,
+                        )
+                        initial_query = self.query
+                        key_aspects = list(_DEFAULT_ASPECTS)
+                        plan_events = []
             for ev in plan_events:
                 yield ev
             plan_intent = initial_query  # reuse for context
@@ -243,10 +394,35 @@ class DeepResearchOrchestrator(BaseAgent):
                 )
             used_queries.add(current_query)
 
-            # Search round
+            # Search round (with retry for transient network errors)
             search_agent = self._make_search_agent(round_idx, current_query)
-            async for event in search_agent.run_async(ctx):
-                yield event
+            search_succeeded = False
+            for attempt in range(_MAX_RETRIES + 1):
+                try:
+                    async for event in search_agent.run_async(ctx):
+                        yield event
+                    search_succeeded = True
+                    break
+                except _TRANSIENT_ERRORS as exc:
+                    if attempt < _MAX_RETRIES:
+                        delay = _RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            "[AdaptiveResearch] Topic %s/%s round %d: search failed (%s: %s), retrying in %.1fs (attempt %d/%d)",
+                            self.topic_name, prov, round_idx, type(exc).__name__, exc, delay, attempt + 1, _MAX_RETRIES,
+                        )
+                        await asyncio.sleep(delay)
+                        search_agent = self._make_search_agent(round_idx, current_query)
+                    else:
+                        logger.error(
+                            "[AdaptiveResearch] Topic %s/%s round %d: search failed after %d retries (%s: %s), skipping round",
+                            self.topic_name, prov, round_idx, _MAX_RETRIES, type(exc).__name__, exc,
+                        )
+
+            if not search_succeeded:
+                # Skip this round but continue with next if we have prior data
+                if round_count > 0:
+                    break  # Exit loop, use data from prior rounds
+                continue  # Try next round
 
             # Read round output
             latest_key = f"deep_research_latest_{idx}_{prov}"
@@ -262,11 +438,31 @@ class DeepResearchOrchestrator(BaseAgent):
             # --- Parse grounding metadata for this round (FR-GME-005) ---
             # Must happen before link verification so grounding URIs are available
             grounding_for_round = GroundingResult()
+            redirect_map_for_round: dict[str, str] = {}
             if prov == "google":
                 grounding_for_round = self._parse_grounding_from_state(
                     state, idx, prov, round_idx,
                 )
                 if grounding_for_round.has_metadata:
+                    # Resolve grounding redirect URLs to real destinations
+                    src_map = {s["uri"]: s.get("title", "") for s in grounding_for_round.sources}
+                    try:
+                        resolved_map, redirect_map_for_round = await resolve_grounding_redirects(src_map)
+                        # Update sources with resolved URLs
+                        grounding_for_round.sources = [
+                            {"uri": uri, "title": title}
+                            for uri, title in resolved_map.items()
+                        ]
+                        # Replace redirect URLs in round output text
+                        if redirect_map_for_round:
+                            round_output = _apply_redirect_map_to_text(round_output, redirect_map_for_round)
+                            state[f"deep_research_latest_{idx}_{prov}"] = round_output
+                    except _TRANSIENT_ERRORS as exc:
+                        logger.warning(
+                            "[Grounding] Topic %s/%s round %d: redirect resolution failed (%s: %s), using raw grounding URIs",
+                            self.topic_name, prov, round_idx, type(exc).__name__, exc,
+                        )
+
                     state[f"grounding_sources_{idx}_{prov}_round_{round_idx}"] = grounding_for_round.sources
                     state[f"grounding_supports_{idx}_{prov}_round_{round_idx}"] = grounding_for_round.supports
                     state[f"grounding_queries_{idx}_{prov}_round_{round_idx}"] = grounding_for_round.queries
@@ -370,19 +566,43 @@ class DeepResearchOrchestrator(BaseAgent):
             if self.max_rounds == 1:
                 break
 
-            # --- Analysis phase ---
+            # --- Analysis phase (with retry for transient network errors) ---
             prior_summary = self._format_prior_rounds(adaptive_context["rounds"])
-            analysis, analysis_events = await self._run_analysis(
-                ctx,
-                topic_name=self.topic_name,
-                query=self.query,
-                key_aspects=key_aspects,
-                prior_rounds_summary=prior_summary,
-                latest_results=round_output,
-                round_idx=round_idx,
-                current_query=current_query,
-                remaining_searches=self.max_searches - searches_done,
-            )
+            analysis = None
+            analysis_events: list[Event] = []
+            for attempt in range(_MAX_RETRIES + 1):
+                try:
+                    analysis, analysis_events = await self._run_analysis(
+                        ctx,
+                        topic_name=self.topic_name,
+                        query=self.query,
+                        key_aspects=key_aspects,
+                        prior_rounds_summary=prior_summary,
+                        latest_results=round_output,
+                        round_idx=round_idx,
+                        current_query=current_query,
+                        remaining_searches=self.max_searches - searches_done,
+                    )
+                    break
+                except _TRANSIENT_ERRORS as exc:
+                    if attempt < _MAX_RETRIES:
+                        delay = _RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            "[AdaptiveResearch] Topic %s/%s round %d: analysis failed (%s: %s), retrying in %.1fs (attempt %d/%d)",
+                            self.topic_name, prov, round_idx, type(exc).__name__, exc, delay, attempt + 1, _MAX_RETRIES,
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        logger.error(
+                            "[AdaptiveResearch] Topic %s/%s round %d: analysis failed after %d retries (%s: %s), treating as saturated",
+                            self.topic_name, prov, round_idx, _MAX_RETRIES, type(exc).__name__, exc,
+                        )
+
+            if analysis is None:
+                # Analysis failed - treat as saturated with data from this round
+                exit_reason = "analysis_network_error"
+                break
+
             for ev in analysis_events:
                 yield ev
 
@@ -470,6 +690,34 @@ class DeepResearchOrchestrator(BaseAgent):
             merged = self._merge_rounds_with_grounding(state, round_count)
         else:
             merged = self._merge_rounds(state, round_count)
+
+        # Resolve any remaining grounding redirect URLs in merged text
+        if prov == "google":
+            try:
+                remaining_redirects = {
+                    m.group(2) if m.lastindex and m.lastindex >= 2 else m.group(0)
+                    for m in _BARE_URL_RE.finditer(merged)
+                    if _is_grounding_redirect_url(m.group(1) if m.lastindex else m.group(0))
+                }
+                # Simpler: find all URLs, filter grounding redirects
+                all_urls_in_merged = set(_BARE_URL_RE.findall(merged))
+                remaining_redirects = {u for u in all_urls_in_merged if _is_grounding_redirect_url(u)}
+                if remaining_redirects:
+                    rmap_extra: dict[str, str] = {}
+                    url_title_map = {u: u for u in remaining_redirects}
+                    _, rmap_extra = await resolve_grounding_redirects(url_title_map)
+                    if rmap_extra:
+                        merged = _apply_redirect_map_to_text(merged, rmap_extra)
+                        logger.info(
+                            "[Grounding] Topic %s/%s: resolved %d remaining redirect URLs in merged text",
+                            self.topic_name, prov, len(rmap_extra),
+                        )
+            except _TRANSIENT_ERRORS as exc:
+                logger.warning(
+                    "[AdaptiveResearch] Topic %s/%s: grounding redirect resolution failed (%s: %s), using unresolved URLs",
+                    self.topic_name, prov, type(exc).__name__, exc,
+                )
+
         state[f"research_{idx}_{prov}"] = merged
 
         merged_source_count = len(_MARKDOWN_LINK_RE.findall(merged.split("SOURCES:", 1)[1] if "SOURCES:" in merged else ""))
@@ -505,20 +753,31 @@ class DeepResearchOrchestrator(BaseAgent):
         """Invoke PlanningAgent and return initial query, key aspects, and events."""
         idx = self.topic_idx
         prov = self.provider
+        output_key = f"adaptive_plan_{idx}_{prov}"
 
         _planning_instr = get_planning_instruction(self.query, self.topic_name)
         planner = LlmAgent(
             name=f"AdaptivePlanner_{idx}_{prov}",
             model=self.model,
             instruction=lambda ctx, _s=_planning_instr: _s,
-            output_key=f"adaptive_plan_{idx}_{prov}",
+            output_key=output_key,
         )
 
         events: list[Event] = []
         async for event in planner.run_async(ctx):
             events.append(event)
 
-        raw = ctx.session.state.get(f"adaptive_plan_{idx}_{prov}", "")
+        # Try output_key first; fall back to extracting text from events
+        # (ADK may not populate output_key for sub-agents inside BaseAgent)
+        raw = ctx.session.state.get(output_key, "")
+        if not raw.strip():
+            raw = _extract_text_from_events(events)
+            if raw.strip():
+                logger.info(
+                    "[AdaptiveResearch] Topic %s/%s: planning output recovered from events (%d chars)",
+                    self.topic_name, prov, len(raw),
+                )
+
         return self._parse_planning_output(raw) + (events,)
 
     def _parse_planning_output(self, raw: str) -> tuple[str, list[str]]:
@@ -555,10 +814,11 @@ class DeepResearchOrchestrator(BaseAgent):
 
             return initial_query, key_aspects
 
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
             logger.warning(
-                "[AdaptiveResearch] Planning failed for %s/%s, using fallback",
-                self.topic_name, self.provider,
+                "[AdaptiveResearch] Planning failed for %s/%s, using fallback. "
+                "Reason: %s. Raw output length: %d, first 200 chars: %.200s",
+                self.topic_name, self.provider, exc, len(raw), raw,
             )
             return self.query, list(_DEFAULT_ASPECTS)
 
@@ -588,18 +848,28 @@ class DeepResearchOrchestrator(BaseAgent):
             current_query=current_query,
             remaining_searches=remaining_searches,
         )
+        output_key = f"adaptive_analysis_{idx}_{prov}"
         analyzer = LlmAgent(
             name=f"AdaptiveAnalyzer_{idx}_{prov}_r{round_idx}",
             model=self.model,
             instruction=lambda ctx, _s=_analysis_instr: _s,
-            output_key=f"adaptive_analysis_{idx}_{prov}",
+            output_key=output_key,
         )
 
         events: list[Event] = []
         async for event in analyzer.run_async(ctx):
             events.append(event)
 
-        raw = ctx.session.state.get(f"adaptive_analysis_{idx}_{prov}", "")
+        # Try output_key first; fall back to extracting text from events
+        raw = ctx.session.state.get(output_key, "")
+        if not raw.strip():
+            raw = _extract_text_from_events(events)
+            if raw.strip():
+                logger.info(
+                    "[AdaptiveResearch] Topic %s/%s round %d: analysis output recovered from events (%d chars)",
+                    self.topic_name, prov, round_idx, len(raw),
+                )
+
         return self._parse_analysis_output(raw, round_idx), events
 
     def _parse_analysis_output(self, raw: str, round_idx: int) -> dict:
@@ -637,11 +907,12 @@ class DeepResearchOrchestrator(BaseAgent):
                 "next_query_rationale": str(next_rationale) if next_rationale else None,
             }
 
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
             suffix_idx = round_idx % len(_FALLBACK_SUFFIXES)
             logger.warning(
-                "[AdaptiveResearch] Analysis failed for %s/%s round %d, using fallback query",
-                self.topic_name, self.provider, round_idx,
+                "[AdaptiveResearch] Analysis failed for %s/%s round %d, using fallback query. "
+                "Reason: %s. Raw output length: %d, first 200 chars: %.200s",
+                self.topic_name, self.provider, round_idx, exc, len(raw), raw,
             )
             return {
                 "findings_summary": "",
@@ -855,7 +1126,8 @@ class DeepResearchOrchestrator(BaseAgent):
             )
             return self._merge_rounds(state, round_count)
 
-        # Build SUMMARY from LLM text output (same as _merge_rounds)
+        # Build SUMMARY from LLM text output and supplement grounding sources
+        # with text URLs from rounds that LACK grounding metadata
         summaries: list[str] = []
         for r in range(round_count):
             round_key = f"research_{idx}_{prov}_round_{r}"
@@ -869,6 +1141,16 @@ class DeepResearchOrchestrator(BaseAgent):
                 else:
                     summaries.append(summary_part)
 
+            # For rounds without grounding metadata, extract text URLs
+            # as a supplement (grounding is authoritative when present)
+            gs_key = f"grounding_sources_{idx}_{prov}_round_{r}"
+            if not state.get(gs_key):
+                for match in _MARKDOWN_LINK_RE.finditer(content):
+                    title, url = match.group(1), match.group(2)
+                    if url not in all_sources:
+                        all_sources[url] = title
+                self._collect_bare_urls(content, all_sources)
+
         if not summaries:
             return ""
 
@@ -881,7 +1163,7 @@ class DeepResearchOrchestrator(BaseAgent):
         # LOG-003: merge summary
         logger.info(
             "[Grounding] Topic %s/%s: merged %d unique sources from "
-            "grounding metadata across %d rounds",
+            "grounding metadata + text extraction across %d rounds",
             self.topic_name, prov, len(all_sources), round_count,
         )
 
@@ -910,14 +1192,15 @@ class DeepResearchOrchestrator(BaseAgent):
                 else:
                     summaries.append(summary_part)
 
-            # Collect unique sources from markdown links
-            for match in _MARKDOWN_LINK_RE.finditer(sources_part or content):
+            # Collect unique sources from markdown links in the full content
+            # (search both SUMMARY and SOURCES to catch inline citations)
+            for match in _MARKDOWN_LINK_RE.finditer(content):
                 title, url = match.group(1), match.group(2)
                 if url not in seen_urls:
                     seen_urls[url] = title
 
             # Collect bare URLs not already captured via markdown links
-            self._collect_bare_urls(sources_part or content, seen_urls)
+            self._collect_bare_urls(content, seen_urls)
 
         if not summaries:
             return ""

@@ -163,6 +163,23 @@ class PerTopicSynthesizerAgent(BaseAgent):
             )
             return _fallback_section(name), "No research data was available."
 
+        # Check if research data contains any usable source URLs
+        url_count = len(re.findall(
+            r"(?<!!)\[([^\]]*)\]\((https?://[^\)]+)\)", research_data
+        ))
+        if url_count == 0:
+            logger.warning(
+                "[PerTopicSynthesizer] Topic %d '%s': research data has "
+                "NO source URLs -- synthesis will lack citations",
+                idx, name,
+            )
+        else:
+            logger.info(
+                "[PerTopicSynthesizer] Topic %d '%s': research data has "
+                "%d source URLs available for citation",
+                idx, name, url_count,
+            )
+
         prompt = build_per_topic_prompt(name, research_data)
 
         try:
